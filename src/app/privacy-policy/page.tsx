@@ -1,6 +1,12 @@
 import Link from "next/link";
 
-const sections = [
+type PrivacyPolicySection = {
+  title: string;
+  content?: string[];
+  bullets?: string[];
+};
+
+const sections: PrivacyPolicySection[] = [
   {
     title: "1. Information We Collect",
     content: [
@@ -69,7 +75,7 @@ const sections = [
       "Changes will be posted on this page.",
     ],
   },
-] as const;
+];
 
 export default function PrivacyPolicyPage() {
   return (
