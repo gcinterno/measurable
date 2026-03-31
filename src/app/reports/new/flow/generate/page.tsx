@@ -9,6 +9,8 @@ import { createMetaPagesReport } from "@/lib/api/reports";
 import { getIntegrationReportContext } from "@/lib/integrations/session";
 import { integrationCatalog } from "@/lib/integrations/catalog";
 
+type TemplateType = "minimalista" | "moderno";
+
 const flowSteps = [
   {
     id: 1,
@@ -40,7 +42,12 @@ const timeframeOptions = [
   },
 ] as const;
 
-const templateOptions = [
+const templateOptions: {
+  id: TemplateType;
+  name: string;
+  description: string;
+  previewClass: string;
+}[] = [
   {
     id: "minimalista",
     name: "Minimalista",
@@ -55,14 +62,7 @@ const templateOptions = [
     previewClass:
       "bg-[linear-gradient(135deg,#0f172a_0%,#1d4ed8_100%)] border-slate-800",
   },
-  {
-    id: "ejecutivo",
-    name: "Ejecutivo",
-    description: "Enfocado en resumen, KPIs y lectura gerencial.",
-    previewClass:
-      "bg-[linear-gradient(135deg,#f8fafc_0%,#e2e8f0_100%)] border-slate-300",
-  },
-] as const;
+];
 
 export default function NewReportFlowGeneratePage() {
   const router = useRouter();
@@ -86,9 +86,8 @@ export default function NewReportFlowGeneratePage() {
   const [selectedTimeframe, setSelectedTimeframe] = useState(
     timeframeOptions[0].id
   );
-  const [selectedTemplate, setSelectedTemplate] = useState(
-    templateOptions[0].id
-  );
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<TemplateType>("minimalista");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -286,18 +285,14 @@ export default function NewReportFlowGeneratePage() {
                                 className={`h-12 rounded-xl ${
                                   template.id === "moderno"
                                     ? "bg-white/15"
-                                    : template.id === "ejecutivo"
-                                      ? "bg-slate-300"
-                                      : "bg-slate-200"
+                                    : "bg-slate-200"
                                 }`}
                               />
                               <div
                                 className={`h-12 rounded-xl ${
                                   template.id === "moderno"
                                     ? "bg-white/10"
-                                    : template.id === "ejecutivo"
-                                      ? "bg-slate-200"
-                                      : "bg-slate-100"
+                                    : "bg-slate-100"
                                 }`}
                               />
                             </div>
