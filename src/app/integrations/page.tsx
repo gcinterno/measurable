@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { IntegrationCard } from "@/components/integrations/IntegrationCard";
@@ -13,7 +13,7 @@ import {
 } from "@/lib/integrations/session";
 import { integrationCatalog } from "@/lib/integrations/catalog";
 
-export default function IntegrationsPage() {
+function IntegrationsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [metaLoading, setMetaLoading] = useState(false);
@@ -162,5 +162,24 @@ export default function IntegrationsPage() {
         ))}
       </div>
     </AppShell>
+  );
+}
+
+export default function IntegrationsPage() {
+  return (
+    <Suspense
+      fallback={
+        <AppShell>
+          <section className="mb-5 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:mb-6 sm:p-8">
+            <div className="space-y-3">
+              <div className="h-6 w-48 animate-pulse rounded-full bg-slate-200" />
+              <div className="h-24 animate-pulse rounded-[24px] bg-slate-100" />
+            </div>
+          </section>
+        </AppShell>
+      }
+    >
+      <IntegrationsPageContent />
+    </Suspense>
   );
 }

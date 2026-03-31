@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { SlideRenderer } from "@/components/reports/SlideRenderer";
@@ -52,7 +52,7 @@ function getReportTitle(blocks: ReportVersionBlock[]) {
   return titleBlock?.data.text || "Reporte generado";
 }
 
-export default function NewReportFlowReviewPage() {
+function NewReportFlowReviewPageContent() {
   const searchParams = useSearchParams();
   const reportId = searchParams.get("reportId") || "";
   const integrationSource = searchParams.get("integration") || "";
@@ -387,5 +387,24 @@ export default function NewReportFlowReviewPage() {
         </section>
       </div>
     </AppShell>
+  );
+}
+
+export default function NewReportFlowReviewPage() {
+  return (
+    <Suspense
+      fallback={
+        <AppShell>
+          <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+            <div className="space-y-3">
+              <div className="h-6 w-48 animate-pulse rounded-full bg-slate-200" />
+              <div className="h-24 animate-pulse rounded-[24px] bg-slate-100" />
+            </div>
+          </section>
+        </AppShell>
+      }
+    >
+      <NewReportFlowReviewPageContent />
+    </Suspense>
   );
 }

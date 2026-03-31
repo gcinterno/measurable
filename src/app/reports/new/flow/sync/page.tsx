@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { AdAccountSelector } from "@/components/integrations/AdAccountSelector";
@@ -45,7 +45,7 @@ type MetaOption = {
   name: string;
 };
 
-export default function NewReportFlowSyncPage() {
+function NewReportFlowSyncPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const storedIntegrationContext = getIntegrationReportContext();
@@ -351,5 +351,24 @@ export default function NewReportFlowSyncPage() {
         </section>
       </div>
     </AppShell>
+  );
+}
+
+export default function NewReportFlowSyncPage() {
+  return (
+    <Suspense
+      fallback={
+        <AppShell>
+          <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+            <div className="space-y-3">
+              <div className="h-6 w-48 animate-pulse rounded-full bg-slate-200" />
+              <div className="h-24 animate-pulse rounded-[24px] bg-slate-100" />
+            </div>
+          </section>
+        </AppShell>
+      }
+    >
+      <NewReportFlowSyncPageContent />
+    </Suspense>
   );
 }
