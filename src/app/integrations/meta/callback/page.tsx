@@ -5,6 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { completeMetaIntegrationCallback } from "@/lib/api/integrations";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default function MetaIntegrationCallbackPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
