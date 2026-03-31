@@ -1,6 +1,14 @@
 import Link from "next/link";
 
-const sections = [
+type TermsSection = {
+  title: string;
+  content?: string[];
+  bullets?: string[];
+  secondaryTitle?: string;
+  secondaryBullets?: string[];
+};
+
+const sections: TermsSection[] = [
   {
     title: "1. Description of Service",
     content: [
@@ -84,7 +92,7 @@ const sections = [
       "[YOUR EMAIL]",
     ],
   },
-] as const;
+];
 
 export default function TermsOfServicePage() {
   return (
@@ -127,11 +135,11 @@ export default function TermsOfServicePage() {
                   </p>
                 ))}
 
-                {section.bullets ? (
+                {section.bullets && (
                   <ul className="mt-4 space-y-3">
-                    {section.bullets.map((bullet) => (
+                    {section.bullets.map((bullet, index) => (
                       <li
-                        key={bullet}
+                        key={index}
                         className="flex items-start gap-3 text-sm leading-7 text-slate-700 sm:text-base"
                       >
                         <span className="mt-2 h-2 w-2 rounded-full bg-sky-500" />
@@ -139,7 +147,7 @@ export default function TermsOfServicePage() {
                       </li>
                     ))}
                   </ul>
-                ) : null}
+                )}
 
                 {"secondaryTitle" in section && section.secondaryTitle ? (
                   <p className="mt-6 text-sm font-semibold text-slate-950">
