@@ -201,82 +201,113 @@ function Navbar() {
 
 function HeroMockup() {
   return (
-    <div className="rounded-[36px] border border-white/70 bg-[linear-gradient(145deg,#ffffff_0%,#f7fbff_45%,#ebf2ff_100%)] p-4 shadow-[0_30px_80px_rgba(15,23,42,0.08)] sm:p-6">
-      <div className="rounded-[30px] border border-slate-800/80 bg-[linear-gradient(145deg,#060b16_0%,#0f172a_48%,#1d4ed8_100%)] p-5 text-white shadow-[0_26px_60px_rgba(2,6,23,0.28)] sm:p-7">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-sky-200">
-              Monthly Report
-            </p>
-            <h3 className="mt-3 text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">
-              Meta Performance Overview
-            </h3>
+    <div className="group rounded-[36px] border border-white/70 bg-[linear-gradient(145deg,#ffffff_0%,#f7fbff_45%,#ebf2ff_100%)] p-4 shadow-[0_30px_80px_rgba(15,23,42,0.08)] transition duration-500 hover:-translate-y-1 hover:shadow-[0_36px_100px_rgba(15,23,42,0.12)] sm:p-6">
+      <div className="rounded-[30px] border border-slate-900/90 bg-[linear-gradient(160deg,#07111f_0%,#0b1730_42%,#1d4ed8_100%)] p-4 text-white shadow-[0_26px_60px_rgba(2,6,23,0.28)] transition duration-500 group-hover:scale-[1.01] sm:p-6">
+        <div className="rounded-[26px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.16),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.05)_0%,rgba(255,255,255,0.02)_100%)] p-5 sm:p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-sky-200">
+                Executive report
+              </p>
+              <h3 className="mt-3 text-xl font-semibold tracking-[-0.05em] sm:text-2xl">
+                Monthly Growth Review
+              </h3>
+            </div>
+            <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-slate-200">
+              01 / 05
+            </span>
           </div>
-          <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-slate-200">
-            01 / 05
-          </span>
-        </div>
 
-        <div className="mt-8 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-          <div className="rounded-[26px] border border-white/10 bg-white/8 p-5">
-            <p className="text-sm text-slate-300">
-              Executive summary
-            </p>
-            <h4 className="mt-4 max-w-xl text-3xl font-semibold leading-[1.02] tracking-[-0.05em] text-white">
-              Turn paid traffic and campaign metrics into a board-ready monthly report.
-            </h4>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-slate-200">
-                Last 28 days
-              </span>
-              <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-slate-200">
-                PPTX export
-              </span>
+          <div className="mt-6 rounded-[24px] bg-[linear-gradient(145deg,#020617_0%,#0f172a_34%,#1d4ed8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+              <div className="flex flex-col justify-between">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-sky-200">
+                    Cover slide
+                  </p>
+                  <h4 className="mt-5 max-w-xl text-3xl font-semibold leading-[0.98] tracking-[-0.06em] text-white sm:text-4xl">
+                    Meta pages performance overview for your monthly client meeting.
+                  </h4>
+                  <p className="mt-4 max-w-lg text-sm leading-7 text-slate-200">
+                    A presentation-ready summary with KPIs, narrative, and board-style slides generated from live marketing data.
+                  </p>
+                </div>
+
+                <div className="mt-6 flex flex-wrap gap-3">
+                  <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-slate-100">
+                    Last 28 days
+                  </span>
+                  <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-slate-100">
+                    Executive dark
+                  </span>
+                  <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-slate-100">
+                    PPT / PDF ready
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid gap-3">
+                <div className="rounded-[20px] border border-white/10 bg-white/6 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-300">
+                    Brand panel
+                  </p>
+                  <div className="mt-4 flex h-24 items-center justify-center rounded-[18px] border border-dashed border-white/20 bg-black/20 text-sm text-slate-300">
+                    Logo / image
+                  </div>
+                </div>
+                <div className="rounded-[20px] border border-white/10 bg-white/6 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-300">
+                    Executive snapshot
+                  </p>
+                  <div className="mt-4 space-y-2.5">
+                    <div className="flex items-center justify-between rounded-2xl bg-black/20 px-3 py-2.5">
+                      <span className="text-xs uppercase tracking-[0.16em] text-slate-300">Reach</span>
+                      <span className="text-sm font-semibold text-white">82K</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-2xl bg-black/20 px-3 py-2.5">
+                      <span className="text-xs uppercase tracking-[0.16em] text-slate-300">Followers</span>
+                      <span className="text-sm font-semibold text-white">12.4K</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-2xl bg-black/20 px-3 py-2.5">
+                      <span className="text-xs uppercase tracking-[0.16em] text-slate-300">Engagement</span>
+                      <span className="text-sm font-semibold text-white">6.8%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="grid gap-4">
-            <div className="rounded-[26px] border border-sky-400/20 bg-[linear-gradient(145deg,#111827_0%,#1d4ed8_100%)] p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200">
-                Reach
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-[20px] border border-white/10 bg-white px-4 py-4 text-slate-950 transition duration-500 group-hover:-translate-y-1">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                KPI slide
               </p>
-              <p className="mt-5 text-5xl font-semibold tracking-[-0.05em] text-white">
+              <p className="mt-5 text-4xl font-semibold tracking-[-0.05em]">
                 82K
               </p>
+              <p className="mt-2 text-sm text-slate-500">Reach</p>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200">
-                  Followers
-                </p>
-                <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-white">
-                  12.4K
-                </p>
-              </div>
-              <div className="rounded-[24px] border border-white/10 bg-white/8 p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200">
-                  Engagement
-                </p>
-                <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-white">
-                  6.8%
-                </p>
+            <div className="rounded-[20px] border border-white/10 bg-white/8 px-4 py-4 transition delay-75 duration-500 group-hover:-translate-y-2 group-hover:bg-white/12">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200">
+                Analysis slide
+              </p>
+              <div className="mt-5 space-y-2">
+                <div className="h-2 rounded-full bg-white/80" />
+                <div className="h-2 w-10/12 rounded-full bg-white/35" />
+                <div className="h-2 w-8/12 rounded-full bg-white/20" />
               </div>
             </div>
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-4 md:grid-cols-3">
-          <div className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-3">
-            <div className="h-2 rounded-full bg-sky-300/80" />
-            <div className="mt-3 h-2 w-2/3 rounded-full bg-white/20" />
-          </div>
-          <div className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-3">
-            <div className="h-2 rounded-full bg-blue-300/80" />
-            <div className="mt-3 h-2 w-1/2 rounded-full bg-white/20" />
-          </div>
-          <div className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-3">
-            <div className="h-2 rounded-full bg-cyan-300/80" />
-            <div className="mt-3 h-2 w-3/4 rounded-full bg-white/20" />
+            <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-4 transition delay-150 duration-500 group-hover:-translate-y-3 group-hover:bg-black/30">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200">
+                Conclusion slide
+              </p>
+              <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-3">
+                <div className="h-2 w-2/3 rounded-full bg-sky-300/80" />
+                <div className="mt-3 h-2 rounded-full bg-white/20" />
+                <div className="mt-2 h-2 w-11/12 rounded-full bg-white/10" />
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -292,7 +323,7 @@ function HeroSection() {
         <div className="max-w-3xl">
           <SectionEyebrow>AI-powered reporting platform</SectionEyebrow>
           <h1 className="mt-5 text-5xl font-semibold leading-[0.94] tracking-[-0.07em] text-slate-950 sm:text-6xl lg:text-[5.25rem]">
-            Turn your marketing data into client-ready reports in minutes
+            Connect your marketing data &amp; generate client-ready reports in minutes.
           </h1>
           <p className="mt-6 max-w-2xl text-base leading-8 text-slate-600 sm:text-lg">
             Connect your data sources and generate beautiful, presentation-ready reports automatically. No spreadsheets. No manual work.
