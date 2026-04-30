@@ -1,5 +1,8 @@
 "use client";
 
+import { useI18n } from "@/components/providers/LanguageProvider";
+import { FEATURES } from "@/config/features";
+
 type ExportButtonProps = {
   loading: boolean;
   successMessage: string;
@@ -15,6 +18,12 @@ export function ExportButton({
   onExport,
   disabled = false,
 }: ExportButtonProps) {
+  const { messages } = useI18n();
+
+  if (!FEATURES.ENABLE_PPTX_EXPORT) {
+    return null;
+  }
+
   return (
     <div className="flex flex-col items-start gap-2">
       <button
@@ -26,11 +35,11 @@ export function ExportButton({
         {loading ? (
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
         ) : null}
-        {loading ? "Exportando PPTX..." : "Exportar PPTX"}
+        {loading ? messages.reports.exportingPptx : messages.reports.exportPptx}
       </button>
       {disabled && !loading ? (
         <p className="text-sm text-slate-500">
-          El contenido del reporte debe estar listo antes de exportar.
+          {messages.reports.exportDisabledHint}
         </p>
       ) : null}
       {successMessage ? (

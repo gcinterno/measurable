@@ -1,4 +1,7 @@
 import type { Workspace } from "@/types/workspace";
+import { PlanLimitsSummary } from "@/components/workspace/PlanLimitsSummary";
+import { useI18n } from "@/components/providers/LanguageProvider";
+import { formatNumber } from "@/lib/formatters";
 
 type WorkspaceCardProps = {
   workspaces: Workspace[];
@@ -11,6 +14,7 @@ export function WorkspaceCard({
   activeWorkspaceId,
   onWorkspaceChange,
 }: WorkspaceCardProps) {
+  const { messages } = useI18n();
   const activeWorkspace =
     workspaces.find((workspace) => workspace.id === activeWorkspaceId) ||
     workspaces[0];
@@ -18,17 +22,17 @@ export function WorkspaceCard({
   if (!activeWorkspace) {
     return (
       <section className="rounded-[24px] border border-white/10 bg-white/8 p-5 backdrop-blur">
-        <p className="text-sm font-medium text-white">Workspace</p>
-        <p className="mt-4 text-lg font-medium">Sin workspace disponible</p>
+        <p className="text-sm font-medium text-white">{messages.workspace.workspace}</p>
+        <p className="mt-4 text-lg font-medium">{messages.workspace.noWorkspace}</p>
         <p className="mt-2 text-sm text-slate-300">
-          Cuando tengas un workspace disponible, podras usarlo para crear reportes e integrar fuentes de datos.
+          {messages.workspace.noWorkspaceDescription}
         </p>
         <button
           type="button"
           disabled
           className="mt-5 rounded-2xl border border-white/10 bg-white/8 px-4 py-2.5 text-sm font-semibold text-slate-300"
         >
-          Crear o seleccionar workspace despues
+          {messages.workspace.createLater}
         </button>
       </section>
     );
@@ -36,7 +40,7 @@ export function WorkspaceCard({
 
   return (
     <section className="rounded-[24px] border border-white/10 bg-white/8 p-5 backdrop-blur">
-      <p className="text-sm font-medium text-white">Workspace activo</p>
+      <p className="text-sm font-medium text-white">{messages.workspace.activeWorkspace}</p>
       <div className="mt-4 rounded-[22px] border border-white/10 bg-slate-950/30 p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-lg font-medium">{activeWorkspace.name}</p>
@@ -59,15 +63,20 @@ export function WorkspaceCard({
           ) : null}
         </div>
         <p className="mt-2 text-sm text-slate-300">
-          {workspaces.length} workspace{workspaces.length === 1 ? "" : "s"} disponible
-          {workspaces.length === 1 ? "" : "s"} en tu cuenta.
+          {(workspaces.length === 1
+            ? messages.workspace.availableCount
+            : messages.workspace.availableCountPlural
+          ).replace("{count}", formatNumber(workspaces.length, 0))}
         </p>
         <p className="mt-2 text-sm text-slate-300">
-          Los nuevos reportes y conexiones usaran este workspace mientras siga activo.
+          {messages.workspace.activeDescription}
         </p>
         {activeWorkspace.slug ? (
-          <p className="mt-2 text-sm text-sky-200">Slug: {activeWorkspace.slug}</p>
+          <p className="mt-2 text-sm text-sky-200">{messages.workspace.slug}: {activeWorkspace.slug}</p>
         ) : null}
+        <div className="mt-4">
+          <PlanLimitsSummary workspace={activeWorkspace} compact />
+        </div>
       </div>
     </section>
   );

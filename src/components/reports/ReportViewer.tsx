@@ -2,17 +2,21 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { useI18n } from "@/components/providers/LanguageProvider";
 import { ReportBlock } from "@/components/reports/ReportBlock";
 import { ExportPanel } from "@/components/reports/ExportPanel";
 import { ReportEmptyState } from "@/components/reports/ReportEmptyState";
 import { ReportHeader } from "@/components/reports/ReportHeader";
 import { ReportVersionsPanel } from "@/components/reports/ReportVersionsPanel";
+import { FEATURES } from "@/config/features";
 import {
   exportReportPptx,
   fetchReportDetail,
   fetchReportVersions,
   updateReportBlock,
 } from "@/lib/api/reports";
+import { getPlanCapabilities } from "@/lib/workspace/plan-limits";
+import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 import type { ReportBlock as ReportBlockType, ReportDetail, ReportVersion } from "@/types/report";
 
 type ReportViewerProps = {
@@ -20,6 +24,9 @@ type ReportViewerProps = {
 };
 
 export function ReportViewer({ reportId }: ReportViewerProps) {
+  const { messages } = useI18n();
+  const { workspace } = useActiveWorkspace();
+  const planCapabilities = getPlanCapabilities(workspace);
   const [report, setReport] = useState<ReportDetail | null>(null);
   const [versions, setVersions] = useState<ReportVersion[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState("");
@@ -42,11 +49,9 @@ export function ReportViewer({ reportId }: ReportViewerProps) {
       setReport(reportData);
       setVersions(versionData);
       setSelectedVersionId(versionData[0]?.id || "");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("report reload error:", err);
-      setError(
-        "No pudimos cargar este reporte en este momento. Vuelve a intentarlo en unos segundos."
-      );
+      setError(messages.reports.loadReportDescription);
     } finally {
       setLoading(false);
     }
@@ -72,15 +77,13 @@ export function ReportViewer({ reportId }: ReportViewerProps) {
         setReport(reportData);
         setVersions(versionData);
         setSelectedVersionId(versionData[0]?.id || "");
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (!active) {
           return;
         }
 
         console.error("report initial load error:", err);
-        setError(
-          "No pudimos cargar este reporte en este momento. Vuelve a intentarlo en unos segundos."
-        );
+        setError(messages.reports.loadReportDescription);
       } finally {
         if (active) {
           setLoading(false);
@@ -93,7 +96,7 @@ export function ReportViewer({ reportId }: ReportViewerProps) {
     return () => {
       active = false;
     };
-  }, [reportId]);
+  }, [messages.reports.loadReportDescription, reportId]);
 
   const selectedVersion = useMemo(
     () => versions.find((version) => version.id === selectedVersionId) || versions[0] || null,
@@ -115,7 +118,7 @@ export function ReportViewer({ reportId }: ReportViewerProps) {
     const versionId = selectedVersion?.id;
 
     if (!versionId) {
-      throw new Error("No hay una version seleccionada para guardar cambios.");
+      throw new Error("There is no selected version to save changes.");
     }
 
     const updatedBlock = await updateReportBlock({
@@ -140,17 +143,57 @@ export function ReportViewer({ reportId }: ReportViewerProps) {
   }
 
   async function handleExport() {
+    if (!FEATURES.ENABLE_PPTX_EXPORT) {
+      return;
+    }
+
+    console.info("[PlanLimits][export.ui]", {
+      currentPlan: planCapabilities.plan,
+      plan: planCapabilities.plan,
+      exportType: "pptx",
+      reportId,
+      allowed: planCapabilities.canExportPptx,
+    });
+
+    if (!planCapabilities.canExportPptx) {
+      setExportError("PPTX export is available on Core and Advanced plans.");
+      return;
+    }
+
     try {
       setExportLoading(true);
       setExportError("");
       setExportSuccess("");
+      console.info("[PlanLimits][export.ui]", {
+        currentPlan: planCapabilities.plan,
+        plan: planCapabilities.plan,
+        exportType: "pptx",
+        reportId,
+        allowed: planCapabilities.canExportPptx,
+        stage: "request start",
+      });
       const message = await exportReportPptx(reportId);
-      setExportSuccess(message || "La exportacion se inicio correctamente.");
-    } catch (err: any) {
+      console.info("[PlanLimits][export.ui]", {
+        currentPlan: planCapabilities.plan,
+        plan: planCapabilities.plan,
+        exportType: "pptx",
+        reportId,
+        allowed: planCapabilities.canExportPptx,
+        stage: "request success",
+      });
+      setExportSuccess(message || messages.reports.exportStarted);
+    } catch (err: unknown) {
+      console.warn("[PlanLimits][export.ui]", {
+        currentPlan: planCapabilities.plan,
+        plan: planCapabilities.plan,
+        exportType: "pptx",
+        reportId,
+        allowed: planCapabilities.canExportPptx,
+        stage: "request failure",
+        error: err instanceof Error ? err.message : String(err),
+      });
       console.error("report export error:", err);
-      setExportError(
-        "No pudimos iniciar la exportacion del PPTX. Intenta nuevamente en unos segundos."
-      );
+      setExportError(messages.reports.exportError);
     } finally {
       setExportLoading(false);
     }
@@ -172,7 +215,7 @@ export function ReportViewer({ reportId }: ReportViewerProps) {
   if (error) {
     return (
       <ReportEmptyState
-        title="No fue posible cargar el reporte"
+        title={messages.reports.loadReportError}
         description={error}
         onRefresh={loadReport}
       />
@@ -182,8 +225,8 @@ export function ReportViewer({ reportId }: ReportViewerProps) {
   if (!report) {
     return (
       <ReportEmptyState
-        title="Reporte no encontrado"
-        description="No encontramos un payload valido para este reporte. Revisa el listado y vuelve a intentarlo."
+        title={messages.reports.reportNotFound}
+        description={messages.reports.reportNotFoundDescription}
         onRefresh={loadReport}
       />
     );
@@ -211,8 +254,8 @@ export function ReportViewer({ reportId }: ReportViewerProps) {
 
           {blocks.length === 0 ? (
             <ReportEmptyState
-              title="El contenido del reporte aún no está disponible"
-              description="Este reporte existe, pero todavia no tenemos bloques listos para renderizar. Puedes actualizar la vista o volver al listado."
+              title={messages.reports.contentUnavailable}
+              description={messages.reports.contentUnavailableDescription}
               onRefresh={loadReport}
             />
           ) : (
@@ -229,19 +272,23 @@ export function ReportViewer({ reportId }: ReportViewerProps) {
         </div>
 
         <div className="space-y-6">
-          <ExportPanel
-            loading={exportLoading}
-            successMessage={exportSuccess}
-            error={exportError}
-            onExport={handleExport}
-            disabled={blocks.length === 0}
-          />
+          {FEATURES.ENABLE_PPTX_EXPORT ? (
+            <ExportPanel
+              loading={exportLoading}
+              successMessage={exportSuccess}
+              error={exportError}
+              onExport={handleExport}
+              disabled={blocks.length === 0 || !planCapabilities.canExportPptx}
+            />
+          ) : null}
 
           {versions.length === 0 ? (
             <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-              <h3 className="text-lg font-semibold text-slate-950">Versions</h3>
+              <h3 className="text-lg font-semibold text-slate-950">
+                {messages.reports.versionsLabel}
+              </h3>
               <p className="mt-2 text-sm leading-6 text-slate-500">
-                El reporte aun no tiene versiones disponibles desde backend.
+                {messages.reports.contentUnavailableDescription}
               </p>
             </section>
           ) : null}

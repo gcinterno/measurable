@@ -1,11 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/layout/AppShell";
+import { useI18n } from "@/components/providers/LanguageProvider";
+import { ReportLibraryCard } from "@/components/reports/ReportLibraryCard";
 import { ReportsEmptyState } from "@/components/reports/ReportsEmptyState";
+import { isAbortError, isAuthError } from "@/lib/api";
 import { fetchReports } from "@/lib/api/reports";
+import { formatNumber } from "@/lib/formatters";
+import { getActiveWorkspaceId } from "@/lib/workspace/session";
 import type { Report } from "@/types/report";
 
 type ReportFolder = {
@@ -15,6 +20,8 @@ type ReportFolder = {
 
 const REPORT_FOLDERS_KEY = "reportFolders";
 const REPORT_FOLDER_ASSIGNMENTS_KEY = "reportFolderAssignments";
+const REPORTS_CACHE_KEY = "reportsPageCache";
+const INITIAL_VISIBLE_REPORTS = 12;
 
 function loadStoredFolders() {
   if (typeof window === "undefined") {
@@ -61,76 +68,103 @@ function saveAssignments(assignments: Record<string, string>) {
   );
 }
 
-function formatDate(value: string) {
-  if (!value) {
-    return "Fecha no disponible";
+function loadCachedReports() {
+  if (typeof window === "undefined") {
+    return [] as Report[];
   }
 
-  const date = new Date(value);
+  try {
+    const raw = window.localStorage.getItem(REPORTS_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as Report[]) : [];
+  } catch {
+    return [];
+  }
+}
 
-  if (Number.isNaN(date.getTime())) {
-    return value;
+function saveCachedReports(reports: Report[]) {
+  if (typeof window === "undefined") {
+    return;
   }
 
-  return new Intl.DateTimeFormat("es-MX", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(date);
+  window.localStorage.setItem(REPORTS_CACHE_KEY, JSON.stringify(reports));
 }
 
 export default function ReportsPage() {
+  const { language, messages } = useI18n();
   const [reports, setReports] = useState<Report[]>([]);
   const [folders, setFolders] = useState<ReportFolder[]>([]);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
   const [newFolderName, setNewFolderName] = useState("");
   const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
   const [activeFolderId, setActiveFolderId] = useState("");
-  const [openMenuReportId, setOpenMenuReportId] = useState("");
+  const [openMenuFolderId, setOpenMenuFolderId] = useState("");
+  const [renamingFolderId, setRenamingFolderId] = useState("");
+  const [renameFolderName, setRenameFolderName] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showStaleBanner, setShowStaleBanner] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_REPORTS);
 
   useEffect(() => {
+    console.log("reports page mounted");
     setFolders(loadStoredFolders());
     setAssignments(loadStoredAssignments());
+    setReports(loadCachedReports());
   }, []);
+
+  const loadReports = useCallback(async (signal?: AbortSignal) => {
+    const workspaceId = getActiveWorkspaceId();
+    const hasToken =
+      typeof window !== "undefined" ? Boolean(window.localStorage.getItem("token")) : false;
+
+    console.log("workspace/user context resolved", {
+      workspaceId: workspaceId || null,
+      hasToken,
+    });
+
+    setLoading(true);
+    setError("");
+    setShowStaleBanner(false);
+
+    try {
+      const data = await fetchReports({ signal });
+
+      setReports(data);
+      saveCachedReports(data);
+      console.log("final rendered report count", data.length);
+    } catch (err: unknown) {
+      if (isAbortError(err)) {
+        return;
+      }
+
+      if (!isAuthError(err)) {
+        console.error("reports list error:", err);
+      }
+
+      const cachedReports = loadCachedReports();
+
+      if (cachedReports.length > 0) {
+        setReports(cachedReports);
+        setShowStaleBanner(true);
+        console.log("final rendered report count", cachedReports.length);
+        return;
+      }
+
+      setError(messages.reports.loadReportDescription);
+    } finally {
+      setLoading(false);
+    }
+  }, [messages.reports.loadReportDescription]);
 
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
 
-    async function loadReports() {
-      try {
-        setLoading(true);
-        setError("");
-        const data = await fetchReports();
-
-        if (!active) {
-          return;
-        }
-
-        setReports(data);
-      } catch (err: unknown) {
-        if (!active) {
-          return;
-        }
-
-        console.error("reports list error:", err);
-        setError(
-          "No pudimos cargar tu libreria de reportes en este momento. Intenta actualizar la vista."
-        );
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void loadReports();
+    void loadReports(controller.signal);
 
     return () => {
-      active = false;
+      controller.abort();
     };
-  }, []);
+  }, [loadReports]);
 
   const unassignedReports = useMemo(
     () => reports.filter((report) => !assignments[report.id]),
@@ -144,6 +178,14 @@ export default function ReportsPage() {
 
     return reports.filter((report) => assignments[report.id] === activeFolderId);
   }, [activeFolderId, assignments, reports, unassignedReports]);
+  const displayedReports = useMemo(
+    () => visibleReports.slice(0, visibleCount),
+    [visibleCount, visibleReports]
+  );
+
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_REPORTS);
+  }, [activeFolderId, reports.length]);
 
   function handleCreateFolder() {
     const trimmedName = newFolderName.trim();
@@ -181,27 +223,105 @@ export default function ReportsPage() {
     saveAssignments(nextAssignments);
   }
 
+  function openRenameFolder(folderId: string) {
+    const currentFolder = folders.find((folder) => folder.id === folderId);
+
+    if (!currentFolder) {
+      return;
+    }
+
+    setRenamingFolderId(folderId);
+    setRenameFolderName(currentFolder.name);
+    setOpenMenuFolderId("");
+  }
+
+  function handleRenameFolder(folderId: string) {
+    const currentFolder = folders.find((folder) => folder.id === folderId);
+    const nextName = renameFolderName.trim();
+
+    if (!currentFolder || !nextName || nextName === currentFolder.name) {
+      setRenamingFolderId("");
+      setRenameFolderName("");
+      return;
+    }
+
+    const nextFolders = folders.map((folder) =>
+      folder.id === folderId
+        ? {
+            ...folder,
+            name: nextName,
+          }
+        : folder
+    );
+
+    setFolders(nextFolders);
+    saveFolders(nextFolders);
+    setRenamingFolderId("");
+    setRenameFolderName("");
+  }
+
+  function handleDeleteFolder(folderId: string) {
+    const currentFolder = folders.find((folder) => folder.id === folderId);
+
+    if (!currentFolder) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      messages.reports.folderDeleteConfirm.replace("{name}", currentFolder.name)
+    );
+
+    if (!confirmed) {
+      setOpenMenuFolderId("");
+      return;
+    }
+
+    const nextFolders = folders.filter((folder) => folder.id !== folderId);
+    const nextAssignments = { ...assignments };
+
+    Object.keys(nextAssignments).forEach((reportId) => {
+      if (nextAssignments[reportId] === folderId) {
+        delete nextAssignments[reportId];
+      }
+    });
+
+    setFolders(nextFolders);
+    saveFolders(nextFolders);
+    setAssignments(nextAssignments);
+    saveAssignments(nextAssignments);
+    setOpenMenuFolderId("");
+
+    if (activeFolderId === folderId) {
+      setActiveFolderId("");
+    }
+
+    if (renamingFolderId === folderId) {
+      setRenamingFolderId("");
+      setRenameFolderName("");
+    }
+  }
+
   return (
     <AppShell>
       <section className="space-y-5 sm:space-y-6">
-        <div className="flex flex-col gap-4 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-8">
-          <div className="max-w-2xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
-              Library
+        <div className="flex flex-col gap-4 px-2 py-1 text-center sm:rounded-[28px] sm:border sm:border-slate-200 sm:bg-white sm:p-8 sm:text-left sm:shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="mx-auto max-w-2xl sm:mx-0">
+            <p className="hidden text-sm font-semibold uppercase tracking-[0.2em] text-sky-600 sm:block">
+              {messages.reports.library}
             </p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-              Tus reportes
+              {messages.reports.libraryTitle}
             </h2>
-            <p className="mt-3 text-sm leading-6 text-slate-500 sm:text-base">
-              Organiza reportes en carpetas para agruparlos por año, cliente o cualquier criterio operativo.
+            <p className="mt-3 hidden text-sm leading-6 text-slate-500 sm:block sm:text-base">
+              {messages.reports.libraryDescription}
             </p>
           </div>
 
           <Link
-            href="/reports/new"
-            className="inline-flex rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+            href="/reports/new/flow"
+            className="mx-auto hidden rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold !text-white transition hover:bg-slate-800 sm:inline-flex sm:mx-0"
           >
-            Nuevo reporte
+            {messages.nav.newReport}
           </Link>
         </div>
 
@@ -211,7 +331,7 @@ export default function ReportsPage() {
             onClick={() => setShowCreateFolderModal(true)}
             className="inline-flex rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
           >
-            + Crear carpeta
+            + {messages.reports.folderCreate}
           </button>
         </div>
 
@@ -229,17 +349,30 @@ export default function ReportsPage() {
         {!loading && error ? (
           <section className="rounded-[28px] border border-red-200 bg-white p-6 shadow-sm sm:p-8">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-red-600">
-              Error
+              {messages.common.error}
             </p>
             <h3 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">
-              No fue posible cargar los reportes
+              {messages.reports.loadReportsErrorTitle}
             </h3>
             <p className="mt-3 text-sm leading-6 text-slate-500 sm:text-base">
               {error}
             </p>
             <p className="mt-2 text-sm leading-6 text-slate-400">
-              Tu sesion sigue activa. Solo necesitamos volver a consultar la lista.
+              {messages.reports.loadReportsErrorDescription}
             </p>
+            <button
+              type="button"
+              onClick={() => void loadReports()}
+              className="mt-5 inline-flex rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              {messages.reports.tryAgain}
+            </button>
+          </section>
+        ) : null}
+
+        {!loading && !error && showStaleBanner ? (
+          <section className="rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800 shadow-sm">
+            {messages.reports.staleBanner}
           </section>
         ) : null}
 
@@ -258,22 +391,100 @@ export default function ReportsPage() {
                       : "border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
                   }`}
                 >
-                  Sin carpeta
+                  {messages.reports.folderNone}
                 </button>
-                {folders.map((folder) => (
-                  <button
-                    key={folder.id}
-                    type="button"
-                    onClick={() => setActiveFolderId(folder.id)}
-                    className={`rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
-                      activeFolderId === folder.id
-                        ? "bg-sky-600 text-white"
-                        : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    {folder.name}
-                  </button>
-                ))}
+                {folders.map((folder) => {
+                  const active = activeFolderId === folder.id;
+
+                  return (
+                    <div key={folder.id} className="relative">
+                      <div
+                        className={`flex items-center overflow-hidden rounded-2xl text-sm font-semibold transition ${
+                          active
+                            ? "bg-sky-600 text-white"
+                            : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setActiveFolderId(folder.id)}
+                          className="px-4 py-2.5"
+                        >
+                          {folder.name}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Folder options for ${folder.name}`}
+                          onClick={() =>
+                            setOpenMenuFolderId((current) =>
+                              current === folder.id ? "" : folder.id
+                            )
+                          }
+                          className={`px-3 py-2.5 transition ${
+                            active
+                              ? "bg-sky-700/30 text-white hover:bg-sky-700/50"
+                              : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                          }`}
+                        >
+                          ...
+                        </button>
+                      </div>
+
+                      {openMenuFolderId === folder.id ? (
+                        <div className="absolute left-0 top-12 z-10 w-44 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
+                          <button
+                            type="button"
+                            onClick={() => openRenameFolder(folder.id)}
+                            className="flex w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                          >
+                            {messages.reports.folderRename}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteFolder(folder.id)}
+                            className="flex w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-red-600 transition hover:bg-red-50"
+                          >
+                            {messages.reports.folderDelete}
+                          </button>
+                        </div>
+                      ) : null}
+
+                      {renamingFolderId === folder.id ? (
+                        <div className="absolute left-0 top-12 z-20 w-64 rounded-2xl border border-slate-200 bg-white p-3 shadow-lg">
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                            {messages.reports.folderRename}
+                          </p>
+                          <input
+                            type="text"
+                            value={renameFolderName}
+                            onChange={(event) => setRenameFolderName(event.target.value)}
+                            className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                            autoFocus
+                          />
+                          <div className="mt-3 flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRenamingFolderId("");
+                                setRenameFolderName("");
+                              }}
+                              className="rounded-xl px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+                            >
+                              {messages.common.cancel}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRenameFolder(folder.id)}
+                              className="rounded-xl bg-slate-950 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                            >
+                              {messages.common.save}
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             </section>
 
@@ -281,89 +492,66 @@ export default function ReportsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
-                    Reportes
+                    {messages.nav.reports}
                   </p>
                   <h3 className="mt-2 text-2xl font-semibold text-slate-950">
-                    Ultimos reportes
+                    {messages.reports.latestReports}
                   </h3>
                   <p className="mt-1 text-sm text-slate-500">
                     {activeFolderId
-                      ? `Viendo los reportes de ${
+                      ? messages.reports.folderViewSelected.replace(
+                          "{name}",
                           folders.find((folder) => folder.id === activeFolderId)?.name ||
-                          "la carpeta seleccionada"
-                        }.`
-                      : "Viendo reportes sin carpeta."}
+                            messages.reports.folderNone
+                        )
+                      : messages.reports.folderViewNone}
                   </p>
                 </div>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                  {visibleReports.length}
+                  {formatNumber(visibleReports.length, 0)}
                 </span>
               </div>
 
               {visibleReports.length > 0 ? (
-                <div className="mt-6 space-y-3">
-                  {visibleReports.map((report) => (
-                    <div
+                <div className="mt-6 grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+                  {displayedReports.map((report) => (
+                    <ReportLibraryCard
                       key={report.id}
-                      className="flex flex-col gap-3 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="min-w-0">
-                        <Link
-                          href={`/reports/${report.id}`}
-                          className="block truncate text-sm font-medium text-slate-950 transition hover:text-sky-700 sm:text-base"
-                        >
-                          <span>{report.title}</span>
-                          <span className="ml-2 text-slate-500">
-                            creado el {formatDate(report.createdAt)}
-                          </span>
-                        </Link>
-                      </div>
-
-                      <div className="relative flex shrink-0 justify-end">
-                        <button
-                          type="button"
-                          aria-label="Opciones del reporte"
-                          onClick={() =>
-                            setOpenMenuReportId((current) =>
-                              current === report.id ? "" : report.id
-                            )
-                          }
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                        >
-                          ...
-                        </button>
-
-                        {openMenuReportId === report.id ? (
-                          <div className="absolute right-0 top-11 z-10 w-64 rounded-2xl border border-slate-200 bg-white p-3 shadow-lg">
-                            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                              Añadir a carpeta
-                            </p>
-                            <select
-                              value={assignments[report.id] || ""}
-                              onChange={(event) => {
-                                handleMoveReport(report.id, event.target.value);
-                                setOpenMenuReportId("");
-                              }}
-                              className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
-                            >
-                              <option value="">Sin carpeta</option>
-                              {folders.map((folder) => (
-                                <option key={folder.id} value={folder.id}>
-                                  {folder.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
+                      report={report}
+                      folders={folders}
+                      folderId={assignments[report.id] || ""}
+                      onMoveToFolder={handleMoveReport}
+                      onDeleted={(reportId) => {
+                        const nextReports = reports.filter((item) => item.id !== reportId);
+                        const nextAssignments = { ...assignments };
+                        delete nextAssignments[reportId];
+                        setReports(nextReports);
+                        saveCachedReports(nextReports);
+                        setAssignments(nextAssignments);
+                        saveAssignments(nextAssignments);
+                      }}
+                    />
                   ))}
                 </div>
               ) : (
                 <div className="mt-6 rounded-[24px] border border-dashed border-slate-300 bg-slate-50 px-5 py-6 text-sm text-slate-500">
-                  No hay reportes en esta carpeta por ahora.
+                  {messages.reports.noReportsInFolder}
                 </div>
               )}
+
+              {visibleReports.length > displayedReports.length ? (
+                <div className="mt-6 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setVisibleCount((current) => current + INITIAL_VISIBLE_REPORTS)
+                    }
+                    className="inline-flex rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    {messages.reports.viewMore}
+                  </button>
+                </div>
+              ) : null}
             </section>
           </div>
         ) : null}
@@ -373,19 +561,19 @@ export default function ReportsPage() {
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/20 px-4 backdrop-blur-[2px]">
           <div className="w-full max-w-sm rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.18)] sm:p-6">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
-              Nueva carpeta
+              {messages.reports.folderNew}
             </p>
             <h3 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">
-              Crear carpeta
+              {messages.reports.folderCreate}
             </h3>
             <label className="mt-5 block text-sm font-medium text-slate-700">
-              Nombre de carpeta
+              {messages.reports.folderName}
             </label>
             <input
               type="text"
               value={newFolderName}
               onChange={(event) => setNewFolderName(event.target.value)}
-              placeholder="Ej. Reportes 2025"
+              placeholder={language === "es" ? "ej. Reportes 2025" : "e.g. 2025 Reports"}
               className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
               autoFocus
             />
@@ -399,14 +587,14 @@ export default function ReportsPage() {
                 }}
                 className="inline-flex rounded-2xl px-4 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
               >
-                Cancelar
+                {messages.common.cancel}
               </button>
               <button
                 type="button"
                 onClick={handleCreateFolder}
                 className="inline-flex rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
               >
-                Crear
+                {messages.common.create}
               </button>
             </div>
           </div>

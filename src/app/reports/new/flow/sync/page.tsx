@@ -2,43 +2,37 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { AdAccountSelector } from "@/components/integrations/AdAccountSelector";
+import { useI18n } from "@/components/providers/LanguageProvider";
+import { DesktopFlowSteps } from "@/components/reports/flow/DesktopFlowSteps";
+import { FlowLoadingOverlay } from "@/components/reports/flow/FlowLoadingOverlay";
+import { MobileFlowHeader } from "@/components/reports/flow/MobileFlowHeader";
+import { ApiError, isLimitError } from "@/lib/api";
 import {
+  fetchMetaInstagramAccounts,
   fetchMetaPages,
   selectMetaPage,
   syncMetaPages,
 } from "@/lib/api/integrations";
 import {
+  integrationCatalog,
+  isMetaFrontendIntegrationKey,
+} from "@/lib/integrations/catalog";
+import {
   getIntegrationReportContext,
   setIntegrationReportContext,
 } from "@/lib/integrations/session";
-import { integrationCatalog } from "@/lib/integrations/catalog";
-
-const flowSteps = [
-  {
-    id: 1,
-    title: "Elegir fuente",
-    description: "Selecciona la integración o el origen del reporte.",
-  },
-  {
-    id: 2,
-    title: "Sincronizar datos",
-    description: "Conecta la fuente y deja listos los datos reales.",
-  },
-  {
-    id: 3,
-    title: "Generar reporte",
-    description: "Crea el reporte desde los datos ya preparados.",
-  },
-  {
-    id: 4,
-    title: "Revisar resultado",
-    description: "Abre el reporte generado y continúa el análisis.",
-  },
-] as const;
+import {
+  formatMetaTimeframeLabel,
+  isMetaTimeframeOptionId,
+  META_TIMEFRAME_OPTIONS,
+  normalizeMetaTimeframeSelection,
+  type MetaTimeframeOptionId,
+  validateMetaTimeframe,
+} from "@/lib/integrations/timeframes";
 
 type MetaOption = {
   id: string;
@@ -46,6 +40,7 @@ type MetaOption = {
 };
 
 function NewReportFlowSyncPageContent() {
+  const { messages } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
   const storedIntegrationContext = getIntegrationReportContext();
@@ -54,6 +49,7 @@ function NewReportFlowSyncPageContent() {
   const selectedIntegration = integrationCatalog.find(
     (integration) => integration.integrationKey === integrationSource
   );
+  const isMetaSource = isMetaFrontendIntegrationKey(integrationSource);
   const integrationId = storedIntegrationContext?.integrationId || "";
   const workspaceId = storedIntegrationContext?.workspaceId || "1";
   const currentStep = 2;
@@ -66,10 +62,66 @@ function NewReportFlowSyncPageContent() {
   const [selectedPageId, setSelectedPageId] = useState(
     storedIntegrationContext?.pageId || ""
   );
+  const [selectedTimeframe, setSelectedTimeframe] = useState<MetaTimeframeOptionId>(
+    isMetaTimeframeOptionId(storedIntegrationContext?.timeframe)
+      ? storedIntegrationContext.timeframe
+      : "last_28_days"
+  );
+  const [startDate, setStartDate] = useState(storedIntegrationContext?.startDate || "");
+  const [endDate, setEndDate] = useState(storedIntegrationContext?.endDate || "");
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [syncLoading, setSyncLoading] = useState(false);
+  const [pagesError, setPagesError] = useState("");
   const [error, setError] = useState("");
+  const sourceConfig =
+    integrationSource === "instagram_business"
+      ? {
+          loadingLabel: "Loading available Instagram Business accounts...",
+          errorEyebrow: "Instagram Business",
+          errorTitle: "We could not load your Instagram Business accounts",
+          selectorEyebrow: "Instagram Business",
+          selectorTitle: "Select an Instagram Business account",
+          selectorDescription:
+            "Choose the Instagram Business account you want to sync for this report.",
+          selectedLabel: "Selected account",
+          emptyMessage:
+            "No Instagram Business accounts found. Make sure your Instagram account is Business/Creator and linked to a Facebook Page.",
+        }
+      : {
+          loadingLabel: "Loading available Facebook Pages...",
+          errorEyebrow: "Facebook Pages",
+          errorTitle: "We could not load your pages",
+          selectorEyebrow: "Facebook Pages",
+          selectorTitle: "Select a page",
+          selectorDescription:
+            "Choose the Facebook Page you want to sync for this report.",
+          selectedLabel: "Selected page",
+          emptyMessage:
+            "No Facebook Pages found. Reconnect Facebook and select at least one Page.",
+        };
+  const flowSteps = [
+    {
+      id: 1,
+      title: messages.reports.chooseSource,
+      description: messages.reports.chooseSourceDescription,
+    },
+    {
+      id: 2,
+      title: messages.reports.syncData,
+      description: messages.reports.syncDataDescription,
+    },
+    {
+      id: 3,
+      title: messages.reports.generateReport,
+      description: messages.reports.generateReportDescription,
+    },
+    {
+      id: 4,
+      title: messages.reports.reviewResult,
+      description: messages.reports.reviewResultDescription,
+    },
+  ] as const;
 
   useEffect(() => {
     if (!loading) {
@@ -92,94 +144,276 @@ function NewReportFlowSyncPageContent() {
     };
   }, [loading]);
 
-  useEffect(() => {
-    let active = true;
-
-    async function loadPages() {
-      if (selectedIntegration?.integrationKey !== "meta") {
-        setLoading(false);
-        return;
-      }
-
-      if (!integrationId) {
-        setLoading(false);
-        setError(
-          "No encontramos una integración activa. Vuelve al paso 1 y confirma la integración."
-        );
-        return;
-      }
-
-      try {
-        setLoading(true);
-        setError("");
-        const pageData = await fetchMetaPages(integrationId);
-
-        if (!active) {
-          return;
-        }
-
-        setPages(pageData);
-      } catch (err: unknown) {
-        if (!active) {
-          return;
-        }
-
-        console.error("flow sync pages load error:", err);
-        setError(
-          "No pudimos cargar las páginas disponibles. Intenta nuevamente."
-        );
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
+  const loadPages = useCallback(async () => {
+    if (!isMetaSource) {
+      setLoading(false);
+      return;
     }
 
-    void loadPages();
+    if (!integrationId) {
+      setLoading(false);
+      setPages([]);
+      setPagesError(messages.reports.missingIntegration);
+      return;
+    }
 
-    return () => {
-      active = false;
-    };
-  }, [integrationId, selectedIntegration?.integrationKey]);
+    try {
+      setLoading(true);
+      setPagesError("");
+      const pageData =
+        integrationSource === "instagram_business"
+          ? await fetchMetaInstagramAccounts(integrationId)
+          : await fetchMetaPages(integrationId);
+
+      setPages(pageData);
+    } catch (err: unknown) {
+      console.error("flow sync pages load error:", err);
+      setPages([]);
+      setPagesError(messages.reports.loadPagesError);
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    integrationId,
+    integrationSource,
+    isMetaSource,
+    messages.reports.loadPagesError,
+    messages.reports.missingIntegration,
+  ]);
+
+  useEffect(() => {
+    void loadPages();
+  }, [loadPages]);
+
+  useEffect(() => {
+    if (loading || !selectedPageId) {
+      return;
+    }
+
+    const selectedPageStillExists = pages.some((page) => page.id === selectedPageId);
+
+    if (selectedPageStillExists) {
+      return;
+    }
+
+    setSelectedPageId("");
+
+    if (!storedIntegrationContext) {
+      return;
+    }
+
+    setIntegrationReportContext({
+      ...storedIntegrationContext,
+      pageId: undefined,
+      pageName: undefined,
+      datasetId: undefined,
+      synced: false,
+    });
+  }, [loading, pages, selectedPageId, storedIntegrationContext]);
+
+  useEffect(() => {
+    if (!storedIntegrationContext || storedIntegrationContext.pageName || !selectedPageId) {
+      return;
+    }
+
+    const selectedPage = pages.find((page) => page.id === selectedPageId);
+
+    if (!selectedPage) {
+      return;
+    }
+
+    const normalizedSelection = normalizeMetaTimeframeSelection({
+      preset: selectedTimeframe,
+      startDate,
+      endDate,
+    });
+    const selectionChanged =
+      storedIntegrationContext.timeframe !== normalizedSelection.key ||
+      storedIntegrationContext.startDate !== normalizedSelection.startDate ||
+      storedIntegrationContext.endDate !== normalizedSelection.endDate ||
+      storedIntegrationContext.pageId !== selectedPageId;
+
+    if (selectionChanged && (storedIntegrationContext.datasetId || storedIntegrationContext.synced)) {
+      console.info("[MetaTimeframe][flow.sync.invalidate]", {
+        reason: "timeframe_or_page_changed",
+        previousDatasetId: storedIntegrationContext.datasetId,
+        previousSynced: storedIntegrationContext.synced,
+        previousPageId: storedIntegrationContext.pageId,
+        nextPageId: selectedPageId,
+        previousTimeframe: storedIntegrationContext.timeframe,
+        nextTimeframe: normalizedSelection.key,
+        previousStartDate: storedIntegrationContext.startDate,
+        nextStartDate: normalizedSelection.startDate,
+        previousEndDate: storedIntegrationContext.endDate,
+        nextEndDate: normalizedSelection.endDate,
+      });
+    }
+
+    setIntegrationReportContext({
+      ...storedIntegrationContext,
+      pageId: selectedPageId,
+      pageName: selectedPage.name,
+      timeframe: normalizedSelection.key,
+      startDate: normalizedSelection.startDate,
+      endDate: normalizedSelection.endDate,
+      timeframeSelection: normalizedSelection,
+      datasetId: selectionChanged ? undefined : storedIntegrationContext.datasetId,
+      synced: selectionChanged ? false : storedIntegrationContext.synced,
+    });
+  }, [endDate, pages, selectedPageId, selectedTimeframe, startDate, storedIntegrationContext]);
+
+  useEffect(() => {
+    if (!storedIntegrationContext) {
+      return;
+    }
+
+    const normalizedSelection = normalizeMetaTimeframeSelection({
+      preset: selectedTimeframe,
+      startDate,
+      endDate,
+    });
+    const selectionChanged =
+      storedIntegrationContext.timeframe !== normalizedSelection.key ||
+      storedIntegrationContext.startDate !== normalizedSelection.startDate ||
+      storedIntegrationContext.endDate !== normalizedSelection.endDate;
+
+    if (selectionChanged && (storedIntegrationContext.datasetId || storedIntegrationContext.synced)) {
+      console.info("[MetaTimeframe][flow.sync.invalidate]", {
+        reason: "timeframe_changed",
+        previousDatasetId: storedIntegrationContext.datasetId,
+        previousSynced: storedIntegrationContext.synced,
+        previousTimeframe: storedIntegrationContext.timeframe,
+        nextTimeframe: normalizedSelection.key,
+        previousStartDate: storedIntegrationContext.startDate,
+        nextStartDate: normalizedSelection.startDate,
+        previousEndDate: storedIntegrationContext.endDate,
+        nextEndDate: normalizedSelection.endDate,
+      });
+    }
+
+    setIntegrationReportContext({
+      ...storedIntegrationContext,
+      timeframe: normalizedSelection.key,
+      startDate: normalizedSelection.startDate,
+      endDate: normalizedSelection.endDate,
+      timeframeSelection: normalizedSelection,
+      datasetId: selectionChanged ? undefined : storedIntegrationContext.datasetId,
+      synced: selectionChanged ? false : storedIntegrationContext.synced,
+    });
+  }, [endDate, selectedTimeframe, startDate, storedIntegrationContext]);
 
   async function handleSync() {
+    if (!integrationId) {
+      setError(
+        "We could not find the Meta integration_id in the current session. Reconnect the integration and try again."
+      );
+      return;
+    }
+
     if (!selectedPageId) {
-      setError("Selecciona una página antes de sincronizar.");
+      setError(messages.reports.selectPageBeforeSync);
+      return;
+    }
+
+    const timeframeError = validateMetaTimeframe({
+      timeframe: selectedTimeframe,
+      startDate,
+      endDate,
+    });
+
+    if (timeframeError) {
+      setError(timeframeError);
       return;
     }
 
     try {
       setSyncLoading(true);
       setError("");
+      const selectedPage = pages.find((page) => page.id === selectedPageId);
+      const normalizedSelection = normalizeMetaTimeframeSelection({
+        preset: selectedTimeframe,
+        startDate,
+        endDate,
+      });
+      const syncInput = {
+        integrationId,
+        pageId: selectedPageId,
+        timeframe: normalizedSelection.key,
+        startDate: normalizedSelection.startDate,
+        endDate: normalizedSelection.endDate,
+      };
+
+      console.info("[MetaTimeframe][flow.sync.before]", {
+        selectedTimeframe: normalizedSelection.key,
+        startDate: normalizedSelection.startDate,
+        endDate: normalizedSelection.endDate,
+        selectedPageId,
+        previousDatasetId: storedIntegrationContext?.datasetId,
+        previousSynced: storedIntegrationContext?.synced,
+        persistedContext: storedIntegrationContext,
+        timeframeSelection: normalizedSelection,
+        syncInput,
+      });
+
+      console.log("SYNC PAYLOAD", {
+        integrationId,
+        selectedPageId,
+      });
+
       await selectMetaPage({
         integrationId,
         pageId: selectedPageId,
       });
 
-      const response = await syncMetaPages({
-        integrationId,
-        pageId: selectedPageId,
-      });
+      const response = await syncMetaPages(syncInput);
 
       const nextIntegrationId = response.integrationId || integrationId;
       const nextDatasetId = response.datasetId || "";
 
-      setIntegrationReportContext({
-        source: "meta",
+      if (!nextDatasetId) {
+        throw new Error("Sync completed without dataset_id.");
+      }
+
+      const nextContext = {
+        source: integrationSource || storedIntegrationContext?.source || "facebook_pages",
         integration: "meta",
         workspaceId,
         integrationId: nextIntegrationId,
         pageId: selectedPageId,
+        pageName: selectedPage?.name || storedIntegrationContext?.pageName,
+        timeframe: normalizedSelection.key,
+        startDate: normalizedSelection.startDate,
+        endDate: normalizedSelection.endDate,
+        timeframeSelection: normalizedSelection,
         datasetId: nextDatasetId,
         synced: true,
+        requestedSlides: storedIntegrationContext?.requestedSlides,
+        aiMode: storedIntegrationContext?.aiMode,
+      };
+
+      console.info("[MetaTimeframe][flow.sync.after]", {
+        responseDatasetId: response.datasetId,
+        nextDatasetId,
+        nextSynced: true,
+        responseIntegrationId: response.integrationId,
+        persistedContext: nextContext,
+        raw: response.raw,
       });
 
-      router.replace("/reports/new/flow/generate?integration=meta");
+      setIntegrationReportContext(nextContext);
+
+      router.replace(
+        `/reports/new/flow/generate?integration=${integrationSource || "facebook_pages"}`
+      );
     } catch (err: unknown) {
       console.error("flow meta sync error:", err);
-      setError(
-        "No pudimos sincronizar los datos de la página. Intenta nuevamente."
-      );
+      if (isLimitError(err)) {
+        setError(err.message || messages.reports.syncPageDataError);
+      } else if (err instanceof ApiError && err.message) {
+        setError(err.message);
+      } else {
+        setError(messages.reports.syncPageDataError);
+      }
     } finally {
       setSyncLoading(false);
     }
@@ -187,106 +421,138 @@ function NewReportFlowSyncPageContent() {
 
   return (
     <AppShell>
+      {syncLoading ? (
+        <FlowLoadingOverlay
+          title={messages.reports.syncing}
+          description="We are syncing your Meta data. This can take a moment."
+        />
+      ) : null}
       <div className="space-y-5 sm:space-y-6">
+        <MobileFlowHeader
+          currentStep={currentStep}
+          totalSteps={flowSteps.length}
+          title={messages.reports.syncData}
+          description={messages.reports.completeSelectionDescription}
+          backHref={previousStepHref}
+        />
         <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
-          <div className="max-w-3xl">
+          <div className="hidden max-w-3xl md:block">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
-              Flujo guiado
+              {messages.review.guidedFlow}
             </p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-              Sincronizar datos
+              {messages.reports.syncData}
             </h1>
             <p className="mt-3 text-sm leading-6 text-slate-500 sm:text-base">
-              Completa la selección de página y sincroniza los datos reales antes de generar el reporte.
+              {messages.reports.completeSelectionDescription}
             </p>
           </div>
 
-          <div className="mt-8 grid gap-4 lg:grid-cols-4">
-            {flowSteps.map((step, index) => {
-              const completed = currentStep > step.id;
-              const active = currentStep === step.id;
-              const isClickable = step.id < currentStep;
-              const stepCard = (
-                <div
-                  className={`relative rounded-[24px] border p-5 transition ${
-                    active
-                      ? "border-slate-950 bg-slate-950 text-white"
-                      : completed
-                        ? "border-sky-200 bg-sky-50 text-slate-950"
-                        : "border-slate-200 bg-slate-50 text-slate-950"
-                  } ${isClickable ? "cursor-pointer hover:border-sky-300 hover:bg-sky-100" : ""}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold ${
-                        active
-                          ? "bg-white text-slate-950"
-                          : completed
-                            ? "bg-sky-600 text-white"
-                            : "bg-white text-slate-500 ring-1 ring-slate-200"
-                      }`}
-                    >
-                      {completed ? "✓" : step.id}
-                    </span>
-                    <div>
-                      <p
-                        className={`text-xs font-semibold uppercase tracking-[0.18em] ${
-                          active
-                            ? "text-sky-200"
-                            : completed
-                              ? "text-sky-700"
-                              : "text-slate-400"
-                        }`}
-                      >
-                        Paso {step.id}
-                      </p>
-                      <h2 className="mt-1 text-lg font-semibold">{step.title}</h2>
-                    </div>
-                  </div>
-                  <p
-                    className={`mt-4 text-sm leading-6 ${
-                      active ? "text-slate-200" : "text-slate-500"
-                    }`}
-                  >
-                    {step.description}
-                  </p>
-                </div>
-              );
-
-              return (
-                <div key={step.id} className="relative">
-                  {index < flowSteps.length - 1 ? (
-                    <div className="absolute left-[calc(50%+26px)] top-6 hidden h-px w-[calc(100%-52px)] bg-slate-200 lg:block" />
-                  ) : null}
-                  {isClickable ? (
-                    <Link href={previousStepHref} className="block rounded-[24px]">
-                      {stepCard}
-                    </Link>
-                  ) : (
-                    stepCard
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <DesktopFlowSteps
+            steps={flowSteps}
+            currentStep={currentStep}
+            stepLabel={messages.common.step}
+            clickableHrefMap={{ 1: previousStepHref }}
+          />
 
           <div className="mt-8 space-y-5 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
-                Integración confirmada
+                {messages.reports.confirmedIntegration}
               </p>
               <h2 className="mt-3 text-2xl font-semibold text-slate-950">
-                {selectedIntegration?.name || "Fuente seleccionada"}
+                {selectedIntegration?.name || messages.reports.selectedSource}
               </h2>
+              <p className="mt-2 text-sm text-slate-500">
+                Period: {formatMetaTimeframeLabel({
+                  timeframe: selectedTimeframe,
+                  startDate,
+                  endDate,
+                })}
+              </p>
             </div>
 
-            {selectedIntegration?.integrationKey === "meta" ? (
+            {isMetaSource ? (
               <>
+                <section className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
+                    {messages.reports.timeframe}
+                  </p>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {META_TIMEFRAME_OPTIONS.map((option) => {
+                      const active = option.id === selectedTimeframe;
+
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedTimeframe(option.id);
+                            setError("");
+
+                            if (option.id !== "custom") {
+                              setStartDate("");
+                              setEndDate("");
+                            }
+                          }}
+                          className={`rounded-2xl border px-4 py-4 text-left transition ${
+                            active
+                              ? "border-slate-950 bg-slate-950 text-white"
+                              : "border-slate-200 bg-slate-50 text-slate-950 hover:bg-slate-100"
+                          }`}
+                        >
+                          <p className="text-sm font-semibold">{option.label}</p>
+                          <p
+                            className={`mt-1 text-sm ${
+                              active ? "text-slate-200" : "text-slate-500"
+                            }`}
+                          >
+                            {option.description}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {selectedTimeframe === "custom" ? (
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <label className="block">
+                        <span className="mb-2 block text-sm font-medium text-slate-700">
+                          Start date
+                        </span>
+                        <input
+                          type="date"
+                          value={startDate}
+                          onChange={(event) => {
+                            setStartDate(event.target.value);
+                            setError("");
+                          }}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-2 block text-sm font-medium text-slate-700">
+                          End date
+                        </span>
+                        <input
+                          type="date"
+                          value={endDate}
+                          onChange={(event) => {
+                            setEndDate(event.target.value);
+                            setError("");
+                          }}
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                </section>
+
                 {loading ? (
                   <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6">
                     <div className="flex items-center justify-between gap-4 text-sm">
                       <span className="font-medium text-slate-700">
-                        Cargando páginas disponibles...
+                        {sourceConfig.loadingLabel}
                       </span>
                       <span className="font-semibold text-sky-700">
                         {loadingProgress}%
@@ -307,6 +573,27 @@ function NewReportFlowSyncPageContent() {
                       <span>100%</span>
                     </div>
                   </div>
+                ) : pagesError ? (
+                  <div className="rounded-[28px] border border-red-200 bg-white p-6 shadow-sm">
+                    <p className="text-sm font-semibold uppercase tracking-[0.2em] text-red-600">
+                      {sourceConfig.errorEyebrow}
+                    </p>
+                    <h3 className="mt-3 text-2xl font-semibold text-slate-950">
+                      {sourceConfig.errorTitle}
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">
+                      {pagesError}
+                    </p>
+                    <div className="mt-5 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() => void loadPages()}
+                        className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   <AdAccountSelector
                     accounts={pages}
@@ -316,6 +603,11 @@ function NewReportFlowSyncPageContent() {
                       setError("");
                     }}
                     loading={syncLoading}
+                    eyebrow={sourceConfig.selectorEyebrow}
+                    title={sourceConfig.selectorTitle}
+                    description={sourceConfig.selectorDescription}
+                    selectedLabel={sourceConfig.selectedLabel}
+                    emptyMessage={sourceConfig.emptyMessage}
                   />
                 )}
 
@@ -324,21 +616,24 @@ function NewReportFlowSyncPageContent() {
                     type="button"
                     onClick={handleSync}
                     disabled={loading || syncLoading || !selectedPageId}
-                    className="inline-flex rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                   >
-                    {syncLoading ? "Sincronizando..." : "Sincronizar datos"}
+                    {syncLoading ? (
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    ) : null}
+                    {syncLoading ? messages.reports.syncing : messages.reports.syncData}
                   </button>
                   <Link
                     href="/reports/new/flow"
                     className="inline-flex rounded-2xl px-4 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-white hover:text-slate-700"
                   >
-                    Volver
+                    {messages.common.back}
                   </Link>
                 </div>
               </>
             ) : (
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500">
-                Este flujo de sincronización todavía está habilitado solo para Meta.
+                {messages.reports.metaOnlySync}
               </div>
             )}
 

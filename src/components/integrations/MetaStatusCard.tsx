@@ -19,60 +19,60 @@ function getStateCopy(state: MetaStatusCardProps["state"]) {
   switch (state) {
     case "connected":
       return {
-        badge: "Conexión lista",
-        title: "Facebook Pages conectado correctamente",
+        badge: "Connection ready",
+        title: "Facebook Pages connected successfully",
         description:
-          "La autorización ya quedó lista. El siguiente paso es elegir la página que quieres usar en el reporte.",
+          "Authorization is complete. The next step is choosing the page you want to use in the report.",
       };
     case "pages_loaded":
       return {
-        badge: "Páginas disponibles",
-        title: "Ya puedes elegir una página",
+        badge: "Pages available",
+        title: "You can now choose a page",
         description:
-          "Selecciona la página correcta y confirma la selección para continuar con la sincronización.",
+          "Select the correct page and confirm the selection to continue with the sync.",
       };
     case "page_selected":
       return {
-        badge: "Página seleccionada",
-        title: "Todo listo para sincronizar datos",
+        badge: "Page selected",
+        title: "Everything is ready to sync data",
         description:
-          "La página ya quedó guardada. Ahora puedes sincronizar los datos reales desde Facebook Pages.",
+          "The page has been saved. You can now sync the real data from Facebook Pages.",
       };
     case "syncing":
       return {
-        badge: "Sincronizando",
-        title: "Sincronizando datos de Facebook Pages",
+        badge: "Syncing",
+        title: "Syncing Facebook Pages data",
         description:
-          "Estamos consultando el backend para dejar los datos listos antes de generar el reporte.",
+          "We are querying the backend to prepare the data before generating the report.",
       };
     case "synced":
       return {
-        badge: "Sincronizado",
-        title: "Datos sincronizados correctamente",
+        badge: "Synced",
+        title: "Data synced successfully",
         description:
-          "La información ya está lista. El siguiente paso es generar el reporte dentro de la plataforma.",
+          "The information is ready. The next step is generating the report inside the platform.",
       };
     case "generating_report":
       return {
-        badge: "Generando",
-        title: "Generando el reporte",
+        badge: "Generating",
+        title: "Generating the report",
         description:
-          "Estamos creando el reporte con los datos sincronizados. Te redirigiremos en cuanto esté listo.",
+          "We are creating the report with the synced data. We will redirect you as soon as it is ready.",
       };
     case "error":
       return {
         badge: "Error",
-        title: "Hay un problema en este paso",
+        title: "There is a problem at this step",
         description:
-          "Revisa el mensaje y vuelve a intentar la acción principal para continuar con el flujo.",
+          "Review the message and try the main action again to continue the flow.",
       };
     case "not_connected":
     default:
       return {
-        badge: "Sin conexión",
-        title: "Conecta Facebook Pages para comenzar",
+        badge: "Not connected",
+        title: "Connect Facebook Pages to begin",
         description:
-          "Primero autoriza Facebook Pages. Después podrás elegir una página, sincronizar datos y generar el reporte.",
+          "First authorize Facebook Pages. Then you can choose a page, sync data, and generate the report.",
       };
   }
 }
@@ -101,7 +101,7 @@ export function MetaStatusCard({
             {copy.description}
           </p>
           <p className="mt-4 text-sm text-sky-100">
-            Workspace activo: {workspaceId || "Sin workspace seleccionado"}
+            Active workspace: {workspaceId || "No workspace selected"}
           </p>
         </div>
 

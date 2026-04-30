@@ -1,3 +1,4 @@
+import { readApiResponseText } from "@/lib/api";
 import { apiUrl } from "@/lib/api/config";
 
 type UploadDatasetResponse = {
@@ -50,12 +51,8 @@ export async function uploadDataset(file: File) {
     body: formData,
   });
 
-  const text = await res.text();
+  const text = await readApiResponseText("/datasets/excel", res);
   console.log("upload response:", text);
-
-  if (!res.ok) {
-    throw new Error(text || "Dataset upload failed");
-  }
 
   const data = JSON.parse(text) as UploadDatasetResponse;
 

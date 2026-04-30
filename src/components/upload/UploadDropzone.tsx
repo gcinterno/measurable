@@ -29,7 +29,7 @@ export function UploadDropzone({
     }
 
     if (!isAcceptedFile(selectedFile)) {
-      onError?.("Selecciona un archivo .xlsx, .xls o .csv.");
+      onError?.("Select a .xlsx, .xls, or .csv file.");
       onFileSelect(null);
       return;
     }
@@ -83,13 +83,13 @@ export function UploadDropzone({
           Upload report inputs
         </h3>
         <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
-          Arrastra un archivo o selecciona uno desde tu equipo. Se aceptan formatos Excel y CSV.
+          Drag a file here or select one from your computer. Excel and CSV formats are accepted.
         </p>
         <span className="mt-6 inline-flex rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">
-          {file ? "Cambiar archivo" : "Browse files"}
+          {file ? "Change file" : "Browse files"}
         </span>
         <p className="mt-4 text-sm text-slate-500">
-          {file ? file.name : "Sin archivo seleccionado"}
+          {file ? file.name : "No file selected"}
         </p>
         {helperText ? (
           <p className="mt-2 text-sm text-slate-400">{helperText}</p>

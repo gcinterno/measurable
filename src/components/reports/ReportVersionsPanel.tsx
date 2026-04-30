@@ -1,3 +1,6 @@
+"use client";
+
+import { useI18n } from "@/components/providers/LanguageProvider";
 import type { ReportVersion } from "@/types/report";
 
 type ReportVersionsPanelProps = {
@@ -6,9 +9,9 @@ type ReportVersionsPanelProps = {
   onVersionChange: (versionId: string) => void;
 };
 
-function formatDate(value: string) {
+function formatDate(value: string, language: "en" | "es", fallback: string) {
   if (!value) {
-    return "Fecha no disponible";
+    return fallback;
   }
 
   const date = new Date(value);
@@ -17,11 +20,15 @@ function formatDate(value: string) {
     return value;
   }
 
-  return new Intl.DateTimeFormat("es-MX", {
+  return new Intl.DateTimeFormat(language === "es" ? "es-MX" : "en-US", {
     day: "2-digit",
     month: "short",
     year: "numeric",
   }).format(date);
+}
+
+function getLocaleCode(locale: "en" | "es", messages: ReturnType<typeof useI18n>["messages"]) {
+  return locale === "es" ? messages.reports.localeCodeEs : messages.reports.localeCodeEn;
 }
 
 export function ReportVersionsPanel({
@@ -29,15 +36,17 @@ export function ReportVersionsPanel({
   selectedVersionId,
   onVersionChange,
 }: ReportVersionsPanelProps) {
+  const { language, messages } = useI18n();
+
   return (
     <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
-            Versions
+            {messages.reports.versionsLabel}
           </p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-950">
-            Selecciona una version
+            {messages.reports.selectVersion}
           </h2>
         </div>
         <select
@@ -47,7 +56,8 @@ export function ReportVersionsPanel({
         >
           {versions.map((version) => (
             <option key={version.id} value={version.id}>
-              {version.version} · {version.status} · {formatDate(version.createdAt)}
+              {version.version} · {getLocaleCode(version.locale, messages)} · {version.status} ·{" "}
+              {formatDate(version.createdAt, language, messages.reports.dateUnavailable)}
             </option>
           ))}
         </select>
@@ -62,10 +72,14 @@ export function ReportVersionsPanel({
             >
               <p className="font-medium text-slate-950">{version.version}</p>
               <p className="mt-1 text-sm text-slate-500">
-                Estado: {version.status}
+                {messages.reports.statusLabel}: {version.status}
               </p>
               <p className="mt-1 text-sm text-slate-500">
-                Creado: {formatDate(version.createdAt)}
+                {messages.reports.insightLanguage}: {getLocaleCode(version.locale, messages)}
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                {messages.reports.createdLabel}:{" "}
+                {formatDate(version.createdAt, language, messages.reports.dateUnavailable)}
               </p>
               {version.rawMetadata ? (
                 <pre className="mt-3 overflow-x-auto rounded-xl bg-white p-3 text-xs text-slate-600 ring-1 ring-slate-200">

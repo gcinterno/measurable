@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { useI18n } from "@/components/providers/LanguageProvider";
+import { formatDisplayNumber } from "@/lib/formatters";
 import type { ReportBlock as ReportBlockType } from "@/types/report";
 
 type ReportBlockProps = {
@@ -9,23 +11,24 @@ type ReportBlockProps = {
   onSave: (blockId: string, content: string) => Promise<void>;
 };
 
-function getBlockLabel(type: string) {
+function getBlockLabel(type: string, language: "en" | "es") {
   switch (type) {
     case "heading":
-      return "Heading";
+      return language === "es" ? "Encabezado" : "Heading";
     case "paragraph":
     case "text":
-      return "Text";
+      return language === "es" ? "Texto" : "Text";
     case "chart":
-      return "Chart";
+      return language === "es" ? "Gráfico" : "Chart";
     case "metric":
-      return "Metric";
+      return language === "es" ? "Métrica" : "Metric";
     default:
       return type;
   }
 }
 
 export function ReportBlock({ block, onSave }: ReportBlockProps) {
+  const { language } = useI18n();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(block.content);
   const [saving, setSaving] = useState(false);
@@ -37,10 +40,12 @@ export function ReportBlock({ block, onSave }: ReportBlockProps) {
       setError("");
       await onSave(block.id, value);
       setEditing(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("report block save error:", err);
       setError(
-        "No pudimos guardar este bloque. Intenta nuevamente en unos segundos."
+        language === "es"
+          ? "No pudimos guardar este bloque. Intenta de nuevo en unos segundos."
+          : "We could not save this block. Try again in a few seconds."
       );
     } finally {
       setSaving(false);
@@ -64,7 +69,7 @@ export function ReportBlock({ block, onSave }: ReportBlockProps) {
               disabled={saving}
               className="rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:bg-slate-400"
             >
-              {saving ? "Guardando..." : "Guardar"}
+              {saving ? (language === "es" ? "Guardando..." : "Saving...") : language === "es" ? "Guardar" : "Save"}
             </button>
             <button
               type="button"
@@ -75,7 +80,7 @@ export function ReportBlock({ block, onSave }: ReportBlockProps) {
               }}
               className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
             >
-              Cancelar
+              {language === "es" ? "Cancelar" : "Cancel"}
             </button>
           </div>
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -90,10 +95,10 @@ export function ReportBlock({ block, onSave }: ReportBlockProps) {
         return (
           <div className="rounded-[24px] border border-slate-200 bg-white p-5">
             <p className="text-sm font-medium uppercase tracking-[0.18em] text-slate-400">
-              {block.label || block.title || "Metric"}
+              {block.label || block.title || (language === "es" ? "Métrica" : "Metric")}
             </p>
             <p className="mt-3 text-4xl font-semibold tracking-tight text-slate-950">
-              {block.content}
+              {formatDisplayNumber(block.content)}
             </p>
           </div>
         );
@@ -101,10 +106,13 @@ export function ReportBlock({ block, onSave }: ReportBlockProps) {
         return (
           <div className="rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-6">
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">
-              {block.title || "Chart"}
+              {block.title || (language === "es" ? "Gráfico" : "Chart")}
             </p>
             <p className="mt-3 text-sm leading-6 text-slate-500">
-              {block.content || "El backend devolvio un bloque de grafica. Esta tarjeta reserva el espacio del chart sin inventar dashboards falsos."}
+              {block.content ||
+                (language === "es"
+                  ? "El backend devolvió un bloque de gráfico. Esta tarjeta reserva el espacio del gráfico sin inventar dashboards falsos."
+                  : "The backend returned a chart block. This card reserves space for the chart without inventing fake dashboards.")}
             </p>
           </div>
         );
@@ -120,7 +128,7 @@ export function ReportBlock({ block, onSave }: ReportBlockProps) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
-            {getBlockLabel(block.type)}
+            {getBlockLabel(block.type, language)}
           </p>
           {block.title && block.type !== "heading" ? (
             <h2 className="mt-2 text-lg font-semibold text-slate-950">
@@ -134,7 +142,13 @@ export function ReportBlock({ block, onSave }: ReportBlockProps) {
             onClick={() => setEditing((current) => !current)}
             className="inline-flex rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
           >
-            {editing ? "Cerrar editor" : "Editar"}
+            {editing
+              ? language === "es"
+                ? "Cerrar editor"
+                : "Close editor"
+              : language === "es"
+                ? "Editar"
+                : "Edit"}
           </button>
         ) : null}
       </div>

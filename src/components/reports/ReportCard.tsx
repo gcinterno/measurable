@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { FEATURES } from "@/config/features";
 import type { Report } from "@/types/report";
 
 type ReportCardProps = {
@@ -14,7 +15,7 @@ type ReportCardProps = {
 
 function formatDate(value: string) {
   if (!value) {
-    return "Fecha no disponible";
+    return "Date unavailable";
   }
 
   const date = new Date(value);
@@ -23,7 +24,7 @@ function formatDate(value: string) {
     return value;
   }
 
-  return new Intl.DateTimeFormat("es-MX", {
+  return new Intl.DateTimeFormat("en-US", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -45,27 +46,27 @@ export function ReportCard({
               {report.status}
             </span>
             <span className="text-sm text-slate-500">
-              Creado: {formatDate(report.createdAt)}
+              Created: {formatDate(report.createdAt)}
             </span>
           </div>
           <h2 className="mt-2 text-xl font-semibold text-slate-950">
             {report.title}
           </h2>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            Abre este reporte para revisar su contenido, versiones y exportaciones disponibles.
+            Open this report to review its content, versions, and available exports.
           </p>
         </div>
 
         <div className="flex shrink-0 flex-col gap-3 sm:items-end">
           {onMoveToFolder ? (
             <label className="flex flex-col gap-1 text-sm text-slate-500">
-              <span>Mover a carpeta</span>
+              <span>Move to folder</span>
               <select
                 value={folderId}
                 onChange={(event) => onMoveToFolder(event.target.value)}
                 className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
               >
-                <option value="">Sin carpeta</option>
+                <option value="">No folder</option>
                 {folderOptions.map((folder) => (
                   <option key={folder.id} value={folder.id}>
                     {folder.name}
@@ -75,12 +76,14 @@ export function ReportCard({
             </label>
           ) : null}
 
-          <Link
-            href={`/reports/${report.id}`}
-            className="inline-flex shrink-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-          >
-            Ver reporte
-          </Link>
+          {!FEATURES.ENABLE_APP_REVIEW_MODE ? (
+            <Link
+              href={`/reports/${report.id}`}
+              className="inline-flex shrink-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+            >
+              View report
+            </Link>
+          ) : null}
         </div>
       </div>
     </article>

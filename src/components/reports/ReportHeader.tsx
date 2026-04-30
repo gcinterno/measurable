@@ -1,3 +1,7 @@
+"use client";
+
+import { useI18n } from "@/components/providers/LanguageProvider";
+
 type ReportHeaderProps = {
   title: string;
   status: string;
@@ -6,9 +10,9 @@ type ReportHeaderProps = {
   workspaceId?: string;
 };
 
-function formatDate(value: string) {
+function formatDate(value: string, language: "en" | "es", fallback: string) {
   if (!value) {
-    return "Fecha no disponible";
+    return fallback;
   }
 
   const date = new Date(value);
@@ -17,7 +21,7 @@ function formatDate(value: string) {
     return value;
   }
 
-  return new Intl.DateTimeFormat("es-MX", {
+  return new Intl.DateTimeFormat(language === "es" ? "es-MX" : "en-US", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -31,10 +35,12 @@ export function ReportHeader({
   workspaceName,
   workspaceId,
 }: ReportHeaderProps) {
+  const { language, messages } = useI18n();
+
   return (
     <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
       <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
-        Detalle del reporte
+        {messages.reports.detailLabel}
       </p>
       <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
         {title}
@@ -43,9 +49,20 @@ export function ReportHeader({
         <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
           {status}
         </span>
-        <span>Creado: {formatDate(createdAt)}</span>
-        {workspaceName ? <span>Workspace: {workspaceName}</span> : null}
-        {!workspaceName && workspaceId ? <span>Workspace ID: {workspaceId}</span> : null}
+        <span>
+          {messages.reports.createdLabel}:{" "}
+          {formatDate(createdAt, language, messages.reports.dateUnavailable)}
+        </span>
+        {workspaceName ? (
+          <span>
+            {messages.reports.workspaceLabel}: {workspaceName}
+          </span>
+        ) : null}
+        {!workspaceName && workspaceId ? (
+          <span>
+            {messages.reports.workspaceIdLabel}: {workspaceId}
+          </span>
+        ) : null}
       </div>
     </section>
   );

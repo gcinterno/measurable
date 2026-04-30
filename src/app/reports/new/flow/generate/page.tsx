@@ -2,45 +2,30 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 import { AppShell } from "@/components/layout/AppShell";
-import { createMetaPagesReport } from "@/lib/api/reports";
-import { getIntegrationReportContext } from "@/lib/integrations/session";
+import { useI18n } from "@/components/providers/LanguageProvider";
+import { DesktopFlowSteps } from "@/components/reports/flow/DesktopFlowSteps";
+import { MobileFlowHeader } from "@/components/reports/flow/MobileFlowHeader";
+import { FEATURES } from "@/config/features";
+import {
+  getIntegrationReportContext,
+  setIntegrationReportContext,
+} from "@/lib/integrations/session";
 import { integrationCatalog } from "@/lib/integrations/catalog";
+import {
+  formatMetaTimeframeLabel,
+  normalizeMetaTimeframeSelection,
+} from "@/lib/integrations/timeframes";
+import {
+  canSelectSlideCount,
+  getPlanCapabilities,
+  shouldShowUpgradeCta,
+} from "@/lib/workspace/plan-limits";
+import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 
-type TemplateType = "minimalista" | "moderno";
-
-const flowSteps = [
-  {
-    id: 1,
-    title: "Elegir fuente",
-    description: "Selecciona la integración o el origen del reporte.",
-  },
-  {
-    id: 2,
-    title: "Sincronizar datos",
-    description: "Conecta la fuente y deja listos los datos reales.",
-  },
-  {
-    id: 3,
-    title: "Generar reporte",
-    description: "Crea el reporte desde los datos ya preparados.",
-  },
-  {
-    id: 4,
-    title: "Revisar resultado",
-    description: "Abre el reporte generado y continúa el análisis.",
-  },
-] as const;
-
-const timeframeOptions = [
-  {
-    id: "last-28-days",
-    label: "Últimos 28 días",
-    description: "Periodo activo actualmente para este flujo.",
-  },
-] as const;
+type TemplateType = "modern";
 
 const templateOptions: {
   id: TemplateType;
@@ -49,24 +34,19 @@ const templateOptions: {
   previewClass: string;
 }[] = [
   {
-    id: "minimalista",
-    name: "Minimalista",
-    description: "Lectura limpia y directa para una revisión rápida.",
-    previewClass:
-      "bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] border-slate-200",
-  },
-  {
-    id: "moderno",
-    name: "Moderno",
-    description: "Más contraste visual y bloques destacados.",
+    id: "modern",
+    name: "Modern",
+    description: "More visual contrast and highlighted blocks.",
     previewClass:
       "bg-[linear-gradient(135deg,#0f172a_0%,#1d4ed8_100%)] border-slate-800",
   },
 ];
 
 function NewReportFlowGeneratePageContent() {
+  const { messages } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const showSlideCountLimit = false;
   const storedIntegrationContext = getIntegrationReportContext();
   const integrationSource =
     searchParams.get("integration") || storedIntegrationContext?.source || "";
@@ -83,169 +63,349 @@ function NewReportFlowGeneratePageContent() {
       ? `/reports/new/flow/sync?integration=${integrationSource}`
       : "/reports/new/flow/sync",
   };
-  const [selectedTimeframe, setSelectedTimeframe] = useState(
-    timeframeOptions[0].id
-  );
   const [selectedTemplate, setSelectedTemplate] =
-    useState<TemplateType>("minimalista");
+    useState<TemplateType>("modern");
+  const [selectedSlides, setSelectedSlides] = useState(5);
+  const [aiMode, setAiMode] = useState<"standard" | "agents">(
+    storedIntegrationContext?.aiMode || "standard"
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const { workspace, reportsUsedThisMonth } = useActiveWorkspace({
+    includeReportsUsage: true,
+  });
+  const planCapabilities = getPlanCapabilities(workspace);
+  const slideCountOptions = [{ value: 5, available: true }];
+  const showUpgradeCta =
+    !FEATURES.ENABLE_APP_REVIEW_MODE &&
+    shouldShowUpgradeCta({
+      workspace,
+      reportsUsedThisMonth,
+      estimatedSlides: selectedSlides,
+    });
+  const timeframeLabel = formatMetaTimeframeLabel({
+    timeframe: storedIntegrationContext?.timeframe,
+    startDate: storedIntegrationContext?.startDate,
+    endDate: storedIntegrationContext?.endDate,
+  });
+  const flowSteps = [
+    {
+      id: 1,
+      title: messages.reports.chooseSource,
+      description: messages.reports.chooseSourceDescription,
+    },
+    {
+      id: 2,
+      title: messages.reports.syncData,
+      description: messages.reports.syncDataDescription,
+    },
+    {
+      id: 3,
+      title: messages.reports.generateReport,
+      description: messages.reports.generateReportDescription,
+    },
+    {
+      id: 4,
+      title: messages.reports.reviewResult,
+      description: messages.reports.reviewResultDescription,
+    },
+  ] as const;
 
-  async function handleGenerateReport() {
-    if (!datasetId) {
+  function persistGenerateOptions(
+    nextSlides: number,
+    nextAiMode: "standard" | "agents"
+  ) {
+    const latestContext = getIntegrationReportContext();
+
+    if (!latestContext) {
+      return;
+    }
+
+    setIntegrationReportContext({
+      ...latestContext,
+      requestedSlides: nextSlides,
+      aiMode: nextAiMode,
+    });
+  }
+
+  function handleSelectSlides(nextSlides: number) {
+    console.info("[PlanLimits][ui]", {
+      currentPlan: planCapabilities.plan,
+      maxSlides: planCapabilities.maxSlides,
+      selectedSlides: nextSlides,
+    });
+
+    if (!canSelectSlideCount(planCapabilities, nextSlides)) {
       setError(
-        "Todavía no existe un dataset sincronizado. Completa el paso de sincronización primero."
+        `Your current plan supports up to ${planCapabilities.maxSlides} slides. Upgrade to select ${nextSlides}.`
       );
       return;
     }
 
-    try {
-      setLoading(true);
-      setError("");
-      const report = await createMetaPagesReport({ datasetId });
-      router.replace(
-        `/reports/new/flow/review?integration=${integrationSource}&reportId=${report.reportId}&template=${selectedTemplate}`
-      );
-    } catch (err: unknown) {
-      console.error("flow generate report error:", err);
-      setError("No pudimos generar el reporte. Intenta nuevamente.");
-    } finally {
-      setLoading(false);
+    setError("");
+    setSelectedSlides(nextSlides);
+    persistGenerateOptions(nextSlides, aiMode);
+  }
+
+  function handleSelectAiMode(nextAiMode: "standard" | "agents") {
+    const allowed =
+      nextAiMode === "standard" || planCapabilities.canUseAiAgents;
+
+    console.info("[AIAgents][ui]", {
+      currentPlan: planCapabilities.plan,
+      selectedAiMode: nextAiMode,
+      allowed,
+    });
+
+    if (!allowed) {
+      setError("AI Agents is available in Core and Advanced plans.");
+      return;
     }
+
+    setError("");
+    setAiMode(nextAiMode);
+    persistGenerateOptions(selectedSlides, nextAiMode);
+  }
+
+  useEffect(() => {
+    if (selectedSlides <= planCapabilities.maxSlides) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setSelectedSlides(planCapabilities.maxSlides);
+      persistGenerateOptions(planCapabilities.maxSlides, aiMode);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [aiMode, planCapabilities.maxSlides, selectedSlides]);
+
+  async function handleGenerateReport() {
+    if (!datasetId || !storedIntegrationContext?.synced) {
+      setError(
+        messages.reports.noDatasetYet
+      );
+      return;
+    }
+
+    if (!canSelectSlideCount(planCapabilities, selectedSlides)) {
+      setError(
+        `Your current plan supports up to ${planCapabilities.maxSlides} slides. Choose a smaller report or upgrade.`
+      );
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    const requestedAiMode =
+      aiMode === "agents" && planCapabilities.canUseAiAgents
+        ? "agents"
+        : "standard";
+    const normalizedSelection = normalizeMetaTimeframeSelection({
+      preset: storedIntegrationContext.timeframe,
+      startDate: storedIntegrationContext.startDate,
+      endDate: storedIntegrationContext.endDate,
+    });
+
+    persistGenerateOptions(selectedSlides, requestedAiMode);
+    console.info("[MetaTimeframe][flow.generate.before]", {
+      datasetId,
+      synced: storedIntegrationContext.synced,
+      persistedTimeframe: storedIntegrationContext.timeframe,
+      persistedContext: storedIntegrationContext,
+      timeframeSelection: normalizedSelection,
+      createReportPayload: {
+        dataset_id: Number(datasetId),
+        timeframe: normalizedSelection.key,
+        start_date: normalizedSelection.startDate,
+        end_date: normalizedSelection.endDate,
+        requested_slides: selectedSlides,
+        ai_mode: requestedAiMode,
+      },
+    });
+    console.info("[PlanLimits][generate.request]", {
+      currentPlan: planCapabilities.plan,
+      plan: planCapabilities.plan,
+      requestedSlides: selectedSlides,
+      datasetId,
+    });
+    console.info("[AIAgents][generate.request]", {
+      datasetId,
+      requestedSlides: selectedSlides,
+      aiMode: requestedAiMode,
+    });
+
+    router.replace(
+      `/reports/new/flow/review?integration=${integrationSource}&template=${selectedTemplate}&generate=1`
+    );
   }
 
   return (
     <AppShell>
       <div className="space-y-5 sm:space-y-6">
+        <MobileFlowHeader
+          currentStep={currentStep}
+          totalSteps={flowSteps.length}
+          title={messages.reports.generateReport}
+          description={messages.reports.generateReportDescription}
+          backHref={stepHrefMap[2]}
+        />
         <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
-          <div className="max-w-3xl">
+          <div className="hidden max-w-3xl md:block">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
-              Flujo guiado
+              {messages.review.guidedFlow}
             </p>
             <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-              Generar reporte
+              {messages.reports.generateReport}
             </h1>
             <p className="mt-3 text-sm leading-6 text-slate-500 sm:text-base">
-              Los datos ya están listos. El siguiente paso es crear el reporte final y abrirlo en la plataforma.
+              {messages.reports.generateReportDescription}
             </p>
           </div>
 
-          <div className="mt-8 grid gap-4 lg:grid-cols-4">
-            {flowSteps.map((step, index) => {
-              const completed = currentStep > step.id;
-              const active = currentStep === step.id;
-              const isClickable = step.id < currentStep;
-              const stepCard = (
-                <div
-                  className={`relative rounded-[24px] border p-5 transition ${
-                    active
-                      ? "border-slate-950 bg-slate-950 text-white"
-                      : completed
-                        ? "border-sky-200 bg-sky-50 text-slate-950"
-                        : "border-slate-200 bg-slate-50 text-slate-950"
-                  } ${isClickable ? "cursor-pointer hover:border-sky-300 hover:bg-sky-100" : ""}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold ${
-                        active
-                          ? "bg-white text-slate-950"
-                          : completed
-                            ? "bg-sky-600 text-white"
-                            : "bg-white text-slate-500 ring-1 ring-slate-200"
-                      }`}
-                    >
-                      {completed ? "✓" : step.id}
-                    </span>
-                    <div>
-                      <p
-                        className={`text-xs font-semibold uppercase tracking-[0.18em] ${
-                          active
-                            ? "text-sky-200"
-                            : completed
-                              ? "text-sky-700"
-                              : "text-slate-400"
-                        }`}
-                      >
-                        Paso {step.id}
-                      </p>
-                      <h2 className="mt-1 text-lg font-semibold">{step.title}</h2>
-                    </div>
-                  </div>
-                  <p
-                    className={`mt-4 text-sm leading-6 ${
-                      active ? "text-slate-200" : "text-slate-500"
-                    }`}
-                  >
-                    {step.description}
-                  </p>
-                </div>
-              );
-
-              return (
-                <div key={step.id} className="relative">
-                  {index < flowSteps.length - 1 ? (
-                    <div className="absolute left-[calc(50%+26px)] top-6 hidden h-px w-[calc(100%-52px)] bg-slate-200 lg:block" />
-                  ) : null}
-                  {isClickable ? (
-                    <Link
-                      href={stepHrefMap[step.id]}
-                      className="block rounded-[24px]"
-                    >
-                      {stepCard}
-                    </Link>
-                  ) : (
-                    stepCard
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <DesktopFlowSteps
+            steps={flowSteps}
+            currentStep={currentStep}
+            stepLabel={messages.common.step}
+            clickableHrefMap={stepHrefMap}
+          />
 
           <div className="mt-8 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
-              Datos preparados
+              {messages.reports.preparedData}
             </p>
             <h2 className="mt-3 text-2xl font-semibold text-slate-950">
-              {selectedIntegration?.name || "Integración lista"}
+              {selectedIntegration?.name || messages.reports.integrationReady}
             </h2>
             <div className="mt-8 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
               <section className="rounded-[20px] border border-slate-200 bg-white p-4">
                 <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
-                  Timeframe
+                  {messages.reports.timeframe}
                 </p>
-                <div className="mt-4 space-y-3">
-                  {timeframeOptions.map((option) => {
-                    const active = option.id === selectedTimeframe;
-
-                    return (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => setSelectedTimeframe(option.id)}
-                        className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
-                          active
-                            ? "border-slate-950 bg-slate-950 text-white"
-                            : "border-slate-200 bg-slate-50 text-slate-950 hover:bg-slate-100"
-                        }`}
-                      >
-                        <p className="text-sm font-semibold">{option.label}</p>
-                        <p
-                          className={`mt-1 text-sm ${
-                            active ? "text-slate-200" : "text-slate-500"
-                          }`}
-                        >
-                          {option.description}
-                        </p>
-                      </button>
-                    );
-                  })}
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                  <p className="text-sm font-semibold text-slate-950">{timeframeLabel}</p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    This period was selected during the sync step.
+                  </p>
+                  <Link
+                    href={`/reports/new/flow/sync?integration=${integrationSource}`}
+                    className="mt-3 inline-flex rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                  >
+                    Change period
+                  </Link>
                 </div>
               </section>
 
               <section className="rounded-[20px] border border-slate-200 bg-white p-4">
                 <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
-                  Plantilla de reporte
+                  Slides
+                </p>
+                {showSlideCountLimit && !FEATURES.ENABLE_APP_REVIEW_MODE ? (
+                  <p className="mt-2 text-sm text-slate-500">
+                    Max slides: {planCapabilities.maxSlides}
+                  </p>
+                ) : null}
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {slideCountOptions.map((option) => {
+                    const active = option.value === selectedSlides;
+
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => handleSelectSlides(option.value)}
+                        className={`rounded-2xl border px-4 py-3 text-left transition ${
+                          active
+                            ? "border-slate-950 bg-slate-950 text-white"
+                            : option.available
+                              ? "border-slate-200 bg-slate-50 text-slate-950 hover:bg-slate-100"
+                              : "border-slate-200 bg-white text-slate-400 hover:border-amber-200 hover:bg-amber-50"
+                        }`}
+                      >
+                        <span className="block text-lg font-semibold">{option.value} slides</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {showUpgradeCta ? (
+                  <Link
+                    href="/plans"
+                    className="mt-4 inline-flex rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
+                  >
+                    Upgrade plan
+                  </Link>
+                ) : null}
+              </section>
+
+              {FEATURES.ENABLE_AI_AGENTS_MODE ? (
+                <section className="rounded-[20px] border border-slate-200 bg-white p-4">
+                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
+                    AI mode
+                  </p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectAiMode("standard")}
+                      className={`rounded-2xl border px-4 py-4 text-left transition ${
+                        aiMode === "standard"
+                          ? "border-slate-950 bg-slate-950 text-white"
+                          : "border-slate-200 bg-slate-50 text-slate-950 hover:bg-slate-100"
+                      }`}
+                    >
+                      <span className="block text-sm font-semibold">Standard</span>
+                      <span
+                        className={`mt-1 block text-sm ${
+                          aiMode === "standard" ? "text-slate-200" : "text-slate-500"
+                        }`}
+                      >
+                        Usa el generador actual de Measurable.
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSelectAiMode("agents")}
+                      disabled={!planCapabilities.canUseAiAgents}
+                      className={`rounded-2xl border px-4 py-4 text-left transition disabled:cursor-not-allowed ${
+                        aiMode === "agents"
+                          ? "border-slate-950 bg-slate-950 text-white"
+                          : planCapabilities.canUseAiAgents
+                            ? "border-slate-200 bg-slate-50 text-slate-950 hover:bg-slate-100"
+                            : "border-amber-200 bg-amber-50 text-amber-900"
+                      }`}
+                    >
+                      <span className="block text-sm font-semibold">AI Agents</span>
+                      <span
+                        className={`mt-1 block text-sm ${
+                          aiMode === "agents"
+                            ? "text-slate-200"
+                            : planCapabilities.canUseAiAgents
+                              ? "text-slate-500"
+                              : "text-amber-800"
+                        }`}
+                      >
+                        {planCapabilities.canUseAiAgents
+                          ? "Usa agentes para proponer estructura, insights y estilo del reporte."
+                          : "Disponible en Core y Advanced."}
+                      </span>
+                    </button>
+                  </div>
+                  {!planCapabilities.canUseAiAgents ? (
+                    <Link
+                      href="/plans"
+                      className="mt-4 inline-flex rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900 transition hover:bg-amber-100"
+                    >
+                      Upgrade plan
+                    </Link>
+                  ) : null}
+                </section>
+              ) : null}
+
+              <section className="rounded-[20px] border border-slate-200 bg-white p-4">
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
+                  {messages.reports.reportTemplate}
                 </p>
                 <div className="mt-4 grid gap-4 lg:grid-cols-3">
                   {templateOptions.map((template) => {
@@ -267,7 +427,7 @@ function NewReportFlowGeneratePageContent() {
                         >
                           <div
                             className={`rounded-full ${
-                              template.id === "moderno"
+                              template.id === "modern"
                                 ? "bg-white/30"
                                 : "bg-slate-200"
                             } h-2.5 w-16`}
@@ -275,7 +435,7 @@ function NewReportFlowGeneratePageContent() {
                           <div className="mt-3 space-y-2">
                             <div
                               className={`h-3 rounded-full ${
-                                template.id === "moderno"
+                                template.id === "modern"
                                   ? "bg-white/80"
                                   : "bg-slate-300"
                               }`}
@@ -283,14 +443,14 @@ function NewReportFlowGeneratePageContent() {
                             <div className="grid grid-cols-2 gap-2">
                               <div
                                 className={`h-12 rounded-xl ${
-                                  template.id === "moderno"
+                                  template.id === "modern"
                                     ? "bg-white/15"
                                     : "bg-slate-200"
                                 }`}
                               />
                               <div
                                 className={`h-12 rounded-xl ${
-                                  template.id === "moderno"
+                                  template.id === "modern"
                                     ? "bg-white/10"
                                     : "bg-slate-100"
                                 }`}
@@ -298,7 +458,7 @@ function NewReportFlowGeneratePageContent() {
                             </div>
                             <div
                               className={`h-16 rounded-2xl ${
-                                template.id === "moderno"
+                                template.id === "modern"
                                   ? "bg-white/10"
                                   : "bg-slate-100"
                               }`}
@@ -323,15 +483,18 @@ function NewReportFlowGeneratePageContent() {
                 href={`/reports/new/flow/sync?integration=${integrationSource}`}
                 className="inline-flex rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
               >
-                Volver
+                {messages.common.back}
               </Link>
               <button
                 type="button"
                 onClick={handleGenerateReport}
                 disabled={loading}
-                className="inline-flex rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
-                {loading ? "Generando..." : "Generar reporte"}
+                {loading ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                ) : null}
+                {loading ? messages.reports.generating : messages.reports.generateReport}
               </button>
             </div>
 

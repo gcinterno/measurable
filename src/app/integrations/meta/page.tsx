@@ -1,11 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { AdAccountSelector } from "@/components/integrations/AdAccountSelector";
 import { MetaStatusCard } from "@/components/integrations/MetaStatusCard";
 import { AppShell } from "@/components/layout/AppShell";
+import { PlanLimitsSummary } from "@/components/workspace/PlanLimitsSummary";
+import { ApiError, isLimitError } from "@/lib/api";
 import {
   connectMetaIntegration,
   fetchMetaPages,
@@ -13,11 +16,21 @@ import {
   syncMetaPages,
 } from "@/lib/api/integrations";
 import { createMetaPagesReport } from "@/lib/api/reports";
+import { formatNumber } from "@/lib/formatters";
 import {
   getIntegrationReportContext,
+  isPendingMetaSource,
+  setPendingMetaSource,
   setIntegrationReportContext,
 } from "@/lib/integrations/session";
+import { DEFAULT_REPORT_TEMPLATE } from "@/lib/reports/templates/default";
 import { getActiveWorkspaceId } from "@/lib/workspace/session";
+import {
+  getSlidesLimit,
+  isSlideEstimateNearLimit,
+  shouldShowUpgradeCta,
+} from "@/lib/workspace/plan-limits";
+import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 
 type MetaOption = {
   id: string;
@@ -38,6 +51,10 @@ function MetaIntegrationPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const workspaceId = getActiveWorkspaceId();
+  const storedContext = getIntegrationReportContext();
+  const { workspace, reportsUsedThisMonth } = useActiveWorkspace({
+    includeReportsUsage: true,
+  });
   const [pages, setPages] = useState<MetaOption[]>([]);
   const [selectedPageId, setSelectedPageId] = useState("");
   const [integrationId, setIntegrationId] = useState("");
@@ -52,10 +69,25 @@ function MetaIntegrationPageContent() {
   const [connected, setConnected] = useState(false);
   const [pageSelected, setPageSelected] = useState(false);
   const [syncCompleted, setSyncCompleted] = useState(false);
+  const selectedPage = useMemo(
+    () => pages.find((page) => page.id === selectedPageId),
+    [pages, selectedPageId]
+  );
+  const estimatedSlides = DEFAULT_REPORT_TEMPLATE.slides.length;
+  const slidesLimit = getSlidesLimit(workspace);
+  const slideLimitWarning =
+    syncCompleted &&
+    Boolean(slidesLimit && isSlideEstimateNearLimit(workspace, estimatedSlides));
+  const showUpgradeCta = shouldShowUpgradeCta({
+    workspace,
+    reportsUsedThisMonth,
+    estimatedSlides,
+  });
+  const currentMetaSource = isPendingMetaSource(storedContext?.source)
+    ? storedContext.source
+    : "facebook_pages";
 
   useEffect(() => {
-    const storedContext = getIntegrationReportContext();
-
     if (!storedContext || storedContext.integration !== "meta") {
       return;
     }
@@ -77,7 +109,7 @@ function MetaIntegrationPageContent() {
     if (storedContext.synced) {
       setSyncCompleted(true);
     }
-  }, []);
+  }, [storedContext]);
 
   useEffect(() => {
     const status = searchParams.get("status");
@@ -92,21 +124,33 @@ function MetaIntegrationPageContent() {
     setError("");
     setSyncCompleted(false);
     setStatusMessage(
-      message || "Conexión completada. Ahora elige la página que quieres usar."
+      message || "Connection completed. Now choose the page you want to use."
     );
 
-    if (callbackIntegrationId) {
-      setIntegrationId(callbackIntegrationId);
-      setIntegrationReportContext({
-        source: "meta",
-        integration: "meta",
-        workspaceId: workspaceId || "1",
-        integrationId: callbackIntegrationId,
+      if (callbackIntegrationId) {
+        setIntegrationId(callbackIntegrationId);
+        setIntegrationReportContext({
+          source: currentMetaSource,
+          integration: "meta",
+          workspaceId: workspaceId || "1",
+          integrationId: callbackIntegrationId,
+        pageId: storedContext?.pageId,
+        pageName: storedContext?.pageName,
+        datasetId: storedContext?.datasetId,
+        synced: storedContext?.synced,
       });
     }
 
     router.replace("/integrations/meta");
-  }, [router, searchParams, workspaceId]);
+  }, [
+    router,
+    searchParams,
+    storedContext?.datasetId,
+    storedContext?.pageId,
+    storedContext?.pageName,
+    storedContext?.synced,
+    workspaceId,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -121,7 +165,7 @@ function MetaIntegrationPageContent() {
             setStatusMessage("");
           } else {
             setStatusMessage(
-              "Conexión detectada. Esperando integration_id para cargar las páginas."
+              "Connection detected. Waiting for integration_id to load the pages."
             );
           }
         }
@@ -149,7 +193,7 @@ function MetaIntegrationPageContent() {
 
         console.error("meta pages load error:", err);
         setError(
-          "No pudimos cargar las paginas de Facebook. Intenta actualizar la vista."
+          "We could not load the Facebook pages. Try refreshing the view."
         );
       } finally {
         if (active) {
@@ -164,6 +208,22 @@ function MetaIntegrationPageContent() {
       active = false;
     };
   }, [connected, integrationId, workspaceId]);
+
+  useEffect(() => {
+    if (!storedContext || storedContext.pageName || !selectedPageId) {
+      return;
+    }
+
+    if (!selectedPage) {
+      return;
+    }
+
+    setIntegrationReportContext({
+      ...storedContext,
+      pageId: selectedPageId,
+      pageName: selectedPage.name,
+    });
+  }, [selectedPage, selectedPageId, storedContext]);
 
   const uiState = useMemo<MetaUiState>(() => {
     if (error) {
@@ -211,6 +271,16 @@ function MetaIntegrationPageContent() {
       setConnectLoading(true);
       setError("");
       setStatusMessage("");
+      const storedContext = getIntegrationReportContext();
+      setPendingMetaSource(currentMetaSource);
+
+      if (storedContext?.integration === "meta") {
+        setIntegrationReportContext({
+          ...storedContext,
+          postConnectRedirect: undefined,
+        });
+      }
+
       const response = await connectMetaIntegration();
 
       if (response.connected) {
@@ -220,21 +290,31 @@ function MetaIntegrationPageContent() {
       if (response.integrationId) {
         setIntegrationId(response.integrationId);
         setIntegrationReportContext({
-          source: "meta",
+          source: currentMetaSource,
           integration: "meta",
           workspaceId: workspaceId || "1",
           integrationId: response.integrationId,
+          pageId: selectedPageId || undefined,
+          pageName: selectedPage?.name,
+          datasetId: datasetId || undefined,
+          synced: syncCompleted,
         });
       }
 
       if (response.redirectUrl) {
+        console.info("[MetaOAuth][redirect]", {
+          auth_url_from_backend: response.authUrlFromBackend || response.redirectUrl,
+          final_auth_url_used: response.finalAuthUrlUsed || response.redirectUrl,
+        });
         window.location.href = response.redirectUrl;
         return;
       }
     } catch (err: unknown) {
       console.error("meta connect pages error:", err);
       setError(
-        "No pudimos iniciar la conexion de Facebook Pages. Intentalo de nuevo."
+        err instanceof ApiError && err.message
+          ? err.message
+          : "We could not start the Facebook Pages connection. Try again."
       );
     } finally {
       setConnectLoading(false);
@@ -243,13 +323,13 @@ function MetaIntegrationPageContent() {
 
   async function handleSelectPage() {
     if (!selectedPageId) {
-      setError("Selecciona una pagina antes de continuar.");
+      setError("Select a page before continuing.");
       return;
     }
 
     if (!integrationId) {
       setError(
-        "No encontramos el integration_id de Meta. Vuelve a conectar Facebook Pages e intenta otra vez."
+        "We could not find the Meta integration_id. Reconnect Facebook Pages and try again."
       );
       return;
     }
@@ -273,12 +353,24 @@ function MetaIntegrationPageContent() {
       setPageSelected(true);
       setSyncCompleted(false);
       setStatusMessage(
-        "Página seleccionada correctamente. Ya puedes sincronizar los datos."
+        "Page selected successfully. You can now sync the data."
       );
+      setIntegrationReportContext({
+        source: currentMetaSource,
+        integration: "meta",
+        workspaceId: workspaceId || "1",
+        integrationId: response.integrationId || integrationId,
+        datasetId: response.datasetId || datasetId || undefined,
+        pageId: selectedPageId,
+        pageName: selectedPage?.name,
+        synced: false,
+      });
     } catch (err: unknown) {
       console.error("meta select page error:", err);
       setError(
-        "No pudimos guardar la pagina seleccionada. Revisa la seleccion e intentalo otra vez."
+        err instanceof ApiError && err.message
+          ? err.message
+          : "We could not save the selected page. Review the selection and try again."
       );
     } finally {
       setSelectLoading(false);
@@ -287,13 +379,13 @@ function MetaIntegrationPageContent() {
 
   async function handleSync() {
     if (!selectedPageId) {
-      setError("Selecciona una pagina antes de sincronizar.");
+      setError("Select a page before syncing.");
       return;
     }
 
     if (!integrationId) {
       setError(
-        "No encontramos el integration_id de Meta. Vuelve a conectar Facebook Pages e intenta otra vez."
+        "We could not find the Meta integration_id. Reconnect Facebook Pages and try again."
       );
       return;
     }
@@ -314,25 +406,30 @@ function MetaIntegrationPageContent() {
       setDatasetId(nextDatasetId);
       setSyncCompleted(true);
       setStatusMessage(
-        response.message ||
+          response.message ||
           response.detail ||
-          "Datos sincronizados correctamente. Ya puedes generar el reporte."
+          "Data synced successfully. You can now generate the report."
       );
 
       setIntegrationReportContext({
-        source: "meta",
+        source: currentMetaSource,
         integration: "meta",
         workspaceId: workspaceId || "1",
         integrationId: nextIntegrationId,
         datasetId: nextDatasetId,
         pageId: selectedPageId,
+        pageName: selectedPage?.name,
         synced: true,
       });
     } catch (err: unknown) {
       console.error("meta pages sync error:", err);
-      setError(
-        "No pudimos sincronizar los datos de la pagina. Intenta nuevamente en unos segundos."
-      );
+      if (isLimitError(err)) {
+        setError(err.message || "We could not sync the page data. Try again in a few seconds.");
+      } else if (err instanceof ApiError && err.message) {
+        setError(err.message);
+      } else {
+        setError("We could not sync the page data. Try again in a few seconds.");
+      }
     } finally {
       setSyncLoading(false);
     }
@@ -341,7 +438,7 @@ function MetaIntegrationPageContent() {
   async function handleGenerateReport() {
     if (!datasetId) {
       setError(
-        "Aún no existe un dataset sincronizado. Sincroniza los datos antes de generar el reporte."
+        "There is no synced dataset yet. Sync the data before generating the report."
       );
       return;
     }
@@ -354,9 +451,13 @@ function MetaIntegrationPageContent() {
       router.replace(`/reports/${report.reportId}`);
     } catch (err: unknown) {
       console.error("meta pages create report error:", err);
-      setError(
-        "No pudimos generar el reporte con los datos sincronizados. Intenta nuevamente."
-      );
+      if (isLimitError(err)) {
+        setError(err.message || "We could not generate the report with the synced data. Try again.");
+      } else if (err instanceof ApiError && err.message) {
+        setError(err.message);
+      } else {
+        setError("We could not generate the report with the synced data. Try again.");
+      }
     } finally {
       setCreateReportLoading(false);
     }
@@ -365,7 +466,7 @@ function MetaIntegrationPageContent() {
   const primaryAction = (() => {
     if (!connected) {
       return {
-        label: connectLoading ? "Conectando..." : "Conectar Facebook Pages",
+        label: connectLoading ? "Connecting..." : "Connect Facebook Pages",
         onClick: handleConnect,
         disabled: connectLoading || loading,
       };
@@ -374,7 +475,7 @@ function MetaIntegrationPageContent() {
     if (!pageSelected) {
       return {
         label:
-          selectLoading ? "Guardando página..." : "Guardar página seleccionada",
+          selectLoading ? "Saving page..." : "Save selected page",
         onClick: handleSelectPage,
         disabled:
           selectLoading || syncLoading || createReportLoading || !selectedPageId,
@@ -383,14 +484,14 @@ function MetaIntegrationPageContent() {
 
     if (!syncCompleted) {
       return {
-        label: syncLoading ? "Sincronizando datos..." : "Sincronizar datos",
+        label: syncLoading ? "Syncing data..." : "Sync data",
         onClick: handleSync,
         disabled: syncLoading || createReportLoading || !selectedPageId,
       };
     }
 
     return {
-      label: createReportLoading ? "Generando reporte..." : "Generar reporte",
+      label: createReportLoading ? "Generating report..." : "Generate report",
       onClick: handleGenerateReport,
       disabled: createReportLoading || !selectedPageId,
     };
@@ -433,19 +534,19 @@ function MetaIntegrationPageContent() {
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
-              Flujo Meta Pages
+              Meta Pages flow
             </p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-              Conecta, sincroniza y genera tu reporte
+              Connect, sync, and generate your report
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-500 sm:text-base">
-              Este flujo ya está conectado al backend real. Solo necesitas avanzar paso a paso hasta generar el reporte.
+              This flow is already connected to the real backend. You only need to move step by step until the report is generated.
             </p>
             <ol className="mt-6 space-y-3 text-sm leading-6 text-slate-600">
-              <li>1. Conecta Facebook Pages con el workspace actual.</li>
-              <li>2. Elige la página correcta y guarda la selección.</li>
-              <li>3. Sincroniza los datos reales de esa página.</li>
-              <li>4. Genera el reporte y ábrelo dentro de la plataforma.</li>
+              <li>1. Connect Facebook Pages to the current workspace.</li>
+              <li>2. Choose the correct page and save the selection.</li>
+              <li>3. Sync the real data from that page.</li>
+              <li>4. Generate the report and open it inside the platform.</li>
             </ol>
 
             {statusMessage ? (
@@ -456,62 +557,83 @@ function MetaIntegrationPageContent() {
 
             {datasetId ? (
               <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700">
-                Datos listos para generar reporte.
+                Data ready to generate the report.
+              </div>
+            ) : null}
+            {slideLimitWarning ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                <p className="font-semibold">This report may exceed your slide limit.</p>
+                <p className="mt-1">
+                  This flow prepares {estimatedSlides} slides and your current plan supports up to {slidesLimit} per report.
+                </p>
+                {showUpgradeCta ? (
+                  <Link
+                    href="/plans"
+                    className="mt-3 inline-flex rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    Upgrade plan
+                  </Link>
+                ) : null}
               </div>
             ) : null}
           </section>
 
           <aside className="space-y-6">
+            <PlanLimitsSummary
+              workspace={workspace}
+              reportsUsedThisMonth={reportsUsedThisMonth}
+              estimatedSlides={estimatedSlides}
+            />
             <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
               <h3 className="text-lg font-semibold text-slate-950">
-                Estado actual
+                Current status
               </h3>
               <div className="mt-5 space-y-3">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  Workspace: {workspaceId || "Sin workspace"}
+                  Workspace: {workspaceId || "No workspace"}
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  Conectado: {connected ? "Sí" : "No"}
+                  Connected: {connected ? "Yes" : "No"}
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  Páginas cargadas: {pages.length}
+                  Pages loaded: {formatNumber(pages.length, 0)}
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  Página: {selectedPageId || "Sin seleccionar"}
+                  Page: {selectedPageId || "Not selected"}
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  Integration ID: {integrationId || "Sin integration_id"}
+                  Integration ID: {integrationId || "No integration_id"}
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  Dataset ID: {datasetId || "Sin dataset"}
+                  Dataset ID: {datasetId || "No dataset"}
                 </div>
               </div>
             </section>
 
             <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
               <h3 className="text-lg font-semibold text-slate-950">
-                Confirmaciones
+                Confirmations
               </h3>
               <div className="mt-5 space-y-3">
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
                   {connected
-                    ? "Conexión activa con Facebook Pages."
-                    : "Aún falta conectar Facebook Pages."}
+                    ? "Facebook Pages connection is active."
+                    : "Facebook Pages still needs to be connected."}
                 </div>
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
                   {pageSelected && selectedPageId
-                    ? "Página seleccionada y guardada correctamente."
-                    : "Todavía no has confirmado una página."}
+                    ? "Page selected and saved successfully."
+                    : "You have not confirmed a page yet."}
                 </div>
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
                   {syncCompleted
-                    ? "Datos sincronizados y listos para el siguiente paso."
-                    : "La sincronización aún no se ha completado."}
+                    ? "Data synced and ready for the next step."
+                    : "The sync has not been completed yet."}
                 </div>
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
                   {datasetId
-                    ? "Datos listos para generar reporte."
-                    : "El reporte se habilitará cuando exista un dataset sincronizado."}
+                    ? "Data ready to generate the report."
+                    : "The report will be enabled when a synced dataset exists."}
                 </div>
               </div>
             </section>

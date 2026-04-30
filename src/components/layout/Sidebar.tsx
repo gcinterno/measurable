@@ -1,12 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
+import { PlanLimitsSummary } from "@/components/workspace/PlanLimitsSummary";
+import { useI18n } from "@/components/providers/LanguageProvider";
+import { FEATURES } from "@/config/features";
 import { clearSession } from "@/lib/auth/session";
+import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 
-type NavItem = {
+export type NavItem = {
   label: string;
   href: string;
   icon: "dashboard" | "reports" | "new-report" | "integrations" | "settings" | "billing" | "plans" | "profile";
@@ -15,9 +18,11 @@ type NavItem = {
 
 type SidebarProps = {
   items: NavItem[];
+  mobile?: boolean;
+  onNavigate?: () => void;
 };
 
-function isActive(pathname: string, item: NavItem) {
+export function isActive(pathname: string, item: NavItem) {
   if (item.match === "exact") {
     return pathname === item.href;
   }
@@ -25,7 +30,7 @@ function isActive(pathname: string, item: NavItem) {
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
-function NavIcon({ icon, active }: { icon: NavItem["icon"]; active: boolean }) {
+export function NavIcon({ icon, active }: { icon: NavItem["icon"]; active: boolean }) {
   const className = active ? "stroke-white" : "stroke-slate-400";
 
   switch (icon) {
@@ -96,15 +101,14 @@ function NavIcon({ icon, active }: { icon: NavItem["icon"]; active: boolean }) {
   }
 }
 
-export function Sidebar({ items }: SidebarProps) {
+export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [collapsed, setCollapsed] = useState(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-
-    return window.localStorage.getItem("sidebarCollapsed") === "true";
+  const { messages } = useI18n();
+  const showPlanSummary = false;
+  const showUpgradePlanButton = false;
+  const { workspace, reportsUsedThisMonth } = useActiveWorkspace({
+    includeReportsUsage: true,
   });
 
   function handleLogout() {
@@ -112,54 +116,29 @@ export function Sidebar({ items }: SidebarProps) {
     router.replace("/login");
   }
 
-  function toggleCollapsed() {
-    setCollapsed((current) => {
-      const nextValue = !current;
-      window.localStorage.setItem("sidebarCollapsed", String(nextValue));
-      return nextValue;
-    });
-  }
-
   return (
     <aside
-      className={`sticky top-0 hidden h-screen shrink-0 flex-col border-r border-white/10 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_32%),linear-gradient(180deg,#111827_0%,#0f172a_100%)] text-white transition-[width] duration-200 md:flex ${
-        collapsed ? "w-24" : "w-72"
+      className={`flex shrink-0 flex-col border-white/10 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_32%),linear-gradient(180deg,#111827_0%,#0f172a_100%)] text-white ${
+        mobile
+          ? "h-full w-full max-w-[20rem] border-r"
+          : "sticky top-0 hidden h-screen w-72 border-r md:flex"
       }`}
     >
-      <div className={`border-b border-white/10 ${collapsed ? "px-4 py-5" : "px-6 py-7"}`}>
-        <div className={`flex ${collapsed ? "flex-col items-center gap-4" : "items-center justify-between gap-3"}`}>
-          <div className={`flex items-center ${collapsed ? "flex-col gap-3" : "gap-3"}`}>
+      <div className="border-b border-white/10 px-5 py-6 md:px-6 md:py-7">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-sm font-semibold tracking-[0.22em] text-sky-200">
               M
             </div>
-            {!collapsed ? (
-              <div>
-                <p className="text-lg font-semibold">Measurable</p>
-                <p className="text-sm text-slate-400">Decision-ready reporting</p>
-              </div>
-            ) : null}
+            <div>
+              <p className="text-lg font-semibold">Measurable</p>
+              <p className="text-sm text-slate-400">{messages.shell.decisionReadyReporting}</p>
+            </div>
           </div>
-
-          <button
-            type="button"
-            onClick={toggleCollapsed}
-            aria-label={collapsed ? "Expandir sidebar" : "Minimizar sidebar"}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/6 text-slate-300 transition hover:bg-white/10 hover:text-white"
-          >
-            {collapsed ? (
-              <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 stroke-current">
-                <path d="M9 6l6 6-6 6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            ) : (
-              <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 stroke-current">
-                <path d="M7 7l10 10M17 7L7 17" strokeWidth="1.8" strokeLinecap="round" />
-              </svg>
-            )}
-          </button>
         </div>
       </div>
 
-      <nav className={`flex flex-1 flex-col gap-1 ${collapsed ? "px-3 py-5" : "px-4 py-6"}`}>
+      <nav className="flex flex-1 flex-col gap-1 px-4 py-5 md:py-6">
         {items.map((item) => {
           const active = isActive(pathname, item);
 
@@ -167,12 +146,10 @@ export function Sidebar({ items }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onNavigate}
               aria-label={item.label}
-              title={collapsed ? item.label : undefined}
               className={`flex items-center rounded-2xl text-sm font-medium transition ${
-                collapsed
-                  ? "justify-center px-3 py-3.5"
-                  : "gap-3 px-4 py-3"
+                "gap-3 px-4 py-3"
               } ${
                 active
                   ? "bg-white/12 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]"
@@ -180,103 +157,52 @@ export function Sidebar({ items }: SidebarProps) {
               }`}
             >
               <NavIcon icon={item.icon} active={active} />
-              {!collapsed ? <span>{item.label}</span> : null}
+              <span>{item.label}</span>
             </Link>
           );
         })}
       </nav>
 
-      <div className={`border-t border-white/10 ${collapsed ? "px-3 py-4" : "px-6 py-5"}`}>
-        <div className={`rounded-2xl bg-white/6 ${collapsed ? "p-2.5" : "p-4"}`}>
-          {!collapsed ? (
-            <>
-              <div className="rounded-2xl border border-white/10 bg-white/7 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">
-                  Plan Free
-                </p>
-                <p className="mt-3 text-sm font-medium text-white">
-                  Uso del espacio
-                </p>
-
-                <div className="mt-4 space-y-4">
-                  <div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-300">Reportes</span>
-                      <span className="font-semibold text-white">2/3</span>
-                    </div>
-                    <div className="mt-2 h-2 rounded-full bg-white/10">
-                      <div className="h-2 w-2/3 rounded-full bg-sky-400" />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-300">Storage utilizado</span>
-                      <span className="font-semibold text-white">1.4 GB / 5 GB</span>
-                    </div>
-                    <div className="mt-2 h-2 rounded-full bg-white/10">
-                      <div className="h-2 w-[28%] rounded-full bg-emerald-400" />
-                    </div>
-                  </div>
-                </div>
-
-                <Link
-                  href="/plans"
-                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-500"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" className="h-4.5 w-4.5 stroke-current">
-                    <path
-                      d="M5 18.5h14l-1.6-8.5-4.15 3.2L12 6.5l-1.25 6.7L6.6 10 5 18.5Z"
-                      strokeWidth="1.7"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                    <path d="M8 18.5V20h8v-1.5" strokeWidth="1.7" strokeLinecap="round" />
-                  </svg>
-                  Mejorar plan
-                </Link>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="mt-4 w-full rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/12"
-              >
-                Logout
-              </button>
-            </>
-          ) : (
-            <div className="space-y-2">
-              <Link
-                href="/plans"
-                aria-label="Mejorar plan"
-                title="Mejorar plan"
-                className="inline-flex h-11 w-full items-center justify-center rounded-2xl bg-blue-600 text-white transition hover:bg-blue-500"
-              >
-                <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 stroke-current">
-                  <path
-                    d="M5 18.5h14l-1.6-8.5-4.15 3.2L12 6.5l-1.25 6.7L6.6 10 5 18.5Z"
-                    strokeWidth="1.7"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <path d="M8 18.5V20h8v-1.5" strokeWidth="1.7" strokeLinecap="round" />
-                </svg>
-              </Link>
-              <button
-                type="button"
-                onClick={handleLogout}
-                aria-label="Logout"
-                title="Logout"
-                className="inline-flex h-11 w-full items-center justify-center rounded-2xl border border-white/10 bg-white/8 text-slate-300 transition hover:bg-white/12 hover:text-white"
-              >
-                <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 stroke-current">
-                  <path d="M10 7.75V6.5A2.5 2.5 0 0 1 12.5 4h3A2.5 2.5 0 0 1 18 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-3A2.5 2.5 0 0 1 10 17.5v-1.25" strokeWidth="1.7" strokeLinecap="round" />
-                  <path d="M14 12H5m0 0l3-3m-3 3l3 3" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
+      <div className="border-t border-white/10 px-5 py-5 md:px-6">
+        <div className="rounded-2xl bg-white/6 p-4">
+          {showPlanSummary && workspace ? (
+            <div className="mb-4">
+              <PlanLimitsSummary
+                workspace={workspace}
+                reportsUsedThisMonth={reportsUsedThisMonth}
+                variant="sidebar"
+              />
             </div>
-          )}
+          ) : null}
+
+          {!FEATURES.ENABLE_APP_REVIEW_MODE && showUpgradePlanButton ? (
+            <Link
+              href="/plans"
+              onClick={onNavigate}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-500"
+            >
+              <svg viewBox="0 0 24 24" fill="none" className="h-4.5 w-4.5 stroke-current">
+                <path
+                  d="M5 18.5h14l-1.6-8.5-4.15 3.2L12 6.5l-1.25 6.7L6.6 10 5 18.5Z"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path d="M8 18.5V20h8v-1.5" strokeWidth="1.7" strokeLinecap="round" />
+              </svg>
+              {messages.shell.upgradePlan}
+            </Link>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            className={`w-full rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/12 ${
+              FEATURES.ENABLE_APP_REVIEW_MODE || !showUpgradePlanButton ? "" : "mt-4"
+            }`}
+          >
+            {messages.shell.logout}
+          </button>
         </div>
       </div>
     </aside>

@@ -29,23 +29,23 @@ export function IntegrationSourceCard({
         Integration flow
       </p>
       <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-        Crea reportes desde una integracion sincronizada.
+        Create reports from a synced integration.
       </h2>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 sm:text-base">
-        Esta vista deja listo el flujo para crear reportes desde fuentes conectadas sin depender de una carga manual.
+        This view prepares the flow to create reports from connected sources without relying on a manual upload.
       </p>
 
       <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
         <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">
-          Workspace activo
+          Active workspace
         </p>
         <p className="mt-2 text-lg font-semibold text-slate-950">
-          {workspaceId || "Sin workspace seleccionado"}
+          {workspaceId || "No workspace selected"}
         </p>
         <p className="mt-2 text-sm leading-6 text-slate-500">
           {workspaceId
-            ? "La futura creacion desde integraciones usara este workspace."
-            : "Selecciona un workspace en dashboard antes de continuar."}
+            ? "Future report creation from integrations will use this workspace."
+            : "Select a workspace in the dashboard before continuing."}
         </p>
       </div>
 
@@ -67,7 +67,7 @@ export function IntegrationSourceCard({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">
-              Fuente seleccionada
+              Selected source
             </p>
             <h3 className="mt-2 text-xl font-semibold text-slate-950">
               {sourceName}
@@ -83,7 +83,7 @@ export function IntegrationSourceCard({
                 : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"
             }`}
           >
-            {sourceReady ? "Listo" : "Pendiente"}
+            {sourceReady ? "Ready" : "Pending"}
           </span>
         </div>
       </div>
@@ -91,15 +91,15 @@ export function IntegrationSourceCard({
       <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6">
         <p className="font-medium text-slate-950">
           {sourceReady
-            ? "La fuente sincronizada ya esta lista para avanzar al siguiente paso."
-            : "Conecta y sincroniza una fuente para crear reportes desde integraciones."}
+            ? "The synced source is ready to move to the next step."
+            : "Connect and sync a source to create reports from integrations."}
         </p>
         <p className="mt-2 text-sm leading-6 text-slate-500">{helperText}</p>
         <Link
           href="/integrations"
           className="mt-5 inline-flex rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
         >
-          Ir a integraciones
+          Go to integrations
         </Link>
       </div>
 
@@ -115,12 +115,12 @@ export function IntegrationSourceCard({
           disabled
           className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white opacity-60"
         >
-          Crear reporte con estos datos
+          Create report with this data
         </button>
         <p className="text-sm text-slate-500">
           {sourceReady
-            ? "El flujo ya detecto tu fuente sincronizada. En esta etapa solo falta que el backend exponga el payload final para crear el reporte directo."
-            : "Cuando completes una sincronizacion, este espacio quedara listo para crear el reporte sin subir archivos manualmente."}
+            ? "The flow already detected your synced source. At this stage, the backend only needs to expose the final payload to create the report directly."
+            : "Once you complete a sync, this area will be ready to create the report without uploading files manually."}
         </p>
       </div>
     </section>

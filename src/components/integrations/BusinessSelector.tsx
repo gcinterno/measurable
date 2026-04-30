@@ -22,10 +22,10 @@ export function BusinessSelector({
         Businesses
       </p>
       <h3 className="mt-3 text-2xl font-semibold text-slate-950">
-        Selecciona un negocio
+        Select a business
       </h3>
       <p className="mt-2 text-sm leading-6 text-slate-500">
-        Elige el negocio de Meta que quieres usar dentro del workspace activo.
+        Choose the Meta business you want to use inside the active workspace.
       </p>
       <select
         value={value}
@@ -33,7 +33,7 @@ export function BusinessSelector({
         disabled={loading || businesses.length === 0}
         className="mt-5 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100 disabled:bg-slate-50"
       >
-        <option value="">Selecciona un negocio</option>
+        <option value="">Select a business</option>
         {businesses.map((business) => (
           <option key={business.id} value={business.id}>
             {business.name}

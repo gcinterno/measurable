@@ -1,5 +1,6 @@
 "use client";
 
+import { formatDisplayNumber } from "@/lib/formatters";
 import type { ReportVersionBlock } from "@/types/report";
 
 type BlockRendererProps = {
@@ -7,7 +8,7 @@ type BlockRendererProps = {
 };
 
 function getTextValue(text: string | null | undefined) {
-  return text?.trim() || "Sin contenido disponible";
+  return text?.trim() || "No content available";
 }
 
 function getStatValue(value: ReportVersionBlock["data"]["value"]) {
@@ -15,7 +16,7 @@ function getStatValue(value: ReportVersionBlock["data"]["value"]) {
     return "N/A";
   }
 
-  return String(value);
+  return formatDisplayNumber(value);
 }
 
 export function BlockRenderer({ block }: BlockRendererProps) {

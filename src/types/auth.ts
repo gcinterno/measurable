@@ -4,6 +4,11 @@ export type User = {
   id: string;
   email: string;
   name: string;
+  phone?: string;
+  branding?: {
+    logoUrl?: string;
+    source?: string;
+  };
 };
 
 export type AuthState = {

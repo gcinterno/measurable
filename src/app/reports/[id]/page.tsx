@@ -13,7 +13,11 @@ export default async function ReportDetailPage({
   const { id } = await params;
   return (
     <AppShell>
-      <ReportView reportId={id} />
+      <ReportView
+        reportId={id}
+        showDownloadAction={false}
+        showShareAction={false}
+      />
     </AppShell>
   );
 }

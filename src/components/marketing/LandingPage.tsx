@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 
+import { FEATURES } from "@/config/features";
+
 const logos = [
   "Northpeak Studio",
   "Atlas Growth",
@@ -59,7 +61,9 @@ const howItWorks = [
     step: "03",
     title: "Download or share instantly",
     description:
-      "Export a client-ready PDF or PPTX in minutes, not hours.",
+      FEATURES.ENABLE_PPTX_EXPORT
+        ? "Export a client-ready PDF or PPTX in minutes, not hours."
+        : "Export a client-ready PDF in minutes, not hours.",
     icon: "share",
   },
 ] as const;
@@ -78,7 +82,7 @@ const features = [
     description: "Presentation-ready layouts designed to look premium from the start.",
   },
   {
-    title: "Export to PDF & PPTX",
+    title: FEATURES.ENABLE_PPTX_EXPORT ? "Export to PDF & PPTX" : "Export to PDF",
     description: "Deliver reports in the formats clients and teams already expect.",
   },
   {
@@ -104,7 +108,11 @@ const pricing = [
     price: "$49",
     subtitle: "For growing teams",
     featured: true,
-    items: ["More reports", "PPTX export", "More templates"],
+    items: [
+      "More reports",
+      ...(FEATURES.ENABLE_PPTX_EXPORT ? ["PPTX export"] : []),
+      "More templates",
+    ],
   },
   {
     name: "Premium",
