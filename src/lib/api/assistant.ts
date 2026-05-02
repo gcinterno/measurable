@@ -123,12 +123,22 @@ function extractConversationId(response: ChatResponse) {
 export async function sendAssistantMessage(input: {
   message: string;
   conversationId?: string;
+  workspaceId?: string;
+  reportId?: string;
+  datasetId?: string;
+  currentRoute: string;
+  pageContext?: Record<string, unknown>;
 }) {
   const response = await apiFetch<ChatResponse>("/ai/chat", {
     method: "POST",
     body: JSON.stringify({
       message: input.message,
       conversation_id: input.conversationId || undefined,
+      workspace_id: input.workspaceId || undefined,
+      report_id: input.reportId || undefined,
+      dataset_id: input.datasetId || undefined,
+      current_route: input.currentRoute,
+      page_context: input.pageContext || undefined,
     }),
   });
 

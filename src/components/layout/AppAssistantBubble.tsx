@@ -1,14 +1,19 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 
+import { ApiError } from "@/lib/api";
 import { sendAssistantMessage } from "@/lib/api/assistant";
+import { getToken } from "@/lib/auth/session";
 import { formatDisplayNumber } from "@/lib/formatters";
+import { getIntegrationReportContext } from "@/lib/integrations/session";
 import {
   getReportChatContext,
   type ReportChatContext,
 } from "@/lib/reports/chat-context";
 import { usePreferencesStore } from "@/lib/store/preferences-store";
+import { getActiveWorkspaceId } from "@/lib/workspace/session";
 
 type ChatMessage = {
   id: string;
@@ -289,7 +294,43 @@ function buildAssistantRequestMessage(
     .join(" ");
 }
 
+function getCurrentRoute(pathname: string, searchParams: URLSearchParams) {
+  const queryString = searchParams.toString();
+  return queryString ? `${pathname}?${queryString}` : pathname;
+}
+
+function getRouteReportId(pathname: string, searchParams: URLSearchParams) {
+  const queryReportId = searchParams.get("reportId");
+
+  if (queryReportId) {
+    return queryReportId;
+  }
+
+  const routeMatch = pathname.match(/^\/reports\/([^/]+)/);
+  return routeMatch?.[1] || "";
+}
+
+function getAssistantErrorMessage(error: unknown) {
+  if (error instanceof ApiError) {
+    if (error.isAuthError) {
+      return "Your session expired. Sign in again to use the AI Assistant.";
+    }
+
+    if (error.code === "ai_provider_unavailable") {
+      return error.message || "The AI provider is currently unavailable.";
+    }
+
+    if (error.message) {
+      return error.message;
+    }
+  }
+
+  return "No se pudo obtener respuesta del assistant.";
+}
+
 export function AppAssistantBubble() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const counter = useRef(1);
@@ -300,8 +341,24 @@ export function AppAssistantBubble() {
   const theme = usePreferencesStore((state) => state.theme);
   const darkMode = theme === "dark";
   const context = getReportChatContext();
+  const integrationContext = getIntegrationReportContext();
   const introMessage = "Lets chat with your data. Ask me anything";
   const introContent = useMemo(() => renderMarkdown(introMessage), [introMessage]);
+  const currentRoute = getCurrentRoute(pathname || "/", new URLSearchParams(searchParams.toString()));
+  const routeReportId = getRouteReportId(pathname || "/", new URLSearchParams(searchParams.toString()));
+  const activeWorkspaceId = getActiveWorkspaceId() || integrationContext?.workspaceId || "";
+  const reportId = context?.reportId || routeReportId;
+  const datasetId = integrationContext?.datasetId || "";
+  const pageContext = useMemo(
+    () => ({
+      report_title: context?.title || "",
+      report_summary: context?.summary || "",
+      visible_stats: context?.stats || [],
+      integration_source: integrationContext?.source || "",
+      pathname: pathname || "/",
+    }),
+    [context?.stats, context?.summary, context?.title, integrationContext?.source, pathname]
+  );
 
   useEffect(() => {
     if (!open) {
@@ -315,6 +372,21 @@ export function AppAssistantBubble() {
     const trimmed = input.trim();
 
     if (!trimmed || sending) {
+      return;
+    }
+
+    if (!getToken()) {
+      const assistantId = `assistant-${counter.current}`;
+      counter.current += 1;
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: assistantId,
+          role: "assistant",
+          content: "You need an active session to use the AI Assistant.",
+        },
+      ]);
       return;
     }
 
@@ -333,6 +405,11 @@ export function AppAssistantBubble() {
       const response = await sendAssistantMessage({
         message: buildAssistantRequestMessage(trimmed, context),
         conversationId: conversationId || undefined,
+        workspaceId: activeWorkspaceId || undefined,
+        reportId: reportId || undefined,
+        datasetId: datasetId || undefined,
+        currentRoute,
+        pageContext,
       });
       const assistantId = `assistant-${counter.current}`;
       counter.current += 1;
@@ -360,7 +437,7 @@ export function AppAssistantBubble() {
         {
           id: assistantId,
           role: "assistant",
-          content: "No se pudo obtener respuesta del assistant.",
+          content: getAssistantErrorMessage(error),
         },
       ]);
     } finally {
