@@ -24,7 +24,7 @@ type ForgotPasswordInput = {
 type ResetPasswordInput = {
   email: string;
   code: string;
-  password: string;
+  newPassword: string;
 };
 
 type DeleteAccountInput = {
@@ -323,7 +323,7 @@ export async function resetPassword(input: ResetPasswordInput) {
     body: JSON.stringify({
       email: input.email,
       code: input.code,
-      password: input.password,
+      new_password: input.newPassword,
     }),
   });
 

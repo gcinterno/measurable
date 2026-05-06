@@ -96,6 +96,7 @@ function LoginPageContent() {
     "";
   const sessionExpired = searchParams.get("session") === "expired";
   const accountDeleted = searchParams.get("accountDeleted") === "1";
+  const resetSuccess = searchParams.get("reset") === "success";
   const pageTitle = useMemo(() => messages.login.title, [messages.login.title]);
 
   useEffect(() => {
@@ -172,6 +173,11 @@ function LoginPageContent() {
 
       if (accountDeleted) {
         setSuccess("Your account has been deleted.");
+        return;
+      }
+
+      if (resetSuccess) {
+        setSuccess("Your password was updated. You can sign in now.");
       }
     }
 
@@ -189,6 +195,7 @@ function LoginPageContent() {
     oauthToken,
     router,
     accountDeleted,
+    resetSuccess,
     sessionExpired,
   ]);
 

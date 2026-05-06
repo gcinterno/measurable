@@ -8,6 +8,36 @@ import { AuthGuard } from "@/components/auth/AuthGuard";
 import { VerificationCodeInput } from "@/components/auth/VerificationCodeInput";
 import { RegisterApiError, resetPassword } from "@/lib/api/auth";
 
+function getResetPasswordErrorMessage(error: RegisterApiError) {
+  const normalizedCode = (error.code || "").toLowerCase();
+  const normalizedMessage = error.message.toLowerCase();
+
+  if (
+    normalizedCode.includes("invalid") ||
+    normalizedCode.includes("expired") ||
+    normalizedCode.includes("code") ||
+    normalizedMessage.includes("invalid") ||
+    normalizedMessage.includes("expired") ||
+    normalizedMessage.includes("code")
+  ) {
+    return "Invalid or expired code. Please request a new one.";
+  }
+
+  if (
+    normalizedCode.includes("password") ||
+    normalizedCode.includes("weak") ||
+    normalizedCode.includes("strength") ||
+    normalizedMessage.includes("password") ||
+    normalizedMessage.includes("weak") ||
+    normalizedMessage.includes("stronger") ||
+    normalizedMessage.includes("strength")
+  ) {
+    return "Please enter a stronger password.";
+  }
+
+  return "We could not update your password. Try again.";
+}
+
 function ResetPasswordPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -50,19 +80,17 @@ function ResetPasswordPageContent() {
       await resetPassword({
         email: email.trim(),
         code,
-        password,
+        newPassword: password,
       });
-      setSuccess("Password updated successfully. Redirecting to login...");
-      window.setTimeout(() => {
-        router.replace(`/login?email=${encodeURIComponent(email.trim())}`);
-      }, 900);
+      setSuccess("Your password was updated. You can sign in now.");
+      router.replace(
+        `/login?email=${encodeURIComponent(email.trim())}&reset=success`
+      );
     } catch (err: unknown) {
       if (err instanceof RegisterApiError) {
-        setError(err.message || "We could not reset the password.");
-      } else if (err instanceof Error && err.message) {
-        setError(err.message);
+        setError(getResetPasswordErrorMessage(err));
       } else {
-        setError("We could not reset the password.");
+        setError("We could not update your password. Try again.");
       }
     } finally {
       setLoading(false);
