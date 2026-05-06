@@ -12,6 +12,13 @@ type MeResponse =
       full_name?: string | null;
       logo_url?: string | null;
       logoUrl?: string | null;
+      role?: string | null;
+      is_admin?: boolean | null;
+      isAdmin?: boolean | null;
+      email_verified?: boolean | null;
+      emailVerified?: boolean | null;
+      onboarding_completed?: boolean | null;
+      onboardingCompleted?: boolean | null;
       branding?: {
         logo_url?: string | null;
         logoUrl?: string | null;
@@ -27,6 +34,13 @@ type MeResponse =
         full_name?: string | null;
         logo_url?: string | null;
         logoUrl?: string | null;
+        role?: string | null;
+        is_admin?: boolean | null;
+        isAdmin?: boolean | null;
+        email_verified?: boolean | null;
+        emailVerified?: boolean | null;
+        onboarding_completed?: boolean | null;
+        onboardingCompleted?: boolean | null;
         branding?: {
           logo_url?: string | null;
           logoUrl?: string | null;
@@ -41,6 +55,13 @@ type MeResponse =
         full_name?: string | null;
         logo_url?: string | null;
         logoUrl?: string | null;
+        role?: string | null;
+        is_admin?: boolean | null;
+        isAdmin?: boolean | null;
+        email_verified?: boolean | null;
+        emailVerified?: boolean | null;
+        onboarding_completed?: boolean | null;
+        onboardingCompleted?: boolean | null;
         branding?: {
           logo_url?: string | null;
           logoUrl?: string | null;
@@ -112,6 +133,12 @@ export async function fetchCurrentUser(options?: { signal?: AbortSignal }) {
     email: user.email || "",
     name: user.name || user.full_name || "Usuario",
     phone: user.phone || user.phone_number || "",
+    role: user.role || undefined,
+    isAdmin: Boolean(user.isAdmin ?? user.is_admin ?? user.role === "admin"),
+    emailVerified: Boolean(user.emailVerified ?? user.email_verified),
+    onboardingCompleted: Boolean(
+      user.onboardingCompleted ?? user.onboarding_completed
+    ),
     branding: {
       logoUrl: branding.logoUrl,
       source: branding.source,
@@ -149,6 +176,12 @@ export async function updateCurrentUser(
     email: user.email || "",
     name: user.name || user.full_name || "Usuario",
     phone: user.phone || user.phone_number || "",
+    role: user.role || undefined,
+    isAdmin: Boolean(user.isAdmin ?? user.is_admin ?? user.role === "admin"),
+    emailVerified: Boolean(user.emailVerified ?? user.email_verified),
+    onboardingCompleted: Boolean(
+      user.onboardingCompleted ?? user.onboarding_completed
+    ),
     branding: {
       logoUrl: branding.logoUrl,
       source: branding.source,

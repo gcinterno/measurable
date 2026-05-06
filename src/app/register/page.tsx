@@ -5,8 +5,16 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { AuthGuard } from "@/components/auth/AuthGuard";
+import { AuthSocialPlaceholders } from "@/components/auth/AuthSocialPlaceholders";
 import { useI18n } from "@/components/providers/LanguageProvider";
-import { RegisterApiError, registerUser } from "@/lib/api/auth";
+import {
+  registerUser,
+  RegisterApiError,
+} from "@/lib/api/auth";
+import {
+  setPendingRegistrationCredentials,
+  setPendingVerificationEmail,
+} from "@/lib/auth/session";
 
 export default function RegisterPage() {
   const { messages } = useI18n();
@@ -17,14 +25,16 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   useEffect(() => {
     setError("");
-    setSuccess("");
   }, []);
 
   function validateForm() {
+    if (!fullName.trim()) {
+      return "Full name is required.";
+    }
+
     if (!email.trim()) {
       return messages.register.emailRequired;
     }
@@ -59,19 +69,20 @@ export default function RegisterPage() {
 
     setLoading(true);
     setError("");
-    setSuccess("");
 
     try {
       await registerUser({
         email: email.trim(),
         password,
-        fullName: fullName.trim() || undefined,
+        fullName: fullName.trim(),
       });
 
-      setSuccess(messages.register.success);
-      window.setTimeout(() => {
-        router.replace("/login");
-      }, 1200);
+      setPendingVerificationEmail(email.trim());
+      setPendingRegistrationCredentials({
+        email: email.trim(),
+        password,
+      });
+      router.replace(`/verify-email?email=${encodeURIComponent(email.trim())}`);
     } catch (err: unknown) {
       if (err instanceof RegisterApiError) {
         if (err.status === 409) {
@@ -93,29 +104,29 @@ export default function RegisterPage() {
 
   return (
     <AuthGuard requireAuth={false} redirectTo="/dashboard">
-      <div className="min-h-screen bg-slate-100 lg:grid lg:grid-cols-2">
+      <div className="min-h-screen bg-[var(--background)] lg:grid lg:grid-cols-2">
         <section className="flex min-h-screen items-center justify-center px-6 py-10 sm:px-10 lg:px-16 xl:px-20">
           <div className="w-full max-w-md text-center">
             <div className="mb-8">
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-700">
+              <p className="brand-wordmark text-sm font-semibold uppercase tracking-[0.18em]">
                 Measurable
               </p>
-              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
+              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-[var(--text-primary)] sm:text-4xl">
                 {messages.register.title}
               </h1>
-              <p className="mt-3 text-sm leading-6 text-slate-500 sm:text-base">
+              <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)] sm:text-base">
                 {messages.register.description}
               </p>
             </div>
 
             <form
               onSubmit={handleRegister}
-              className="space-y-4 rounded-[28px] border border-slate-200 bg-white p-8 text-left shadow-sm"
+              className="brand-card space-y-4 p-8 text-left"
             >
               <input
                 type="text"
-                placeholder={messages.register.fullNameOptional}
-                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                placeholder={messages.register.fullName}
+                className="brand-input w-full px-4 py-3"
                 value={fullName}
                 onChange={(event) => setFullName(event.target.value)}
               />
@@ -123,7 +134,7 @@ export default function RegisterPage() {
               <input
                 type="email"
                 placeholder={messages.register.email}
-                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                className="brand-input w-full px-4 py-3"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
               />
@@ -131,7 +142,7 @@ export default function RegisterPage() {
               <input
                 type="password"
                 placeholder={messages.register.password}
-                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                className="brand-input w-full px-4 py-3"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
               />
@@ -139,7 +150,7 @@ export default function RegisterPage() {
               <input
                 type="password"
                 placeholder={messages.register.confirmPassword}
-                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                className="brand-input w-full px-4 py-3"
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
               />
@@ -147,25 +158,21 @@ export default function RegisterPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+                className="brand-button-primary w-full px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {loading ? messages.register.creatingAccount : messages.register.createAccount}
               </button>
 
-              {error ? (
-                <p className="text-sm text-red-600">{error}</p>
-              ) : null}
+              {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
-              {success ? (
-                <p className="text-sm text-emerald-600">{success}</p>
-              ) : null}
+              <AuthSocialPlaceholders />
 
               <div className="pt-2 text-center">
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-[var(--text-secondary)]">
                   {messages.register.alreadyHaveAccount}{" "}
                   <Link
                     href="/login"
-                    className="font-semibold text-sky-700 transition hover:text-sky-800"
+                    className="font-semibold text-[var(--measurable-blue)] hover:text-[var(--measurable-blue-hover)]"
                   >
                     {messages.register.signIn}
                   </Link>
@@ -175,24 +182,24 @@ export default function RegisterPage() {
           </div>
         </section>
 
-        <aside className="hidden border-l border-white/60 bg-[linear-gradient(135deg,#e0f2fe_0%,#f8fafc_48%,#ffffff_100%)] lg:flex lg:min-h-screen lg:flex-col lg:justify-between lg:px-16 lg:py-14 xl:px-20">
+        <aside className="hidden border-l border-[var(--border-soft)] bg-[var(--surface)] lg:flex lg:min-h-screen lg:flex-col lg:justify-between lg:px-16 lg:py-14 xl:px-20">
           <div className="max-w-lg">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-700">
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--measurable-blue)]">
               {messages.login.platformUpdates}
             </p>
-            <h2 className="mt-4 text-4xl font-semibold tracking-tight text-slate-950">
+            <h2 className="mt-4 text-4xl font-semibold tracking-tight text-[var(--text-primary)]">
               {messages.login.updatesTitle}
             </h2>
-            <p className="mt-4 text-base leading-7 text-slate-600">
+            <p className="mt-4 text-base leading-7 text-[var(--text-secondary)]">
               {messages.login.updatesDescription}
             </p>
           </div>
 
-          <div className="rounded-[32px] border border-white/70 bg-white/70 p-8 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur">
-            <p className="text-sm font-semibold text-slate-950">
+          <div className="brand-card p-8">
+            <p className="text-sm font-semibold text-[var(--text-primary)]">
               {messages.login.comingSoon}
             </p>
-            <p className="mt-3 text-sm leading-6 text-slate-500">
+            <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
               {messages.login.comingSoonDescription}
             </p>
           </div>

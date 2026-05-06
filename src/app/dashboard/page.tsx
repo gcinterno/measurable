@@ -98,11 +98,11 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <AppShell>
-        <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+        <section className="brand-card p-5 sm:p-8">
           <div className="space-y-3">
             <div className="h-6 w-52 animate-pulse rounded-full bg-slate-200" />
-            <div className="h-28 animate-pulse rounded-[24px] bg-slate-100" />
-            <div className="h-28 animate-pulse rounded-[24px] bg-slate-100" />
+            <div className="h-28 animate-pulse rounded-[16px] bg-[var(--surface-soft)]" />
+            <div className="h-28 animate-pulse rounded-[16px] bg-[var(--surface-soft)]" />
           </div>
         </section>
       </AppShell>
@@ -112,23 +112,23 @@ export default function DashboardPage() {
   if (error) {
     return (
       <AppShell>
-        <section className="rounded-[28px] border border-red-200 bg-white p-6 shadow-sm sm:p-8">
+        <section className="rounded-[16px] border border-[color:rgba(239,68,68,0.22)] bg-[var(--surface)] p-6 shadow-[0_10px_28px_rgba(7,17,31,0.06)] sm:p-8">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-red-600">
             {messages.common.error}
           </p>
-          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-[var(--text-primary)]">
             {messages.dashboard.couldNotLoadDashboard}
           </h2>
-          <p className="mt-3 text-sm leading-6 text-slate-500 sm:text-base">
+          <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)] sm:text-base">
             {error}
           </p>
-          <p className="mt-2 text-sm leading-6 text-slate-400">
+          <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
             {messages.dashboard.couldNotLoadDashboardDescription}
           </p>
           <button
             type="button"
             onClick={() => setReloadKey((current) => current + 1)}
-            className="mt-5 inline-flex rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+            className="brand-button-secondary mt-5 inline-flex px-4 py-2.5 text-sm font-semibold"
           >
             {messages.common.tryAgain}
           </button>
@@ -163,20 +163,20 @@ export default function DashboardPage() {
     <AppShell>
       <div className="max-w-full space-y-5 sm:space-y-6 md:max-w-none">
         <section>
-          <h1 className="text-3xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
+          <h1 className="text-3xl font-semibold tracking-tight text-[var(--text-primary)] sm:text-5xl">
             Hola, {userName}!
           </h1>
         </section>
 
         <IntegrationDropzoneCard />
 
-        <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <section className="brand-card p-5 sm:p-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
-              <h3 className="text-lg font-semibold text-slate-950">{messages.dashboard.recentReports}</h3>
-              <p className="mt-1 text-sm text-slate-500">{messages.dashboard.recentReportsDescription}</p>
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">{messages.dashboard.recentReports}</h3>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">{messages.dashboard.recentReportsDescription}</p>
             </div>
-            <Link href="/reports" className="text-sm font-medium text-sky-700">
+            <Link href="/reports" className="text-sm font-medium text-[var(--measurable-blue)] hover:text-[var(--measurable-blue-hover)]">
               {messages.common.viewAll}
             </Link>
           </div>
@@ -196,20 +196,20 @@ export default function DashboardPage() {
               ))}
             </div>
           ) : (
-            <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6">
-              <p className="font-medium text-slate-950">
+            <div className="mt-6 rounded-[16px] border border-dashed border-[var(--border-blue-soft)] bg-[var(--surface-soft)] px-4 py-6">
+              <p className="font-medium text-[var(--text-primary)]">
                 {reportsAvailable
                   ? messages.dashboard.noRecentReports
                   : messages.dashboard.reportsUnavailable}
               </p>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
+              <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
                 {reportsAvailable
                   ? messages.dashboard.noRecentReportsDescription
                   : messages.dashboard.reportsUnavailableDescription}
               </p>
               <Link
                 href="/reports/new/flow"
-                className="mt-4 inline-flex rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                className="brand-button-secondary mt-4 inline-flex px-4 py-2.5 text-sm font-semibold"
               >
                 {messages.nav.newReport}
               </Link>
@@ -217,20 +217,20 @@ export default function DashboardPage() {
           )}
         </section>
 
-        <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <section className="brand-card p-5 sm:p-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-slate-950">{messages.dashboard.integrations}</h3>
-              <p className="mt-1 text-sm text-slate-500">{messages.dashboard.integrationsDescription}</p>
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">{messages.dashboard.integrations}</h3>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">{messages.dashboard.integrationsDescription}</p>
             </div>
           </div>
           <div className="mt-6 grid grid-cols-2 gap-3 xl:grid-cols-4">
             {integrationCatalog.map((integration) => (
               <div
                 key={integration.integrationKey}
-                className="flex min-w-0 flex-col items-center justify-center rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 text-center"
+                className="flex min-w-0 flex-col items-center justify-center rounded-[16px] border border-[var(--border-soft)] bg-[var(--surface-soft)] px-4 py-4 text-center"
               >
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--surface)] ring-1 ring-[var(--border-soft)]">
                   <Image
                     src={integration.logoUrl}
                     alt={integration.logoAlt}
@@ -240,12 +240,12 @@ export default function DashboardPage() {
                     unoptimized
                   />
                 </div>
-                <p className="mt-3 text-sm font-semibold text-slate-950">
+                <p className="mt-3 text-sm font-semibold text-[var(--text-primary)]">
                   {integration.name}
                 </p>
                 <Link
                   href={integration.detailHref || "/integrations"}
-                  className="mt-4 inline-flex rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                  className="brand-button-secondary mt-4 inline-flex px-4 py-2 text-sm font-semibold"
                 >
                   {messages.common.connect}
                 </Link>
@@ -255,15 +255,15 @@ export default function DashboardPage() {
           <div className="mt-5 flex justify-center">
             <Link
               href="/integrations"
-              className="inline-flex w-full items-center justify-center rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold !text-white transition hover:bg-slate-800 sm:w-auto"
+              className="brand-button-primary inline-flex w-full items-center justify-center px-5 py-3 text-sm font-semibold !text-white sm:w-auto"
             >
               {messages.dashboard.viewAllIntegrations}
             </Link>
           </div>
         </section>
 
-        <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <h3 className="text-lg font-semibold text-slate-950">{messages.dashboard.quickActions}</h3>
+        <section className="brand-card p-5 sm:p-6">
+          <h3 className="text-lg font-semibold text-[var(--text-primary)]">{messages.dashboard.quickActions}</h3>
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             {quickActions.map((action) => (
               <QuickActionCard

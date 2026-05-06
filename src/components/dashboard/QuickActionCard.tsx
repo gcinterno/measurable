@@ -52,9 +52,9 @@ export function QuickActionCard({
   return (
     <Link
       href={href}
-      className="flex min-h-[154px] min-w-0 flex-col items-center justify-center rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-5 text-center transition hover:border-slate-300 hover:bg-slate-100"
+      className="flex min-h-[154px] min-w-0 flex-col items-center justify-center rounded-[16px] border border-[var(--border-soft)] bg-[var(--surface-soft)] px-4 py-5 text-center transition hover:border-[var(--border-blue-soft)] hover:bg-white"
     >
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-700 ring-1 ring-slate-200">
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-[var(--measurable-blue)] ring-1 ring-[var(--border-soft)]">
         {renderIcon()}
       </div>
       <p className="mt-4 text-sm font-semibold text-slate-950">{title}</p>

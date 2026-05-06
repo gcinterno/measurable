@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { useI18n } from "@/components/providers/LanguageProvider";
 import { isAbortError, isAuthError } from "@/lib/api";
+import { deleteAccount } from "@/lib/api/auth";
 import { fetchCurrentUser, updateCurrentUser } from "@/lib/api/me";
 import { fetchWorkspace, updateWorkspace } from "@/lib/api/workspaces";
+import { startLogoutInProgress } from "@/lib/auth/session";
+import { useAuthStore } from "@/lib/store/auth-store";
 import { usePreferencesStore } from "@/lib/store/preferences-store";
 import { getActiveWorkspaceId } from "@/lib/workspace/session";
 import type { User } from "@/types/auth";
@@ -24,9 +28,21 @@ const languageOptions = [
   { value: "en", label: "English" },
 ];
 
+const deletionReasons = [
+  "Too expensive",
+  "Missing features",
+  "Hard to use",
+  "No longer needed",
+  "Switching tools",
+  "Privacy concerns",
+  "Other",
+] as const;
+
 export default function SettingsPage() {
+  const router = useRouter();
   const { messages } = useI18n();
   const preferences = usePreferencesStore();
+  const logout = useAuthStore((state) => state.logout);
   const [user, setUser] = useState<User | null>(null);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [brandNameDraft, setBrandNameDraft] = useState(preferences.brandName);
@@ -34,6 +50,13 @@ export default function SettingsPage() {
   const [loadingWorkspace, setLoadingWorkspace] = useState(true);
   const [savingWorkspace, setSavingWorkspace] = useState(false);
   const [saved, setSaved] = useState("");
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
+  const [deleteReason, setDeleteReason] = useState<(typeof deletionReasons)[number] | "">("");
+  const [deleteDetails, setDeleteDetails] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -188,8 +211,54 @@ export default function SettingsPage() {
     }
   }
 
+  function openDeleteModal() {
+    setDeleteModalOpen(true);
+    setDeleteStep(1);
+    setDeleteReason("");
+    setDeleteDetails("");
+    setDeleteConfirmation("");
+    setDeleteError("");
+  }
+
+  function closeDeleteModal() {
+    if (deleteSubmitting) {
+      return;
+    }
+
+    setDeleteModalOpen(false);
+    setDeleteStep(1);
+    setDeleteError("");
+    setDeleteConfirmation("");
+  }
+
+  async function handleDeleteAccount() {
+    if (!deleteReason || deleteConfirmation !== "Eliminar") {
+      return;
+    }
+
+    setDeleteSubmitting(true);
+    setDeleteError("");
+
+    try {
+      await deleteAccount({
+        reason: deleteReason,
+        details: deleteDetails.trim(),
+        confirmation: "Eliminar",
+      });
+
+      startLogoutInProgress();
+      logout();
+      router.replace("/login?accountDeleted=1");
+    } catch {
+      setDeleteError("We could not delete your account right now. Please try again.");
+    } finally {
+      setDeleteSubmitting(false);
+    }
+  }
+
   return (
     <AppShell>
+      <>
       <form
         onSubmit={handleSave}
         className="grid gap-6"
@@ -507,7 +576,150 @@ export default function SettingsPage() {
             )}
           </div>
         </section>
+
+        <div className="flex justify-center pt-2 sm:justify-start">
+          <button
+            type="button"
+            onClick={openDeleteModal}
+            className="inline-flex items-center justify-center rounded-[16px] border border-red-500/20 bg-red-500/10 px-5 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-500/15"
+          >
+            Eliminar cuenta
+          </button>
+        </div>
       </form>
+      {deleteModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(7,17,31,0.52)] px-4 py-4 sm:px-6">
+          <div className="w-[calc(100%-32px)] max-w-[420px] max-h-[85vh] overflow-y-auto rounded-[16px] border border-[var(--border-soft)] bg-white p-5 shadow-[0_18px_48px_rgba(7,17,31,0.18)] sm:p-6">
+            {deleteStep === 1 ? (
+              <>
+                <h3 className="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
+                  Eliminar cuenta
+                </h3>
+                <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
+                  Permanently delete your Measurable account, reports, integrations, and saved settings. This action cannot be undone.
+                </p>
+                <p className="mt-5 text-sm font-medium text-[var(--text-primary)]">
+                  Why are you deleting your account?
+                </p>
+                <div className="mt-4 space-y-2.5">
+                  {deletionReasons.map((reason) => (
+                    <button
+                      key={reason}
+                      type="button"
+                      onClick={() => {
+                        setDeleteReason(reason);
+                        setDeleteError("");
+                      }}
+                      className={`w-full rounded-[14px] border px-3.5 py-3 text-left transition ${
+                        deleteReason === reason
+                          ? "border-[var(--measurable-blue)] bg-[rgba(23,73,255,0.05)]"
+                          : "border-[var(--border-soft)] bg-white hover:border-[var(--border-blue-soft)] hover:bg-[var(--surface-soft)]"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-sm font-medium text-[var(--text-primary)]">
+                          {reason}
+                        </span>
+                        <span
+                          className={`flex h-4.5 w-4.5 shrink-0 rounded-full border ${
+                            deleteReason === reason
+                              ? "border-[var(--measurable-blue)] bg-[var(--measurable-blue)]"
+                              : "border-[var(--border-soft)] bg-white"
+                          }`}
+                        />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                <label className="mt-5 block">
+                  <span className="text-sm font-medium text-[var(--text-primary)]">
+                    Optional feedback
+                  </span>
+                  <textarea
+                    value={deleteDetails}
+                    onChange={(event) => setDeleteDetails(event.target.value)}
+                    rows={3}
+                    className="brand-input mt-3 w-full px-4 py-3"
+                    placeholder="Optional feedback"
+                  />
+                </label>
+
+                {deleteError ? (
+                  <p className="mt-4 text-sm text-red-600">{deleteError}</p>
+                ) : null}
+
+                <div className="mt-6 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={closeDeleteModal}
+                    className="rounded-[16px] border border-[var(--border-soft)] bg-white px-4 py-3 text-sm font-semibold text-[var(--navy-900)]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!deleteReason}
+                    onClick={() => setDeleteStep(2)}
+                    className="rounded-[16px] bg-[var(--measurable-blue)] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[var(--measurable-blue-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Continue
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
+                  Confirm deletion
+                </h3>
+                <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
+                  Type <span className="font-semibold text-red-600">Eliminar</span> to permanently delete your account.
+                </p>
+
+                <label className="mt-5 block">
+                  <input
+                    type="text"
+                    value={deleteConfirmation}
+                    onChange={(event) => {
+                      setDeleteConfirmation(event.target.value);
+                      setDeleteError("");
+                    }}
+                    className="brand-input mt-3 w-full px-4 py-3"
+                    placeholder="Eliminar"
+                  />
+                </label>
+
+                {deleteError ? (
+                  <p className="mt-4 text-sm text-red-600">{deleteError}</p>
+                ) : null}
+
+                <div className="mt-6 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    disabled={deleteSubmitting}
+                    onClick={() => {
+                      setDeleteStep(1);
+                      setDeleteError("");
+                    }}
+                    className="rounded-[16px] border border-[var(--border-soft)] bg-white px-4 py-3 text-sm font-semibold text-[var(--navy-900)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleteSubmitting || deleteConfirmation !== "Eliminar"}
+                    onClick={() => void handleDeleteAccount()}
+                    className="rounded-[16px] bg-red-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {deleteSubmitting ? "Deleting..." : "Permanently delete"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+      </>
     </AppShell>
   );
 }

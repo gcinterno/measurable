@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
 
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { AppAssistantBubble } from "@/components/layout/AppAssistantBubble";
@@ -9,6 +9,9 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { useI18n } from "@/components/providers/LanguageProvider";
 import { FEATURES } from "@/config/features";
+import { fetchCurrentUser } from "@/lib/api/me";
+import { isAbortError, isAuthError } from "@/lib/api";
+import { useAuthStore } from "@/lib/store/auth-store";
 import { usePreferencesStore } from "@/lib/store/preferences-store";
 
 type AppShellProps = {
@@ -18,9 +21,49 @@ type AppShellProps = {
 export function AppShell({ children }: AppShellProps) {
   const theme = usePreferencesStore((state) => state.theme);
   const darkMode = theme === "dark";
+  const user = useAuthStore((state) => state.user);
+  const setUser = useAuthStore((state) => state.setUser);
   const { messages } = useI18n();
   const showBillingNav = false;
   const showPlansNav = false;
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+
+    async function loadShellUser() {
+      try {
+        const currentUser = await fetchCurrentUser({ signal: controller.signal });
+
+        if (!active) {
+          return;
+        }
+
+        if (process.env.NODE_ENV !== "production") {
+          console.info("AUTH_ME_DEBUG", {
+            scope: "AppShell",
+            email: currentUser.email,
+            isAdmin: currentUser.isAdmin,
+            role: currentUser.role || null,
+          });
+        }
+
+        setUser(currentUser);
+      } catch (error) {
+        if (!isAbortError(error) && !isAuthError(error)) {
+          console.warn("app shell user bootstrap failed", error);
+        }
+      }
+    }
+
+    void loadShellUser();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [setUser]);
+
   const navItems = [
     { label: messages.nav.dashboard, href: "/dashboard", icon: "dashboard", match: "exact" },
     { label: messages.nav.reports, href: "/reports", icon: "reports", match: "exact" },
@@ -37,13 +80,23 @@ export function AppShell({ children }: AppShellProps) {
         ]
       : []),
     { label: messages.nav.settings, href: "/settings", icon: "settings", match: "exact" },
+    ...(user?.isAdmin
+      ? [
+          {
+            label: messages.nav.admin,
+            href: "/admin",
+            icon: "admin",
+            match: "prefix",
+          },
+        ]
+      : []),
   ] as const;
 
   return (
     <AuthGuard requireAuth redirectTo="/login">
       <main
         className={`min-h-screen overflow-x-hidden md:overflow-x-visible ${
-          darkMode ? "bg-[#020617] text-white" : "bg-[#edf2f7] text-slate-950"
+          darkMode ? "bg-[var(--navy-950)] text-white" : "bg-[var(--background)] text-[var(--text-primary)]"
         }`}
       >
         <div className="flex min-h-screen max-w-full md:max-w-none">

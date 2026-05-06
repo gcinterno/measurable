@@ -5,6 +5,10 @@ export type User = {
   email: string;
   name: string;
   phone?: string;
+  role?: string;
+  isAdmin?: boolean;
+  emailVerified?: boolean;
+  onboardingCompleted?: boolean;
   branding?: {
     logoUrl?: string;
     source?: string;
@@ -14,7 +18,8 @@ export type User = {
 export type AuthState = {
   token: string | null;
   user: User | null;
-  login: (token: string, user: User) => void;
+  login: (token: string | null, user: User) => void;
+  setUser: (user: User | null) => void;
   logout: () => void;
 };
 

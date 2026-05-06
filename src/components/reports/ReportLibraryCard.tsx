@@ -77,15 +77,15 @@ export function ReportLibraryCard({
 
   return (
     <article
-      className={`overflow-visible rounded-[28px] border-0 bg-transparent p-0 shadow-none transition hover:-translate-y-0.5 sm:border sm:border-slate-200 sm:bg-white sm:p-4 sm:shadow-sm sm:hover:border-slate-300 sm:hover:shadow-md ${
+      className={`overflow-visible rounded-[16px] border-0 bg-transparent p-0 shadow-none transition hover:-translate-y-0.5 sm:border sm:border-[var(--border-soft)] sm:bg-white sm:p-4 sm:shadow-[0_10px_24px_rgba(7,17,31,0.05)] sm:hover:border-[var(--border-blue-soft)] sm:hover:shadow-[0_14px_30px_rgba(7,17,31,0.08)] ${
         menuOpen ? "relative z-20" : ""
       }`}
     >
       <ReportPreviewThumbnail report={report} />
 
-      <div className="-mt-8 rounded-[24px] border border-slate-200/90 bg-white p-3.5 shadow-[0_18px_40px_rgba(15,23,42,0.08)] ring-1 ring-white/70 sm:-mt-9 sm:p-4">
+      <div className="-mt-8 rounded-[16px] border border-[var(--border-soft)] bg-white p-3.5 shadow-[0_14px_30px_rgba(7,17,31,0.06)] ring-1 ring-white/70 sm:-mt-9 sm:p-4">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-600">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--measurable-blue)]">
             {report.status}
           </p>
           <h4 className="mt-2.5 line-clamp-2 text-lg font-semibold tracking-tight text-slate-950 sm:text-[1.15rem]">
@@ -100,7 +100,7 @@ export function ReportLibraryCard({
           {!FEATURES.ENABLE_APP_REVIEW_MODE ? (
             <Link
               href={`/reports/${report.id}`}
-              className="inline-flex min-w-0 flex-1 items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
+              className="inline-flex min-w-0 flex-1 items-center justify-center rounded-2xl bg-[var(--measurable-blue)] px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-[var(--measurable-blue-hover)]"
             >
               {language === "es" ? "Ver reporte" : "View report"}
             </Link>

@@ -125,7 +125,7 @@ const pricing = [
 
 function SectionEyebrow({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-600">
+    <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[var(--measurable-blue)]">
       {children}
     </p>
   );
@@ -141,7 +141,7 @@ function PrimaryCta({
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(15,23,42,0.18)] transition hover:-translate-y-0.5 hover:bg-slate-800"
+      className="brand-button-primary inline-flex items-center justify-center px-5 py-3 text-sm font-semibold transition hover:-translate-y-0.5"
     >
       {children}
     </Link>
@@ -158,7 +158,7 @@ function SecondaryCta({
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:-translate-y-0.5 hover:bg-slate-50"
+      className="brand-button-secondary inline-flex items-center justify-center px-5 py-3 text-sm font-semibold transition hover:-translate-y-0.5"
     >
       {children}
     </Link>
@@ -170,11 +170,11 @@ function Navbar() {
     <header className="sticky top-0 z-40 border-b border-white/70 bg-white/80 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 sm:px-8 lg:px-10">
         <Link href="/" className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-sm font-semibold tracking-[0.24em] text-sky-200">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--measurable-blue)] text-sm font-semibold tracking-[0.24em] text-white">
             M
           </div>
           <div>
-            <p className="text-base font-semibold text-slate-950">Measurable</p>
+            <p className="brand-wordmark text-base font-semibold">Measurable</p>
             <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">
               AI reporting
             </p>
@@ -182,13 +182,13 @@ function Navbar() {
         </Link>
 
         <nav className="hidden items-center gap-8 lg:flex">
-          <a href="#how-it-works" className="text-sm font-medium text-slate-600 transition hover:text-slate-950">
+          <a href="#how-it-works" className="text-sm font-medium text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]">
             How it works
           </a>
-          <a href="#features" className="text-sm font-medium text-slate-600 transition hover:text-slate-950">
+          <a href="#features" className="text-sm font-medium text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]">
             Features
           </a>
-          <a href="#pricing" className="text-sm font-medium text-slate-600 transition hover:text-slate-950">
+          <a href="#pricing" className="text-sm font-medium text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]">
             Pricing
           </a>
         </nav>
@@ -196,7 +196,7 @@ function Navbar() {
         <div className="flex items-center gap-3">
           <Link
             href="/login"
-            className="inline-flex rounded-2xl px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+            className="inline-flex rounded-2xl px-4 py-2.5 text-sm font-semibold text-[var(--text-secondary)] transition hover:bg-[var(--surface-soft)] hover:text-[var(--measurable-blue)]"
           >
             Login
           </Link>
@@ -209,12 +209,12 @@ function Navbar() {
 
 function HeroMockup() {
   return (
-    <div className="group rounded-[36px] border border-white/70 bg-[linear-gradient(145deg,#ffffff_0%,#f7fbff_45%,#ebf2ff_100%)] p-4 shadow-[0_30px_80px_rgba(15,23,42,0.08)] transition duration-500 hover:-translate-y-1 hover:shadow-[0_36px_100px_rgba(15,23,42,0.12)] sm:p-6">
-      <div className="rounded-[30px] border border-slate-900/90 bg-[linear-gradient(160deg,#07111f_0%,#0b1730_42%,#1d4ed8_100%)] p-4 text-white shadow-[0_26px_60px_rgba(2,6,23,0.28)] transition duration-500 group-hover:scale-[1.01] sm:p-6">
-        <div className="rounded-[26px] border border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.16),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.05)_0%,rgba(255,255,255,0.02)_100%)] p-5 sm:p-6">
+    <div className="group rounded-[16px] border border-[var(--border-soft)] bg-white p-4 shadow-[0_14px_34px_rgba(7,17,31,0.08)] transition duration-500 hover:-translate-y-1 hover:shadow-[0_18px_40px_rgba(7,17,31,0.1)] sm:p-6">
+      <div className="rounded-[16px] border border-[var(--navy-900)] bg-[var(--navy-950)] p-4 text-white shadow-[0_18px_40px_rgba(7,17,31,0.22)] transition duration-500 group-hover:scale-[1.01] sm:p-6">
+        <div className="rounded-[16px] border border-[rgba(191,215,237,0.16)] bg-[linear-gradient(180deg,rgba(255,255,255,0.05)_0%,rgba(255,255,255,0.02)_100%)] p-5 sm:p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-sky-200">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-[var(--accent-cyan)]">
                 Executive report
               </p>
               <h3 className="mt-3 text-xl font-semibold tracking-[-0.05em] sm:text-2xl">
@@ -226,11 +226,11 @@ function HeroMockup() {
             </span>
           </div>
 
-          <div className="mt-6 rounded-[24px] bg-[linear-gradient(145deg,#020617_0%,#0f172a_34%,#1d4ed8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+          <div className="mt-6 rounded-[16px] bg-[linear-gradient(145deg,var(--navy-950)_0%,var(--navy-900)_34%,var(--measurable-blue)_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
             <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
               <div className="flex flex-col justify-between">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-sky-200">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-[var(--accent-cyan)]">
                     Cover slide
                   </p>
                   <h4 className="mt-5 max-w-xl text-3xl font-semibold leading-[0.98] tracking-[-0.06em] text-white sm:text-4xl">
@@ -287,17 +287,17 @@ function HeroMockup() {
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-[20px] border border-white/10 bg-white px-4 py-4 text-slate-950 transition duration-500 group-hover:-translate-y-1">
+            <div className="rounded-[16px] border border-[var(--border-soft)] bg-white px-4 py-4 text-slate-950 transition duration-500 group-hover:-translate-y-1">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                 KPI slide
               </p>
               <p className="mt-5 text-4xl font-semibold tracking-[-0.05em]">
                 82K
               </p>
-              <p className="mt-2 text-sm text-slate-500">Reach</p>
+              <p className="mt-2 text-sm text-[var(--text-secondary)]">Reach</p>
             </div>
-            <div className="rounded-[20px] border border-white/10 bg-white/8 px-4 py-4 transition delay-75 duration-500 group-hover:-translate-y-2 group-hover:bg-white/12">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200">
+            <div className="rounded-[16px] border border-[rgba(191,215,237,0.18)] bg-white/8 px-4 py-4 transition delay-75 duration-500 group-hover:-translate-y-2 group-hover:bg-white/12">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--accent-cyan)]">
                 Analysis slide
               </p>
               <div className="mt-5 space-y-2">
@@ -306,8 +306,8 @@ function HeroMockup() {
                 <div className="h-2 w-8/12 rounded-full bg-white/20" />
               </div>
             </div>
-            <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-4 transition delay-150 duration-500 group-hover:-translate-y-3 group-hover:bg-black/30">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200">
+            <div className="rounded-[16px] border border-[rgba(191,215,237,0.18)] bg-black/20 px-4 py-4 transition delay-150 duration-500 group-hover:-translate-y-3 group-hover:bg-black/30">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--accent-cyan)]">
                 Conclusion slide
               </p>
               <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-3">
@@ -330,10 +330,10 @@ function HeroSection() {
       <div className="relative mx-auto grid max-w-7xl gap-10 px-6 pb-18 pt-12 sm:px-8 lg:grid-cols-[1fr_0.94fr] lg:items-center lg:px-10 lg:pb-24 lg:pt-16">
         <div className="max-w-3xl">
           <SectionEyebrow>AI-powered reporting platform</SectionEyebrow>
-          <h1 className="mt-5 text-5xl font-semibold leading-[0.94] tracking-[-0.07em] text-slate-950 sm:text-6xl lg:text-[5.25rem]">
+          <h1 className="mt-5 text-5xl font-semibold leading-[0.94] tracking-[-0.07em] text-[var(--text-primary)] sm:text-6xl lg:text-[5.25rem]">
             Connect your marketing data &amp; generate client-ready reports in minutes.
           </h1>
-          <p className="mt-6 max-w-2xl text-base leading-8 text-slate-600 sm:text-lg">
+          <p className="mt-6 max-w-2xl text-base leading-8 text-[var(--text-secondary)] sm:text-lg">
             Connect your data sources and generate beautiful, presentation-ready reports automatically. No spreadsheets. No manual work.
           </p>
 
@@ -342,7 +342,7 @@ function HeroSection() {
             <SecondaryCta href="#how-it-works">See how it works</SecondaryCta>
           </div>
 
-          <p className="mt-4 text-sm font-medium text-slate-500">
+          <p className="mt-4 text-sm font-medium text-[var(--text-secondary)]">
             No credit card required
           </p>
         </div>
@@ -356,10 +356,10 @@ function HeroSection() {
 function SocialProofSection() {
   return (
     <section className="mx-auto max-w-7xl px-6 py-16 sm:px-8 lg:px-10">
-      <div className="rounded-[36px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] sm:p-8">
+      <div className="rounded-[16px] border border-[var(--border-soft)] bg-white p-6 shadow-[0_12px_28px_rgba(7,17,31,0.05)] sm:p-8">
         <div className="text-center">
           <SectionEyebrow>Social proof</SectionEyebrow>
-          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.05em] text-slate-950 sm:text-4xl">
+          <h2 className="mt-4 text-3xl font-semibold tracking-[-0.05em] text-[var(--text-primary)] sm:text-4xl">
             Trusted by growing agencies and teams
           </h2>
         </div>
@@ -368,7 +368,7 @@ function SocialProofSection() {
           {logos.map((logo) => (
             <div
               key={logo}
-              className="flex h-16 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-500 transition hover:-translate-y-0.5 hover:bg-white"
+              className="flex h-16 items-center justify-center rounded-2xl border border-[var(--border-soft)] bg-[var(--surface-soft)] text-sm font-semibold text-[var(--text-secondary)] transition hover:-translate-y-0.5 hover:bg-white"
             >
               {logo}
             </div>
@@ -379,12 +379,12 @@ function SocialProofSection() {
           {testimonials.map((testimonial) => (
             <article
               key={testimonial.author}
-              className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-6"
+              className="rounded-[16px] border border-[var(--border-soft)] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-6"
             >
               <p className="text-base leading-8 text-slate-700">
                 &ldquo;{testimonial.quote}&rdquo;
               </p>
-              <p className="mt-5 text-sm font-semibold text-slate-950">
+              <p className="mt-5 text-sm font-semibold text-[var(--text-primary)]">
                 {testimonial.author}
               </p>
             </article>
@@ -399,16 +399,16 @@ function ProblemSolutionSection() {
   return (
     <section className="mx-auto max-w-7xl px-6 py-6 sm:px-8 lg:px-10">
       <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-[36px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] sm:p-8">
+        <section className="rounded-[16px] border border-[var(--border-soft)] bg-white p-6 shadow-[0_12px_28px_rgba(7,17,31,0.05)] sm:p-8">
           <SectionEyebrow>The problem</SectionEyebrow>
-          <h2 className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-slate-950">
+          <h2 className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-[var(--text-primary)]">
             Reporting still feels like ops work.
           </h2>
           <div className="mt-8 space-y-4">
             {painPoints.map((point) => (
               <div
                 key={point}
-                className="flex items-start gap-3 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4"
+                className="flex items-start gap-3 rounded-[16px] border border-[var(--border-soft)] bg-[var(--surface-soft)] px-4 py-4"
               >
                 <span className="mt-1 h-2.5 w-2.5 rounded-full bg-red-400" />
                 <p className="text-sm leading-7 text-slate-700 sm:text-base">
@@ -419,7 +419,7 @@ function ProblemSolutionSection() {
           </div>
         </section>
 
-        <section className="rounded-[36px] border border-slate-800 bg-[linear-gradient(145deg,#07111f_0%,#0f172a_45%,#1d4ed8_100%)] p-6 text-white shadow-[0_18px_50px_rgba(15,23,42,0.12)] sm:p-8">
+        <section className="rounded-[16px] border border-[var(--navy-900)] bg-[linear-gradient(145deg,var(--navy-950)_0%,var(--navy-900)_45%,var(--measurable-blue)_100%)] p-6 text-white shadow-[0_16px_36px_rgba(7,17,31,0.12)] sm:p-8">
           <SectionEyebrow>Solution</SectionEyebrow>
           <h2 className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-white">
             Measurable automates everything
@@ -430,7 +430,7 @@ function ProblemSolutionSection() {
                 key={point}
                 className="flex items-start gap-3 rounded-[24px] border border-white/10 bg-white/8 px-4 py-4"
               >
-                <span className="mt-1 h-2.5 w-2.5 rounded-full bg-sky-300" />
+                <span className="mt-1 h-2.5 w-2.5 rounded-full bg-[var(--accent-cyan)]" />
                 <p className="text-sm leading-7 text-slate-100 sm:text-base">
                   {point}
                 </p>
@@ -471,10 +471,10 @@ function StepIcon({ kind }: { kind: string }) {
 function HowItWorksSection() {
   return (
     <section id="how-it-works" className="mx-auto max-w-7xl px-6 py-16 sm:px-8 lg:px-10">
-      <div className="rounded-[36px] border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] sm:p-8">
+      <div className="rounded-[16px] border border-[var(--border-soft)] bg-white p-6 shadow-[0_12px_28px_rgba(7,17,31,0.05)] sm:p-8">
         <div className="max-w-3xl">
           <SectionEyebrow>How it works</SectionEyebrow>
-          <h2 className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-slate-950">
+          <h2 className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-[var(--text-primary)]">
             From disconnected data to a polished report in 3 steps
           </h2>
         </div>
@@ -483,15 +483,15 @@ function HowItWorksSection() {
           {howItWorks.map((step) => (
             <article
               key={step.step}
-              className="group rounded-[30px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-6 transition hover:-translate-y-1 hover:shadow-[0_18px_50px_rgba(15,23,42,0.08)]"
+              className="group rounded-[16px] border border-[var(--border-soft)] bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] p-6 transition hover:-translate-y-1 hover:shadow-[0_14px_34px_rgba(7,17,31,0.08)]"
             >
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white transition group-hover:bg-blue-600">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--navy-950)] text-white transition group-hover:bg-[var(--measurable-blue)]">
                 <StepIcon kind={step.icon} />
               </div>
               <p className="mt-6 text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
                 Step {step.step}
               </p>
-              <h3 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-slate-950">
+              <h3 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-[var(--text-primary)]">
                 {step.title}
               </h3>
               <p className="mt-4 text-sm leading-7 text-slate-600 sm:text-base">
@@ -507,7 +507,7 @@ function HowItWorksSection() {
 
 function ProductPreviewSection() {
   return (
-    <section className="bg-[linear-gradient(180deg,#07111f_0%,#0f172a_100%)] py-18 text-white">
+    <section className="bg-[linear-gradient(180deg,var(--navy-950)_0%,var(--navy-900)_100%)] py-18 text-white">
       <div className="mx-auto max-w-7xl px-6 sm:px-8 lg:px-10">
         <div className="max-w-3xl">
           <SectionEyebrow>Product preview</SectionEyebrow>
@@ -517,12 +517,12 @@ function ProductPreviewSection() {
         </div>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-[0.88fr_1.12fr]">
-          <article className="rounded-[34px] border border-white/10 bg-white/5 p-5 backdrop-blur">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-sky-300">
+          <article className="rounded-[16px] border border-white/10 bg-white/5 p-5 backdrop-blur">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--accent-cyan)]">
               Dashboard preview
             </p>
             <div className="mt-5 grid gap-4">
-              <div className="rounded-[24px] border border-white/10 bg-black/20 p-5">
+              <div className="rounded-[16px] border border-white/10 bg-black/20 p-5">
                 <p className="text-sm text-slate-300">Recent reports</p>
                 <div className="mt-4 space-y-3">
                   <div className="rounded-2xl bg-white/8 px-4 py-3 text-sm text-slate-100">
@@ -534,20 +534,20 @@ function ProductPreviewSection() {
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-4">
-                <div className="rounded-[22px] border border-white/10 bg-white/8 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-300">
+                <div className="rounded-[16px] border border-white/10 bg-white/8 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--accent-cyan)]">
                     Followers
                   </p>
                   <p className="mt-3 text-2xl font-semibold text-white">12.4K</p>
                 </div>
-                <div className="rounded-[22px] border border-white/10 bg-white/8 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-300">
+                <div className="rounded-[16px] border border-white/10 bg-white/8 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--accent-cyan)]">
                     Reach
                   </p>
                   <p className="mt-3 text-2xl font-semibold text-white">82K</p>
                 </div>
-                <div className="rounded-[22px] border border-white/10 bg-white/8 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-300">
+                <div className="rounded-[16px] border border-white/10 bg-white/8 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--accent-cyan)]">
                     Engagement
                   </p>
                   <p className="mt-3 text-2xl font-semibold text-white">6.8%</p>
@@ -556,10 +556,10 @@ function ProductPreviewSection() {
             </div>
           </article>
 
-          <article className="rounded-[34px] border border-white/10 bg-[linear-gradient(145deg,#08101d_0%,#132240_100%)] p-5 shadow-[0_26px_70px_rgba(2,6,23,0.32)]">
-            <div className="rounded-[28px] border border-white/10 bg-white/5 p-6">
+          <article className="rounded-[16px] border border-white/10 bg-[linear-gradient(145deg,#08101d_0%,#132240_100%)] p-5 shadow-[0_18px_40px_rgba(2,6,23,0.24)]">
+            <div className="rounded-[16px] border border-white/10 bg-white/5 p-6">
               <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-sky-300">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[var(--accent-cyan)]">
                   Report slide
                 </p>
                 <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs font-semibold text-slate-300">
@@ -571,15 +571,15 @@ function ProductPreviewSection() {
               </h3>
 
               <div className="mt-6 grid gap-4 md:grid-cols-[1.12fr_0.88fr_0.88fr]">
-                <div className="rounded-[26px] border border-sky-400/20 bg-[linear-gradient(145deg,#111827_0%,#1d4ed8_100%)] p-5">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200">
+                <div className="rounded-[16px] border border-[rgba(191,215,237,0.2)] bg-[linear-gradient(145deg,#111827_0%,var(--measurable-blue)_100%)] p-5">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--accent-cyan)]">
                     Reach
                   </p>
                   <p className="mt-8 text-5xl font-semibold tracking-[-0.05em] text-white">
                     82K
                   </p>
                 </div>
-                <div className="rounded-[26px] border border-white/10 bg-white p-5 text-slate-950">
+                <div className="rounded-[16px] border border-white/10 bg-white p-5 text-slate-950">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                     Followers
                   </p>
@@ -587,7 +587,7 @@ function ProductPreviewSection() {
                     12.4K
                   </p>
                 </div>
-                <div className="rounded-[26px] border border-white/10 bg-white p-5 text-slate-950">
+                <div className="rounded-[16px] border border-white/10 bg-white p-5 text-slate-950">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                     Engagement
                   </p>
@@ -609,7 +609,7 @@ function FeaturesSection() {
     <section id="features" className="mx-auto max-w-7xl px-6 py-16 sm:px-8 lg:px-10">
       <div className="max-w-3xl">
         <SectionEyebrow>Features</SectionEyebrow>
-        <h2 className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-slate-950">
+        <h2 className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-[var(--text-primary)]">
           Everything you need to scale reporting without the manual work
         </h2>
       </div>
@@ -618,10 +618,10 @@ function FeaturesSection() {
         {features.map((feature) => (
           <article
             key={feature.title}
-            className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_14px_40px_rgba(15,23,42,0.04)] transition hover:-translate-y-1 hover:shadow-[0_18px_50px_rgba(15,23,42,0.08)]"
+            className="rounded-[16px] border border-[var(--border-soft)] bg-white p-6 shadow-[0_10px_28px_rgba(7,17,31,0.04)] transition hover:-translate-y-1 hover:shadow-[0_14px_34px_rgba(7,17,31,0.08)]"
           >
-            <div className="h-11 w-11 rounded-2xl bg-slate-950" />
-            <h3 className="mt-5 text-2xl font-semibold tracking-[-0.04em] text-slate-950">
+            <div className="h-11 w-11 rounded-2xl bg-[var(--measurable-blue)]" />
+            <h3 className="mt-5 text-2xl font-semibold tracking-[-0.04em] text-[var(--text-primary)]">
               {feature.title}
             </h3>
             <p className="mt-4 text-sm leading-7 text-slate-600 sm:text-base">
@@ -637,7 +637,7 @@ function FeaturesSection() {
 function ValuePropSection() {
   return (
     <section className="mx-auto max-w-7xl px-6 py-6 sm:px-8 lg:px-10">
-      <div className="rounded-[36px] border border-slate-800 bg-[linear-gradient(145deg,#07111f_0%,#0f172a_45%,#1d4ed8_100%)] p-6 text-white shadow-[0_18px_50px_rgba(15,23,42,0.14)] sm:p-8 lg:p-10">
+      <div className="rounded-[16px] border border-[var(--navy-900)] bg-[linear-gradient(145deg,var(--navy-950)_0%,var(--navy-900)_45%,var(--measurable-blue)_100%)] p-6 text-white shadow-[0_16px_36px_rgba(7,17,31,0.14)] sm:p-8 lg:p-10">
         <div className="max-w-4xl">
           <SectionEyebrow>Value proposition</SectionEyebrow>
           <h2 className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-white sm:text-5xl">
@@ -657,7 +657,7 @@ function PricingSection() {
     <section id="pricing" className="mx-auto max-w-7xl px-6 py-16 sm:px-8 lg:px-10">
       <div className="text-center">
         <SectionEyebrow>Pricing</SectionEyebrow>
-        <h2 className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-slate-950">
+        <h2 className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-[var(--text-primary)]">
           Simple pricing for teams at every stage
         </h2>
       </div>
@@ -666,15 +666,15 @@ function PricingSection() {
         {pricing.map((plan) => (
           <article
             key={plan.name}
-            className={`rounded-[32px] border p-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] ${
+            className={`rounded-[16px] border p-6 shadow-[0_12px_28px_rgba(7,17,31,0.05)] ${
               plan.featured
-                ? "border-slate-900 bg-[linear-gradient(145deg,#07111f_0%,#0f172a_48%,#1d4ed8_100%)] text-white"
-                : "border-slate-200 bg-white text-slate-950"
+                ? "border-[var(--navy-900)] bg-[linear-gradient(145deg,var(--navy-950)_0%,var(--navy-900)_48%,var(--measurable-blue)_100%)] text-white"
+                : "border-[var(--border-soft)] bg-white text-[var(--text-primary)]"
             }`}
           >
             <p
               className={`text-[11px] font-semibold uppercase tracking-[0.28em] ${
-                plan.featured ? "text-sky-200" : "text-slate-400"
+                plan.featured ? "text-[var(--accent-cyan)]" : "text-[var(--text-muted)]"
               }`}
             >
               {plan.name}
@@ -683,11 +683,11 @@ function PricingSection() {
               <p className="text-5xl font-semibold tracking-[-0.05em]">
                 {plan.price}
               </p>
-              <p className={plan.featured ? "text-slate-200" : "text-slate-500"}>
+              <p className={plan.featured ? "text-slate-200" : "text-[var(--text-secondary)]"}>
                 /month
               </p>
             </div>
-            <p className={`mt-3 text-sm ${plan.featured ? "text-slate-200" : "text-slate-500"}`}>
+            <p className={`mt-3 text-sm ${plan.featured ? "text-slate-200" : "text-[var(--text-secondary)]"}`}>
               {plan.subtitle}
             </p>
 
@@ -698,7 +698,7 @@ function PricingSection() {
                   className={`rounded-2xl px-4 py-3 text-sm ${
                     plan.featured
                       ? "border border-white/10 bg-white/8 text-slate-100"
-                      : "border border-slate-200 bg-slate-50 text-slate-700"
+                      : "border border-[var(--border-soft)] bg-[var(--surface-soft)] text-[var(--text-secondary)]"
                   }`}
                 >
                   {item}
@@ -710,14 +710,14 @@ function PricingSection() {
               {plan.featured ? (
                 <Link
                   href="/login"
-                  className="inline-flex w-full items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100"
+                  className="inline-flex w-full items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-[var(--text-primary)] transition hover:bg-[var(--surface-soft)]"
                 >
                   Start free
                 </Link>
               ) : (
                 <Link
                   href="/login"
-                  className="inline-flex w-full items-center justify-center rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  className="brand-button-primary inline-flex w-full items-center justify-center px-5 py-3 text-sm font-semibold"
                 >
                   Start free
                 </Link>
@@ -733,7 +733,7 @@ function PricingSection() {
 function FinalCtaSection() {
   return (
     <section className="mx-auto max-w-7xl px-6 py-10 sm:px-8 lg:px-10 lg:py-16">
-      <div className="rounded-[38px] border border-slate-800 bg-[linear-gradient(145deg,#07111f_0%,#0f172a_45%,#1d4ed8_100%)] px-6 py-10 text-center text-white shadow-[0_20px_60px_rgba(15,23,42,0.18)] sm:px-8 sm:py-14">
+      <div className="rounded-[16px] border border-[var(--navy-900)] bg-[linear-gradient(145deg,var(--navy-950)_0%,var(--navy-900)_45%,var(--measurable-blue)_100%)] px-6 py-10 text-center text-white shadow-[0_18px_40px_rgba(7,17,31,0.18)] sm:px-8 sm:py-14">
         <SectionEyebrow>Final CTA</SectionEyebrow>
         <h2 className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-white sm:text-5xl">
           Stop wasting hours on reports
@@ -756,17 +756,17 @@ function FinalCtaSection() {
 
 function Footer() {
   return (
-    <footer className="border-t border-slate-200 bg-white">
-      <div className="mx-auto flex max-w-7xl flex-col gap-5 px-6 py-8 text-sm text-slate-500 sm:px-8 lg:flex-row lg:items-center lg:justify-between lg:px-10">
+    <footer className="border-t border-[var(--border-soft)] bg-white">
+      <div className="mx-auto flex max-w-7xl flex-col gap-5 px-6 py-8 text-sm text-[var(--text-secondary)] sm:px-8 lg:flex-row lg:items-center lg:justify-between lg:px-10">
         <p>© 2026 Measurable. All rights reserved.</p>
         <div className="flex flex-wrap gap-5">
-          <Link href="/privacy-policy" className="transition hover:text-slate-950">
+          <Link href="/privacy-policy" className="transition hover:text-[var(--text-primary)]">
             Privacy Policy
           </Link>
-          <Link href="/terms-of-service" className="transition hover:text-slate-950">
+          <Link href="/terms-of-service" className="transition hover:text-[var(--text-primary)]">
             Terms of Service
           </Link>
-          <Link href="/" className="transition hover:text-slate-950">
+          <Link href="/" className="transition hover:text-[var(--text-primary)]">
             Contact
           </Link>
         </div>
@@ -777,7 +777,7 @@ function Footer() {
 
 export function LandingPage() {
   return (
-    <main className="min-h-screen bg-[#f4f8fb] text-slate-950">
+    <main className="min-h-screen bg-[var(--background)] text-[var(--text-primary)]">
       <Navbar />
       <HeroSection />
       <SocialProofSection />

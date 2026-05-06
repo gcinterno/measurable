@@ -6,13 +6,15 @@ import { usePathname, useRouter } from "next/navigation";
 import { PlanLimitsSummary } from "@/components/workspace/PlanLimitsSummary";
 import { useI18n } from "@/components/providers/LanguageProvider";
 import { FEATURES } from "@/config/features";
-import { clearSession } from "@/lib/auth/session";
+import { logoutUser } from "@/lib/api/auth";
+import { startLogoutInProgress } from "@/lib/auth/session";
+import { useAuthStore } from "@/lib/store/auth-store";
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 
 export type NavItem = {
   label: string;
   href: string;
-  icon: "dashboard" | "reports" | "new-report" | "integrations" | "settings" | "billing" | "plans" | "profile";
+  icon: "dashboard" | "reports" | "new-report" | "integrations" | "settings" | "billing" | "plans" | "profile" | "admin";
   match: "exact" | "prefix";
 };
 
@@ -98,6 +100,13 @@ export function NavIcon({ icon, active }: { icon: NavItem["icon"]; active: boole
           <path d="M5.5 18.25c1.78-2.5 4.02-3.75 6.5-3.75s4.72 1.25 6.5 3.75" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       );
+    case "admin":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={`h-5 w-5 ${className}`}>
+          <path d="M12 4.75l6.5 2.5v4.4c0 4.05-2.52 7.75-6.5 9.1-3.98-1.35-6.5-5.05-6.5-9.1v-4.4l6.5-2.5Z" strokeWidth="1.8" strokeLinejoin="round" />
+          <path d="M9.5 12.25l1.6 1.6 3.4-3.6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
   }
 }
 
@@ -107,18 +116,29 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
   const { messages } = useI18n();
   const showPlanSummary = false;
   const showUpgradePlanButton = false;
+  const logout = useAuthStore((state) => state.logout);
   const { workspace, reportsUsedThisMonth } = useActiveWorkspace({
     includeReportsUsage: true,
   });
 
-  function handleLogout() {
-    clearSession();
-    router.replace("/login");
+  async function handleLogout() {
+    startLogoutInProgress();
+
+    try {
+      await logoutUser();
+    } catch (error) {
+      console.warn("logout request failed", {
+        message: error instanceof Error ? error.message : "Unknown logout error",
+      });
+    } finally {
+      logout();
+      router.replace("/login");
+    }
   }
 
   return (
     <aside
-      className={`flex shrink-0 flex-col border-white/10 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_32%),linear-gradient(180deg,#111827_0%,#0f172a_100%)] text-white ${
+      className={`flex shrink-0 flex-col border-white/10 bg-[linear-gradient(180deg,var(--navy-950)_0%,var(--navy-900)_100%)] text-white ${
         mobile
           ? "h-full w-full max-w-[20rem] border-r"
           : "sticky top-0 hidden h-screen w-72 border-r md:flex"
@@ -127,7 +147,7 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
       <div className="border-b border-white/10 px-5 py-6 md:px-6 md:py-7">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-sm font-semibold tracking-[0.22em] text-sky-200">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--measurable-blue)] text-sm font-semibold tracking-[0.22em] text-white">
               M
             </div>
             <div>
@@ -152,7 +172,7 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
                 "gap-3 px-4 py-3"
               } ${
                 active
-                  ? "bg-white/12 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]"
+                  ? "bg-[rgba(23,73,255,0.22)] text-white shadow-[inset_0_0_0_1px_rgba(191,215,237,0.18)]"
                   : "text-slate-400 hover:bg-white/6 hover:text-white"
               }`}
             >
@@ -179,7 +199,7 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
             <Link
               href="/plans"
               onClick={onNavigate}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-500"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--measurable-blue)] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[var(--measurable-blue-hover)]"
             >
               <svg viewBox="0 0 24 24" fill="none" className="h-4.5 w-4.5 stroke-current">
                 <path
@@ -196,7 +216,7 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
 
           <button
             type="button"
-            onClick={handleLogout}
+            onClick={() => void handleLogout()}
             className={`w-full rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/12 ${
               FEATURES.ENABLE_APP_REVIEW_MODE || !showUpgradePlanButton ? "" : "mt-4"
             }`}
