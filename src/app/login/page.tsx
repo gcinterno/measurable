@@ -20,6 +20,37 @@ import {
 } from "@/lib/auth/session";
 import { useAuthStore } from "@/lib/store/auth-store";
 
+type OauthHashState = {
+  accessToken: string;
+  errorCode: string;
+  errorMessage: string;
+  resolved: boolean;
+};
+
+function readOauthHashState(): OauthHashState {
+  if (typeof window === "undefined") {
+    return {
+      accessToken: "",
+      errorCode: "",
+      errorMessage: "",
+      resolved: false,
+    };
+  }
+
+  const hash = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  const params = new URLSearchParams(hash);
+
+  return {
+    accessToken: params.get("access_token") || "",
+    errorCode: params.get("oauth_error") || params.get("error") || "",
+    errorMessage:
+      params.get("message") || params.get("error_description") || "",
+    resolved: true,
+  };
+}
+
 function getLoginErrorMessage(error: RegisterApiError, fallback: string) {
   if (
     error.code === "email_not_verified" ||
@@ -42,17 +73,40 @@ function LoginPageContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [oauthHashState, setOauthHashState] = useState<OauthHashState>({
+    accessToken: "",
+    errorCode: "",
+    errorMessage: "",
+    resolved: false,
+  });
   const oauthToken =
-    searchParams.get("token") || searchParams.get("access_token") || "";
+    oauthHashState.accessToken ||
+    searchParams.get("token") ||
+    searchParams.get("access_token") ||
+    "";
   const oauthErrorCode =
-    searchParams.get("oauth_error") || searchParams.get("error") || "";
+    oauthHashState.errorCode ||
+    searchParams.get("oauth_error") ||
+    searchParams.get("error") ||
+    "";
   const oauthErrorMessage =
-    searchParams.get("message") || searchParams.get("error_description") || "";
+    oauthHashState.errorMessage ||
+    searchParams.get("message") ||
+    searchParams.get("error_description") ||
+    "";
   const sessionExpired = searchParams.get("session") === "expired";
   const accountDeleted = searchParams.get("accountDeleted") === "1";
   const pageTitle = useMemo(() => messages.login.title, [messages.login.title]);
 
   useEffect(() => {
+    setOauthHashState(readOauthHashState());
+  }, []);
+
+  useEffect(() => {
+    if (!oauthHashState.resolved) {
+      return;
+    }
+
     let active = true;
 
     async function completeOauthLogin() {
@@ -69,6 +123,13 @@ function LoginPageContent() {
           }
 
           login(oauthToken, user);
+          if (window.location.hash) {
+            window.history.replaceState(
+              null,
+              "",
+              `${window.location.pathname}${window.location.search}`
+            );
+          }
           router.replace("/dashboard");
           return;
         } catch {
@@ -104,7 +165,7 @@ function LoginPageContent() {
         return;
       }
 
-      if (sessionExpired) {
+      if (sessionExpired && !oauthHashState.accessToken) {
         setError("Your session expired. Sign in again.");
         return;
       }
@@ -121,6 +182,8 @@ function LoginPageContent() {
     };
   }, [
     login,
+    oauthHashState.accessToken,
+    oauthHashState.resolved,
     oauthErrorCode,
     oauthErrorMessage,
     oauthToken,

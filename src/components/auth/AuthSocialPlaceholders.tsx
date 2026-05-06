@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 
-import { apiUrl } from "@/lib/api/config";
 import { clearLogoutInProgress } from "@/lib/auth/session";
+import { buildGoogleOauthBackendUrl } from "@/lib/auth/google-oauth";
 
 type AuthSocialPlaceholdersProps = {
   compact?: boolean;
@@ -13,7 +13,7 @@ export function AuthSocialPlaceholders({
   compact = false,
 }: AuthSocialPlaceholdersProps) {
   const [googleLoading, setGoogleLoading] = useState(false);
-  const googleAuthUrl = apiUrl("/auth/google/start");
+  const googleAuthUrl = buildGoogleOauthBackendUrl("/auth/google/start");
 
   function handleGoogleLogin() {
     clearLogoutInProgress();
