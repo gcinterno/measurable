@@ -44,11 +44,13 @@ function MetaIntegrationCallbackContent() {
       }
 
       if (status === "connected" && integrationId) {
+        const resolvedWorkspaceId =
+          storedContext?.workspaceId || getActiveWorkspaceId() || "";
+
         setIntegrationReportContext({
           source: resolvedSource || storedContext?.source || "",
           integration: "meta",
-          workspaceId:
-            storedContext?.workspaceId || getActiveWorkspaceId() || "1",
+          workspaceId: resolvedWorkspaceId,
           integrationId,
           pageId: storedContext?.pageId,
           pageName: storedContext?.pageName,

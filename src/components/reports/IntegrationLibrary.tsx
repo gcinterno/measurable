@@ -23,6 +23,7 @@ import {
   setPendingMetaSource,
   setIntegrationReportContext,
 } from "@/lib/integrations/session";
+import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 
 type IntegrationLibraryProps = {
   integrations: readonly IntegrationCatalogItem[];
@@ -73,7 +74,9 @@ export function IntegrationLibrary({
   const router = useRouter();
   const searchParams = useSearchParams();
   const storedIntegrationContext = getIntegrationReportContext();
+  const { workspace } = useActiveWorkspace();
   const [connectingIntegrationKey, setConnectingIntegrationKey] = useState<string | null>(null);
+  const [connectError, setConnectError] = useState("");
   const [metaFlowState, setMetaFlowState] = useState<MetaFlowState>("not_connected");
   const [metaCounts, setMetaCounts] = useState<Record<MetaFrontendIntegrationKey, number>>({
     facebook_pages: 0,
@@ -84,6 +87,7 @@ export function IntegrationLibrary({
       ? storedIntegrationContext.integrationId || ""
       : ""
   );
+  const activeWorkspaceId = workspace?.id || null;
 
   useEffect(() => {
     const currentContext = getIntegrationReportContext();
@@ -118,8 +122,8 @@ export function IntegrationLibrary({
       try {
         setMetaFlowState("checking");
         const [pages, instagramAccounts] = await Promise.all([
-          fetchMetaPages(metaIntegrationId),
-          fetchMetaInstagramAccounts(metaIntegrationId),
+          fetchMetaPages(metaIntegrationId, activeWorkspaceId),
+          fetchMetaInstagramAccounts(metaIntegrationId, activeWorkspaceId),
         ]);
 
         if (!active) {
@@ -150,7 +154,7 @@ export function IntegrationLibrary({
     return () => {
       active = false;
     };
-  }, [embedded, metaIntegrationId]);
+  }, [activeWorkspaceId, embedded, metaIntegrationId]);
 
   const metaUi = useMemo(() => {
     switch (metaFlowState) {
@@ -177,14 +181,24 @@ export function IntegrationLibrary({
 
     try {
       setConnectingIntegrationKey(integration.integrationKey);
+      setConnectError("");
       const currentContext = getIntegrationReportContext();
+      const contextWorkspaceId =
+        activeWorkspaceId || currentContext?.workspaceId || "";
+
+      if (!contextWorkspaceId) {
+        setConnectError(
+          "No active workspace selected. Please choose a workspace and try again."
+        );
+        return;
+      }
 
       if (embedded) {
         setPendingMetaSource(integration.integrationKey);
         setIntegrationReportContext({
           source: integration.integrationKey,
           integration: "meta",
-          workspaceId: currentContext?.workspaceId || "1",
+          workspaceId: contextWorkspaceId,
           integrationId:
             currentContext?.integration === "meta"
               ? currentContext.integrationId
@@ -199,7 +213,20 @@ export function IntegrationLibrary({
         });
       }
 
-      const response = await connectMetaIntegration();
+      const connectUrl = `/integrations/meta/connect-pages?workspace_id=${encodeURIComponent(
+        contextWorkspaceId
+      )}`;
+
+      console.log("[MetaOAuth][connect][library]", {
+        activeWorkspaceId: contextWorkspaceId,
+        source: integration.integrationKey,
+        connectUrl,
+      });
+
+      const response = await connectMetaIntegration({
+        workspaceId: contextWorkspaceId,
+        source: integration.integrationKey,
+      });
 
       if (response.redirectUrl) {
         console.info("[MetaOAuth][redirect]", {
@@ -221,7 +248,7 @@ export function IntegrationLibrary({
     setIntegrationReportContext({
       source: integrationKey,
       integration: "meta",
-      workspaceId: nextContext?.workspaceId || "1",
+      workspaceId: activeWorkspaceId || nextContext?.workspaceId || "",
       integrationId: metaIntegrationId,
       pageId: undefined,
       pageName: undefined,
@@ -257,6 +284,10 @@ export function IntegrationLibrary({
             : messages.reports.allIntegrationsDescription}
         </p>
       </div>
+
+      {connectError ? (
+        <p className="mt-4 text-sm text-red-600">{connectError}</p>
+      ) : null}
 
       <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {integrations.map((integration) => {

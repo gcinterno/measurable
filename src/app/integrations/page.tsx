@@ -20,13 +20,16 @@ import {
   integrationCatalog,
   isMetaFrontendIntegrationKey,
 } from "@/lib/integrations/catalog";
+import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 
 function IntegrationsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { workspace } = useActiveWorkspace();
   const [metaLoading, setMetaLoading] = useState(false);
   const [metaError, setMetaError] = useState("");
   const [metaConnected, setMetaConnected] = useState(false);
+  const activeWorkspaceId = workspace?.id || null;
 
   useEffect(() => {
     const storedContext = getIntegrationReportContext();
@@ -58,7 +61,7 @@ function IntegrationsPageContent() {
                   ? storedContext.source
                   : "facebook_pages",
               integration: "meta",
-              workspaceId: storedContext?.workspaceId || "1",
+              workspaceId: storedContext?.workspaceId || activeWorkspaceId || "",
               integrationId: response.integrationId,
               pageId: storedContext?.pageId,
               pageName: storedContext?.pageName,
@@ -87,7 +90,7 @@ function IntegrationsPageContent() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     const status = searchParams.get("status");
@@ -108,28 +111,54 @@ function IntegrationsPageContent() {
             ? storedContext.source
             : "facebook_pages",
         integration: "meta",
-        workspaceId: "1",
+        workspaceId: storedContext?.workspaceId || activeWorkspaceId || "",
         integrationId,
       });
     }
 
     router.replace("/integrations");
-  }, [router, searchParams]);
+  }, [activeWorkspaceId, router, searchParams]);
 
   async function handleMetaConnect() {
     try {
       setMetaLoading(true);
       setMetaError("");
       const storedContext = getIntegrationReportContext();
+      const connectWorkspaceId = activeWorkspaceId || storedContext?.workspaceId || "";
+
+      if (!connectWorkspaceId) {
+        setMetaError(
+          "No active workspace selected. Please choose a workspace and try again."
+        );
+        return;
+      }
 
       if (storedContext?.integration === "meta") {
         setIntegrationReportContext({
           ...storedContext,
+          workspaceId: connectWorkspaceId,
           postConnectRedirect: undefined,
         });
       }
 
-      const response = await connectMetaIntegration();
+      const source =
+        storedContext && isMetaFrontendIntegrationKey(storedContext.source)
+          ? storedContext.source
+          : "facebook_pages";
+      const connectUrl = `/integrations/meta/connect-pages?workspace_id=${encodeURIComponent(
+        connectWorkspaceId
+      )}`;
+
+      console.log("[MetaOAuth][connect][page]", {
+        activeWorkspaceId: connectWorkspaceId,
+        source,
+        connectUrl,
+      });
+
+      const response = await connectMetaIntegration({
+        workspaceId: connectWorkspaceId,
+        source,
+      });
 
       if (response.connected) {
         setMetaConnected(true);
@@ -166,12 +195,21 @@ function IntegrationsPageContent() {
 
   function handleMetaConnectSource(source: "facebook_pages" | "instagram_business") {
     const storedContext = getIntegrationReportContext();
+    const contextWorkspaceId = activeWorkspaceId || storedContext?.workspaceId || "";
+
+    if (!contextWorkspaceId) {
+      setMetaError(
+        "No active workspace selected. Please choose a workspace and try again."
+      );
+      return;
+    }
+
     setPendingMetaSource(source);
 
     setIntegrationReportContext({
       source,
       integration: "meta",
-      workspaceId: storedContext?.workspaceId || "1",
+      workspaceId: contextWorkspaceId,
       integrationId:
         storedContext?.integration === "meta"
           ? storedContext.integrationId
@@ -184,11 +222,12 @@ function IntegrationsPageContent() {
 
   function handleMetaSelectSource(source: "facebook_pages" | "instagram_business") {
     const storedContext = getIntegrationReportContext();
+    const contextWorkspaceId = activeWorkspaceId || storedContext?.workspaceId || "";
 
     setIntegrationReportContext({
       source,
       integration: "meta",
-      workspaceId: storedContext?.workspaceId || "1",
+      workspaceId: contextWorkspaceId,
       integrationId: storedContext?.integrationId || "",
       requestedSlides: storedContext?.requestedSlides,
       aiMode: storedContext?.aiMode,

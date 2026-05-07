@@ -1,7 +1,6 @@
 import { apiUrl } from "@/lib/api/config";
-import { readApiResponseText } from "@/lib/api";
-
-const META_PAGES_WORKSPACE_ID = "1";
+import { ApiError, readApiResponseText } from "@/lib/api";
+import { fetchWorkspaces, resolveActiveWorkspace } from "@/lib/api/workspaces";
 
 type MetaConnectResponse = {
   url?: string;
@@ -123,8 +122,23 @@ function getAuthHeaders() {
     : undefined;
 }
 
-function getRequiredWorkspaceId() {
-  return META_PAGES_WORKSPACE_ID;
+async function getRequiredWorkspaceId(preferredWorkspaceId?: string | null) {
+  if (preferredWorkspaceId) {
+    return preferredWorkspaceId;
+  }
+
+  const activeWorkspace = resolveActiveWorkspace(await fetchWorkspaces());
+
+  if (activeWorkspace?.id) {
+    return activeWorkspace.id;
+  }
+
+  throw new ApiError(
+    "No active workspace selected. Please choose a workspace and try again.",
+    {
+      endpoint: "/workspaces",
+    }
+  );
 }
 
 function extractIntegrationId(payload: MetaConnectResponse | MetaSelectOrSyncResponse) {
@@ -334,25 +348,31 @@ function extractMetaConnectionStatus(payload: unknown): IntegrationsStatusResult
   };
 }
 
-export async function connectMetaIntegration() {
+export async function connectMetaIntegration(input?: {
+  workspaceId?: string | null;
+  source?: string | null;
+}) {
+  const activeWorkspaceId = await getRequiredWorkspaceId(input?.workspaceId);
+  const endpoint = `/integrations/meta/connect-pages?workspace_id=${encodeURIComponent(
+    activeWorkspaceId
+  )}`;
+  const connectUrl = apiUrl(endpoint);
+
+  console.log("[MetaOAuth][connect]", {
+    activeWorkspaceId,
+    source: input?.source || null,
+    connectUrl,
+  });
+
   const res = await fetch(
-    apiUrl(
-      `/integrations/meta/connect-pages?workspace_id=${encodeURIComponent(
-        getRequiredWorkspaceId()
-      )}`
-    ),
+    connectUrl,
     {
       method: "GET",
       headers: getAuthHeaders(),
     }
   );
 
-  const text = await readApiResponseText(
-    `/integrations/meta/connect-pages?workspace_id=${encodeURIComponent(
-      getRequiredWorkspaceId()
-    )}`,
-    res
-  );
+  const text = await readApiResponseText(endpoint, res);
 
   return getRedirectUrl(text);
 }
@@ -371,12 +391,15 @@ export async function fetchIntegrationsConnectionStatus() {
   return extractMetaConnectionStatus(payload);
 }
 
-export async function fetchMetaPages(integrationId: string) {
-  const workspaceId = getRequiredWorkspaceId();
+export async function fetchMetaPages(
+  integrationId: string,
+  workspaceId?: string | null
+) {
+  const resolvedWorkspaceId = await getRequiredWorkspaceId(workspaceId);
   const res = await fetch(
     apiUrl(
       `/integrations/meta/pages?workspace_id=${encodeURIComponent(
-        workspaceId
+        resolvedWorkspaceId
       )}&integration_id=${encodeURIComponent(integrationId)}`
     ),
     {
@@ -386,7 +409,7 @@ export async function fetchMetaPages(integrationId: string) {
   );
 
   const endpoint = `/integrations/meta/pages?workspace_id=${encodeURIComponent(
-    workspaceId
+    resolvedWorkspaceId
   )}&integration_id=${encodeURIComponent(integrationId)}`;
   const text = await readApiResponseText(endpoint, res);
   console.log("meta pages response:", text);
@@ -395,10 +418,13 @@ export async function fetchMetaPages(integrationId: string) {
   return normalizePages(payload);
 }
 
-export async function fetchMetaInstagramAccounts(integrationId: string) {
-  const workspaceId = getRequiredWorkspaceId();
+export async function fetchMetaInstagramAccounts(
+  integrationId: string,
+  workspaceId?: string | null
+) {
+  const resolvedWorkspaceId = await getRequiredWorkspaceId(workspaceId);
   const endpoint = `/integrations/meta/instagram-accounts?workspace_id=${encodeURIComponent(
-    workspaceId
+    resolvedWorkspaceId
   )}&integration_id=${encodeURIComponent(integrationId)}`;
   const res = await fetch(apiUrl(endpoint), {
     method: "GET",
@@ -450,8 +476,9 @@ export async function syncMetaPages(input: {
   timeframe: string;
   startDate?: string;
   endDate?: string;
+  workspaceId?: string | null;
 }) {
-  const workspaceId = getRequiredWorkspaceId();
+  const workspaceId = await getRequiredWorkspaceId(input.workspaceId);
   const payload = {
     workspaceId,
     pageId: input.pageId,

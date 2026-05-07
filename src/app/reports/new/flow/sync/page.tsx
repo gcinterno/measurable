@@ -51,7 +51,7 @@ function NewReportFlowSyncPageContent() {
   );
   const isMetaSource = isMetaFrontendIntegrationKey(integrationSource);
   const integrationId = storedIntegrationContext?.integrationId || "";
-  const workspaceId = storedIntegrationContext?.workspaceId || "1";
+  const workspaceId = storedIntegrationContext?.workspaceId || "";
   const currentStep = 2;
   const previousStepHref =
     integrationSource

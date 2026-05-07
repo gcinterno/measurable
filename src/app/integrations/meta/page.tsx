@@ -24,7 +24,6 @@ import {
   setIntegrationReportContext,
 } from "@/lib/integrations/session";
 import { DEFAULT_REPORT_TEMPLATE } from "@/lib/reports/templates/default";
-import { getActiveWorkspaceId } from "@/lib/workspace/session";
 import {
   getSlidesLimit,
   isSlideEstimateNearLimit,
@@ -50,11 +49,11 @@ type MetaUiState =
 function MetaIntegrationPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const workspaceId = getActiveWorkspaceId();
   const storedContext = getIntegrationReportContext();
   const { workspace, reportsUsedThisMonth } = useActiveWorkspace({
     includeReportsUsage: true,
   });
+  const workspaceId = workspace?.id || null;
   const [pages, setPages] = useState<MetaOption[]>([]);
   const [selectedPageId, setSelectedPageId] = useState("");
   const [integrationId, setIntegrationId] = useState("");
@@ -127,18 +126,18 @@ function MetaIntegrationPageContent() {
       message || "Connection completed. Now choose the page you want to use."
     );
 
-      if (callbackIntegrationId) {
+    if (callbackIntegrationId) {
         setIntegrationId(callbackIntegrationId);
         setIntegrationReportContext({
           source: currentMetaSource,
           integration: "meta",
-          workspaceId: workspaceId || "1",
+          workspaceId: workspaceId || storedContext?.workspaceId || "",
           integrationId: callbackIntegrationId,
-        pageId: storedContext?.pageId,
-        pageName: storedContext?.pageName,
-        datasetId: storedContext?.datasetId,
-        synced: storedContext?.synced,
-      });
+          pageId: storedContext?.pageId,
+          pageName: storedContext?.pageName,
+          datasetId: storedContext?.datasetId,
+          synced: storedContext?.synced,
+        });
     }
 
     router.replace("/integrations/meta");
@@ -178,7 +177,10 @@ function MetaIntegrationPageContent() {
         setError("");
         setStatusMessage("");
 
-        const pageData = await fetchMetaPages(integrationId);
+        const pageData = await fetchMetaPages(
+          integrationId,
+          workspaceId || storedContext?.workspaceId || ""
+        );
 
         if (!active) {
           return;
@@ -281,7 +283,29 @@ function MetaIntegrationPageContent() {
         });
       }
 
-      const response = await connectMetaIntegration();
+      const connectWorkspaceId = workspaceId || storedContext?.workspaceId || "";
+
+      if (!connectWorkspaceId) {
+        setError(
+          "No active workspace selected. Please choose a workspace and try again."
+        );
+        return;
+      }
+
+      const connectUrl = `/integrations/meta/connect-pages?workspace_id=${encodeURIComponent(
+        connectWorkspaceId
+      )}`;
+
+      console.log("[MetaOAuth][connect][meta-page]", {
+        activeWorkspaceId: connectWorkspaceId,
+        source: currentMetaSource,
+        connectUrl,
+      });
+
+      const response = await connectMetaIntegration({
+        workspaceId: connectWorkspaceId,
+        source: currentMetaSource,
+      });
 
       if (response.connected) {
         setConnected(true);
@@ -292,7 +316,7 @@ function MetaIntegrationPageContent() {
         setIntegrationReportContext({
           source: currentMetaSource,
           integration: "meta",
-          workspaceId: workspaceId || "1",
+          workspaceId: connectWorkspaceId,
           integrationId: response.integrationId,
           pageId: selectedPageId || undefined,
           pageName: selectedPage?.name,
@@ -358,7 +382,7 @@ function MetaIntegrationPageContent() {
       setIntegrationReportContext({
         source: currentMetaSource,
         integration: "meta",
-        workspaceId: workspaceId || "1",
+        workspaceId: workspaceId || storedContext?.workspaceId || "",
         integrationId: response.integrationId || integrationId,
         datasetId: response.datasetId || datasetId || undefined,
         pageId: selectedPageId,
@@ -397,6 +421,7 @@ function MetaIntegrationPageContent() {
       const response = await syncMetaPages({
         pageId: selectedPageId,
         integrationId,
+        workspaceId: workspaceId || storedContext?.workspaceId || "",
       });
 
       const nextIntegrationId = response.integrationId || integrationId;
@@ -414,7 +439,7 @@ function MetaIntegrationPageContent() {
       setIntegrationReportContext({
         source: currentMetaSource,
         integration: "meta",
-        workspaceId: workspaceId || "1",
+        workspaceId: workspaceId || storedContext?.workspaceId || "",
         integrationId: nextIntegrationId,
         datasetId: nextDatasetId,
         pageId: selectedPageId,
