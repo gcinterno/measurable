@@ -11,6 +11,7 @@ export function ClosingSlide({
   eyebrow,
   title,
   renderMode,
+  templateId,
   model,
 }: SlideComponentProps<ClosingSlideModel>) {
   return (
@@ -19,6 +20,7 @@ export function ClosingSlide({
       eyebrow={eyebrow}
       title={title}
       renderMode={renderMode}
+      templateId={templateId}
     >
       <HeroBlock
         eyebrow={model.eyebrow}
@@ -26,7 +28,8 @@ export function ClosingSlide({
         subtitle={model.subtitle}
         meta={model.meta}
         footer={<FooterMeta text={model.footerText} />}
-        rightSlot={<CoverLogo logoDataUrl={model.branding.logoUrl} dark />}
+        templateId={templateId}
+        rightSlot={<CoverLogo logoDataUrl={model.branding.logoUrl} dark={templateId !== "modern"} />}
       />
     </SlideCanvas>
   );

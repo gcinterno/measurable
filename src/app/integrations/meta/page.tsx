@@ -12,12 +12,14 @@ import { ApiError, isLimitError } from "@/lib/api";
 import {
   connectMetaIntegration,
   fetchMetaPages,
+  isValidMetaAuthUrl,
   selectMetaPage,
   syncMetaPages,
 } from "@/lib/api/integrations";
 import { createMetaPagesReport } from "@/lib/api/reports";
 import { formatNumber } from "@/lib/formatters";
 import {
+  clearStoredMetaIntegrationState,
   getIntegrationReportContext,
   isPendingMetaSource,
   setPendingMetaSource,
@@ -38,6 +40,7 @@ type MetaOption = {
 
 type MetaUiState =
   | "not_connected"
+  | "connected_no_pages"
   | "connected"
   | "pages_loaded"
   | "page_selected"
@@ -66,6 +69,7 @@ function MetaIntegrationPageContent() {
   const [error, setError] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [connected, setConnected] = useState(false);
+  const [hasNoAuthorizedPages, setHasNoAuthorizedPages] = useState(false);
   const [pageSelected, setPageSelected] = useState(false);
   const [syncCompleted, setSyncCompleted] = useState(false);
   const selectedPage = useMemo(
@@ -93,7 +97,6 @@ function MetaIntegrationPageContent() {
 
     if (storedContext.integrationId) {
       setIntegrationId(storedContext.integrationId);
-      setConnected(true);
     }
 
     if (storedContext.datasetId) {
@@ -111,44 +114,51 @@ function MetaIntegrationPageContent() {
   }, [storedContext]);
 
   useEffect(() => {
-    const status = searchParams.get("status");
+    const metaState = searchParams.get("meta_state");
     const callbackIntegrationId = searchParams.get("integration_id");
+    const pagesCount = Number(searchParams.get("pages_count") || "0");
     const message = searchParams.get("message");
+    const metaError = searchParams.get("meta_error");
 
-    if (status !== "connected") {
+    if (!metaState && !metaError) {
       return;
     }
 
-    setConnected(true);
-    setError("");
+    setError(metaError || "");
     setSyncCompleted(false);
-    setStatusMessage(
-      message || "Connection completed. Now choose the page you want to use."
-    );
+    setPageSelected(false);
+    setSelectedPageId("");
+    setDatasetId("");
 
     if (callbackIntegrationId) {
-        setIntegrationId(callbackIntegrationId);
-        setIntegrationReportContext({
-          source: currentMetaSource,
-          integration: "meta",
-          workspaceId: workspaceId || storedContext?.workspaceId || "",
-          integrationId: callbackIntegrationId,
-          pageId: storedContext?.pageId,
-          pageName: storedContext?.pageName,
-          datasetId: storedContext?.datasetId,
-          synced: storedContext?.synced,
-        });
+      setIntegrationId(callbackIntegrationId);
+    }
+
+    if (metaState === "connected") {
+      setConnected(pagesCount > 0);
+      setHasNoAuthorizedPages(pagesCount === 0);
+      setStatusMessage(
+        message || "Connection completed. Now choose the page you want to use."
+      );
+    } else if (metaState === "no_authorized_pages") {
+      setConnected(false);
+      setHasNoAuthorizedPages(true);
+      setPages([]);
+      setStatusMessage(
+        message ||
+          "Meta connected but no authorized pages were returned. Reconnect and approve at least one page."
+      );
+    } else if (metaError) {
+      setConnected(false);
+      setHasNoAuthorizedPages(false);
+      setStatusMessage("");
     }
 
     router.replace("/integrations/meta");
   }, [
+    currentMetaSource,
     router,
     searchParams,
-    storedContext?.datasetId,
-    storedContext?.pageId,
-    storedContext?.pageName,
-    storedContext?.synced,
-    workspaceId,
   ]);
 
   useEffect(() => {
@@ -187,7 +197,25 @@ function MetaIntegrationPageContent() {
         }
 
         setPages(pageData);
-        setConnected((current) => current || pageData.length > 0);
+        setConnected(pageData.length > 0);
+        setHasNoAuthorizedPages(pageData.length === 0);
+        setPageSelected((current) =>
+          pageData.some((page) => page.id === selectedPageId) ? current : false
+        );
+        if (!pageData.some((page) => page.id === selectedPageId)) {
+          setSelectedPageId("");
+        }
+        console.info("META_AUTHORIZED_PAGES_COUNT", {
+          integration_id: integrationId,
+          pages_count: pageData.length,
+          route: "/integrations/meta",
+        });
+
+        if (pageData.length === 0) {
+          setStatusMessage(
+            "Connected but no authorized pages were found. Reconnect and approve at least one page."
+          );
+        }
       } catch (err: unknown) {
         if (!active) {
           return;
@@ -209,7 +237,7 @@ function MetaIntegrationPageContent() {
     return () => {
       active = false;
     };
-  }, [connected, integrationId, workspaceId]);
+  }, [connected, integrationId, selectedPageId, workspaceId]);
 
   useEffect(() => {
     if (!storedContext || storedContext.pageName || !selectedPageId) {
@@ -256,11 +284,16 @@ function MetaIntegrationPageContent() {
       return "connected";
     }
 
+    if (hasNoAuthorizedPages) {
+      return "connected_no_pages";
+    }
+
     return "not_connected";
   }, [
     connected,
     createReportLoading,
     error,
+    hasNoAuthorizedPages,
     pageSelected,
     pages.length,
     selectedPageId,
@@ -275,10 +308,23 @@ function MetaIntegrationPageContent() {
       setStatusMessage("");
       const storedContext = getIntegrationReportContext();
       setPendingMetaSource(currentMetaSource);
+      clearStoredMetaIntegrationState();
+      setConnected(false);
+      setHasNoAuthorizedPages(false);
+      setPages([]);
+      setSelectedPageId("");
+      setPageSelected(false);
+      setDatasetId("");
+      setSyncCompleted(false);
 
       if (storedContext?.integration === "meta") {
         setIntegrationReportContext({
           ...storedContext,
+          integrationId: undefined,
+          datasetId: undefined,
+          pageId: undefined,
+          pageName: undefined,
+          synced: false,
           postConnectRedirect: undefined,
         });
       }
@@ -292,14 +338,10 @@ function MetaIntegrationPageContent() {
         return;
       }
 
-      const connectUrl = `/integrations/meta/connect-pages?workspace_id=${encodeURIComponent(
-        connectWorkspaceId
-      )}`;
-
-      console.log("[MetaOAuth][connect][meta-page]", {
-        activeWorkspaceId: connectWorkspaceId,
+      console.info("META_CONNECT_START", {
+        workspace_id: connectWorkspaceId,
         source: currentMetaSource,
-        connectUrl,
+        route: "/integrations/meta",
       });
 
       const response = await connectMetaIntegration({
@@ -307,8 +349,22 @@ function MetaIntegrationPageContent() {
         source: currentMetaSource,
       });
 
-      if (response.connected) {
-        setConnected(true);
+      const authUrl = response.authUrlFromBackend || response.redirectUrl;
+
+      console.info("META_CONNECT_AUTH_URL", {
+        workspace_id: connectWorkspaceId,
+        source: currentMetaSource,
+        auth_url: authUrl || null,
+        integration_id: response.integrationId || null,
+      });
+
+      if (!isValidMetaAuthUrl(authUrl)) {
+        console.error("META_CONNECT_INVALID_AUTH_URL", {
+          workspace_id: connectWorkspaceId,
+          source: currentMetaSource,
+          auth_url: authUrl || null,
+        });
+        throw new Error("The backend did not return a valid Meta OAuth URL.");
       }
 
       if (response.integrationId) {
@@ -325,16 +381,14 @@ function MetaIntegrationPageContent() {
         });
       }
 
-      if (response.redirectUrl) {
-        console.info("[MetaOAuth][redirect]", {
-          auth_url_from_backend: response.authUrlFromBackend || response.redirectUrl,
-          final_auth_url_used: response.finalAuthUrlUsed || response.redirectUrl,
-        });
-        window.location.href = response.redirectUrl;
+      if (typeof window !== "undefined") {
+        window.location.assign(authUrl);
         return;
       }
     } catch (err: unknown) {
       console.error("meta connect pages error:", err);
+      setConnected(false);
+      setHasNoAuthorizedPages(false);
       setError(
         err instanceof ApiError && err.message
           ? err.message
@@ -491,7 +545,11 @@ function MetaIntegrationPageContent() {
   const primaryAction = (() => {
     if (!connected) {
       return {
-        label: connectLoading ? "Connecting..." : "Connect Facebook Pages",
+        label: connectLoading
+          ? "Connecting..."
+          : hasNoAuthorizedPages
+            ? "Reconnect Facebook Pages"
+            : "Connect Facebook Pages",
         onClick: handleConnect,
         disabled: connectLoading || loading,
       };

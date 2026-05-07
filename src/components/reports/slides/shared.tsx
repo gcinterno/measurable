@@ -475,7 +475,9 @@ export function CoverLogo({
       ) : (
         <div
           className={`flex items-center justify-center rounded-[32px] border border-dashed p-8 text-center ${
-            dark ? "border-white/15 bg-white/5" : "border-slate-300 bg-slate-50"
+            dark
+              ? "border-white/15 bg-white/5"
+              : "border-slate-200 bg-[linear-gradient(135deg,rgba(239,246,255,0.95),rgba(255,255,255,0.98))] shadow-[0_18px_40px_rgba(37,99,235,0.10)]"
           }`}
           style={{
             width: `${frameWidth}px`,

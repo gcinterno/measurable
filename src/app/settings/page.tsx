@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { useI18n } from "@/components/providers/LanguageProvider";
 import { isAbortError, isAuthError } from "@/lib/api";
 import { deleteAccount } from "@/lib/api/auth";
-import { fetchCurrentUser, updateCurrentUser } from "@/lib/api/me";
+import { fetchCurrentUser } from "@/lib/api/me";
 import { fetchWorkspace, updateWorkspace } from "@/lib/api/workspaces";
 import { startLogoutInProgress } from "@/lib/auth/session";
 import { useAuthStore } from "@/lib/store/auth-store";
@@ -38,6 +38,78 @@ const deletionReasons = [
   "Other",
 ] as const;
 
+const LOGO_CROP_SIZE = 512;
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("The file could not be read."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImageDimensions(src: string) {
+  return new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      resolve({
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+      });
+    };
+    image.onerror = () => reject(new Error("The image could not be loaded."));
+    image.src = src;
+  });
+}
+
+async function buildCroppedLogo(input: {
+  src: string;
+  width: number;
+  height: number;
+  zoom: number;
+  offsetX: number;
+  offsetY: number;
+}) {
+  const image = new Image();
+  image.src = input.src;
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("The image could not be loaded."));
+  });
+
+  const canvas = document.createElement("canvas");
+  canvas.width = LOGO_CROP_SIZE;
+  canvas.height = LOGO_CROP_SIZE;
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    throw new Error("Canvas is not available.");
+  }
+
+  const minDimension = Math.min(input.width, input.height);
+  const cropSize = minDimension / input.zoom;
+  const maxX = Math.max(0, input.width - cropSize);
+  const maxY = Math.max(0, input.height - cropSize);
+  const sourceX = Math.min(Math.max(input.offsetX, 0), maxX);
+  const sourceY = Math.min(Math.max(input.offsetY, 0), maxY);
+
+  context.clearRect(0, 0, LOGO_CROP_SIZE, LOGO_CROP_SIZE);
+  context.drawImage(
+    image,
+    sourceX,
+    sourceY,
+    cropSize,
+    cropSize,
+    0,
+    0,
+    LOGO_CROP_SIZE,
+    LOGO_CROP_SIZE
+  );
+
+  return canvas.toDataURL("image/png");
+}
+
 export default function SettingsPage() {
   const router = useRouter();
   const { messages } = useI18n();
@@ -50,6 +122,13 @@ export default function SettingsPage() {
   const [loadingWorkspace, setLoadingWorkspace] = useState(true);
   const [savingWorkspace, setSavingWorkspace] = useState(false);
   const [saved, setSaved] = useState("");
+  const [cropModalOpen, setCropModalOpen] = useState(false);
+  const [cropSource, setCropSource] = useState("");
+  const [cropSourceWidth, setCropSourceWidth] = useState(0);
+  const [cropSourceHeight, setCropSourceHeight] = useState(0);
+  const [cropZoom, setCropZoom] = useState(1);
+  const [cropOffsetX, setCropOffsetX] = useState(0);
+  const [cropOffsetY, setCropOffsetY] = useState(0);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
   const [deleteReason, setDeleteReason] = useState<(typeof deletionReasons)[number] | "">("");
@@ -57,6 +136,42 @@ export default function SettingsPage() {
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const cropDragStateRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originOffsetX: number;
+    originOffsetY: number;
+  } | null>(null);
+
+  const cropMinDimension = useMemo(
+    () => Math.min(cropSourceWidth || 0, cropSourceHeight || 0),
+    [cropSourceHeight, cropSourceWidth]
+  );
+  const cropVisibleSize = cropMinDimension > 0 ? cropMinDimension / cropZoom : 0;
+  const cropMaxX = Math.max(0, cropSourceWidth - cropVisibleSize);
+  const cropMaxY = Math.max(0, cropSourceHeight - cropVisibleSize);
+  const cropPreviewScale = cropVisibleSize > 0 ? 240 / cropVisibleSize : 1;
+  const cropPreviewImageStyle =
+    cropSourceWidth > 0 && cropSourceHeight > 0
+      ? {
+          width: `${cropSourceWidth * cropPreviewScale}px`,
+          height: `${cropSourceHeight * cropPreviewScale}px`,
+          maxWidth: "none",
+          transform: `translate(${-cropOffsetX * cropPreviewScale}px, ${-cropOffsetY * cropPreviewScale}px)`,
+        }
+      : undefined;
+
+  function clampCropOffsets(nextOffsetX: number, nextOffsetY: number, nextZoom = cropZoom) {
+    const nextVisibleSize = cropMinDimension > 0 ? cropMinDimension / nextZoom : 0;
+    const nextMaxX = Math.max(0, cropSourceWidth - nextVisibleSize);
+    const nextMaxY = Math.max(0, cropSourceHeight - nextVisibleSize);
+
+    return {
+      offsetX: Math.min(Math.max(nextOffsetX, 0), nextMaxX),
+      offsetY: Math.min(Math.max(nextOffsetY, 0), nextMaxY),
+    };
+  }
 
   useEffect(() => {
     let active = true;
@@ -133,36 +248,47 @@ export default function SettingsPage() {
       return;
     }
 
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(new Error("The file could not be read."));
-      reader.readAsDataURL(file);
-    });
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const dimensions = await loadImageDimensions(dataUrl);
+      const minDimension = Math.min(dimensions.width, dimensions.height);
 
-    setLogoUrlDraft(dataUrl);
-    preferences.updatePreferences({ logoDataUrl: dataUrl, logoSource: "manual" });
-    setSaved("");
+      setCropSource(dataUrl);
+      setCropSourceWidth(dimensions.width);
+      setCropSourceHeight(dimensions.height);
+      setCropZoom(1);
+      setCropOffsetX(Math.max(0, (dimensions.width - minDimension) / 2));
+      setCropOffsetY(Math.max(0, (dimensions.height - minDimension) / 2));
+      setCropModalOpen(true);
+      setSaved("");
+      event.target.value = "";
+    } catch (error) {
+      console.error("settings logo file error:", error);
+    }
+  }
 
-    const workspaceId = getActiveWorkspaceId();
+  async function handleApplyLogoCrop() {
+    if (!cropSource || !cropSourceWidth || !cropSourceHeight) {
+      return;
+    }
 
     try {
-      setSavingWorkspace(true);
-      const updatedUser = await updateCurrentUser({ logoUrl: dataUrl });
-      setUser(updatedUser);
-      setLogoUrlDraft(updatedUser.branding?.logoUrl || dataUrl);
-      preferences.updatePreferences({
-        logoDataUrl: updatedUser.branding?.logoUrl || dataUrl,
-        logoSource: "manual",
+      const dataUrl = await buildCroppedLogo({
+        src: cropSource,
+        width: cropSourceWidth,
+        height: cropSourceHeight,
+        zoom: cropZoom,
+        offsetX: cropOffsetX,
+        offsetY: cropOffsetY,
       });
-      setSaved(messages.settings.changesSaved);
-    } catch (error) {
-      if (!isAbortError(error) && !isAuthError(error)) {
-        console.error("settings logo upload error:", error);
-      }
+
+      setLogoUrlDraft(dataUrl);
+      preferences.updatePreferences({ logoDataUrl: dataUrl, logoSource: "manual" });
+      setCropModalOpen(false);
       setSaved("");
-    } finally {
-      setSavingWorkspace(false);
+    } catch (error) {
+      console.error("settings logo crop error:", error);
+      setSaved("");
     }
   }
 
@@ -546,6 +672,142 @@ export default function SettingsPage() {
           </button>
         </div>
       </form>
+      {cropModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(7,17,31,0.52)] px-4 py-4 sm:px-6">
+          <div className="w-full max-w-[720px] rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_22px_56px_rgba(15,23,42,0.22)] sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-2xl font-semibold tracking-tight text-slate-950">
+                  {messages.settings.adjustLogo}
+                </h3>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">
+                  {messages.settings.adjustLogoDescription}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+              <div className="flex flex-col items-center rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+                <div
+                  className="relative h-[240px] w-[240px] cursor-grab overflow-hidden rounded-[36px] border border-slate-200 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] active:cursor-grabbing"
+                  onPointerDown={(event) => {
+                    if (!cropSource) {
+                      return;
+                    }
+
+                    cropDragStateRef.current = {
+                      pointerId: event.pointerId,
+                      startX: event.clientX,
+                      startY: event.clientY,
+                      originOffsetX: cropOffsetX,
+                      originOffsetY: cropOffsetY,
+                    };
+
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                  }}
+                  onPointerMove={(event) => {
+                    const dragState = cropDragStateRef.current;
+
+                    if (!dragState || dragState.pointerId !== event.pointerId || !cropVisibleSize) {
+                      return;
+                    }
+
+                    const deltaX = (event.clientX - dragState.startX) / cropPreviewScale;
+                    const deltaY = (event.clientY - dragState.startY) / cropPreviewScale;
+                    const nextOffsets = clampCropOffsets(
+                      dragState.originOffsetX - deltaX,
+                      dragState.originOffsetY - deltaY
+                    );
+
+                    setCropOffsetX(nextOffsets.offsetX);
+                    setCropOffsetY(nextOffsets.offsetY);
+                  }}
+                  onPointerUp={(event) => {
+                    if (cropDragStateRef.current?.pointerId === event.pointerId) {
+                      cropDragStateRef.current = null;
+                    }
+
+                    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                      event.currentTarget.releasePointerCapture(event.pointerId);
+                    }
+                  }}
+                  onPointerCancel={(event) => {
+                    if (cropDragStateRef.current?.pointerId === event.pointerId) {
+                      cropDragStateRef.current = null;
+                    }
+
+                    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                      event.currentTarget.releasePointerCapture(event.pointerId);
+                    }
+                  }}
+                >
+                  {cropSource ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={cropSource}
+                      alt="Logo crop preview"
+                      className="absolute left-0 top-0 object-cover"
+                      style={cropPreviewImageStyle}
+                    />
+                  ) : null}
+                </div>
+                <p className="mt-4 text-center text-xs leading-5 text-slate-500">
+                  Drag the logo to reposition it inside the crop area.
+                </p>
+              </div>
+
+              <div className="space-y-5">
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-950">
+                    {messages.settings.zoom}
+                  </span>
+                  <input
+                    type="range"
+                    min="1"
+                    max="3"
+                    step="0.01"
+                    value={cropZoom}
+                    onChange={(event) => {
+                      const nextZoom = Number(event.target.value);
+                      const currentVisibleSize = cropMinDimension / cropZoom;
+                      const currentCenterX = cropOffsetX + currentVisibleSize / 2;
+                      const currentCenterY = cropOffsetY + currentVisibleSize / 2;
+                      const nextVisibleSize = cropMinDimension / nextZoom;
+                      const nextOffsets = clampCropOffsets(
+                        currentCenterX - nextVisibleSize / 2,
+                        currentCenterY - nextVisibleSize / 2,
+                        nextZoom
+                      );
+                      setCropZoom(nextZoom);
+                      setCropOffsetX(nextOffsets.offsetX);
+                      setCropOffsetY(nextOffsets.offsetY);
+                    }}
+                    className="mt-3 w-full accent-sky-600"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setCropModalOpen(false)}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+              >
+                {messages.settings.cancel}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleApplyLogoCrop()}
+                disabled={savingWorkspace}
+                className="rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+              >
+                {messages.settings.applyLogo}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {deleteModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(7,17,31,0.52)] px-4 py-4 sm:px-6">
           <div className="w-[calc(100%-32px)] max-w-[420px] max-h-[85vh] overflow-y-auto rounded-[16px] border border-[var(--border-soft)] bg-white p-5 shadow-[0_18px_48px_rgba(7,17,31,0.18)] sm:p-6">

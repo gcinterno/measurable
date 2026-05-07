@@ -1,17 +1,20 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 import { IntegrationCard } from "@/components/integrations/IntegrationCard";
 import { AppShell } from "@/components/layout/AppShell";
 import {
   connectMetaIntegration,
+  fetchMetaPages,
   fetchIntegrationsConnectionStatus,
+  isValidMetaAuthUrl,
 } from "@/lib/api/integrations";
 import {
   clearPendingMetaSource,
   clearIntegrationReportContext,
+  clearStoredMetaIntegrationState,
   getIntegrationReportContext,
   setPendingMetaSource,
   setIntegrationReportContext,
@@ -24,20 +27,11 @@ import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 
 function IntegrationsPageContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { workspace } = useActiveWorkspace();
   const [metaLoading, setMetaLoading] = useState(false);
   const [metaError, setMetaError] = useState("");
   const [metaConnected, setMetaConnected] = useState(false);
   const activeWorkspaceId = workspace?.id || null;
-
-  useEffect(() => {
-    const storedContext = getIntegrationReportContext();
-
-    if (storedContext?.integration === "meta" && storedContext.integrationId) {
-      setMetaConnected(true);
-    }
-  }, []);
 
   useEffect(() => {
     let active = true;
@@ -52,9 +46,19 @@ function IntegrationsPageContent() {
         }
 
         if (response.metaConnected) {
-          setMetaConnected(true);
+          let hasAuthorizedPages = true;
 
-          if (response.integrationId) {
+          if (response.integrationId && (storedContext?.workspaceId || activeWorkspaceId)) {
+            const authorizedPages = await fetchMetaPages(
+              response.integrationId,
+              storedContext?.workspaceId || activeWorkspaceId || ""
+            );
+            hasAuthorizedPages = authorizedPages.length > 0;
+          }
+
+          setMetaConnected(hasAuthorizedPages);
+
+          if (response.integrationId && hasAuthorizedPages) {
             setIntegrationReportContext({
               source:
                 storedContext && isMetaFrontendIntegrationKey(storedContext.source)
@@ -92,33 +96,6 @@ function IntegrationsPageContent() {
     };
   }, [activeWorkspaceId]);
 
-  useEffect(() => {
-    const status = searchParams.get("status");
-    const integrationId = searchParams.get("integration_id");
-
-    if (status !== "connected") {
-      return;
-    }
-
-    setMetaConnected(true);
-    setMetaError("");
-
-    if (integrationId) {
-      const storedContext = getIntegrationReportContext();
-      setIntegrationReportContext({
-        source:
-          storedContext && isMetaFrontendIntegrationKey(storedContext.source)
-            ? storedContext.source
-            : "facebook_pages",
-        integration: "meta",
-        workspaceId: storedContext?.workspaceId || activeWorkspaceId || "",
-        integrationId,
-      });
-    }
-
-    router.replace("/integrations");
-  }, [activeWorkspaceId, router, searchParams]);
-
   async function handleMetaConnect() {
     try {
       setMetaLoading(true);
@@ -133,26 +110,30 @@ function IntegrationsPageContent() {
         return;
       }
 
-      if (storedContext?.integration === "meta") {
-        setIntegrationReportContext({
-          ...storedContext,
-          workspaceId: connectWorkspaceId,
-          postConnectRedirect: undefined,
-        });
-      }
-
       const source =
         storedContext && isMetaFrontendIntegrationKey(storedContext.source)
           ? storedContext.source
           : "facebook_pages";
-      const connectUrl = `/integrations/meta/connect-pages?workspace_id=${encodeURIComponent(
-        connectWorkspaceId
-      )}`;
 
-      console.log("[MetaOAuth][connect][page]", {
-        activeWorkspaceId: connectWorkspaceId,
+      clearStoredMetaIntegrationState();
+
+      if (storedContext?.integration === "meta") {
+        setIntegrationReportContext({
+          ...storedContext,
+          workspaceId: connectWorkspaceId,
+          integrationId: undefined,
+          datasetId: undefined,
+          pageId: undefined,
+          pageName: undefined,
+          synced: false,
+          postConnectRedirect: undefined,
+        });
+      }
+
+      console.info("META_CONNECT_START", {
+        workspace_id: connectWorkspaceId,
         source,
-        connectUrl,
+        route: "/integrations",
       });
 
       const response = await connectMetaIntegration({
@@ -160,24 +141,41 @@ function IntegrationsPageContent() {
         source,
       });
 
-      if (response.connected) {
-        setMetaConnected(true);
-      }
+      const authUrl = response.authUrlFromBackend || response.redirectUrl;
 
-      if (response.redirectUrl) {
-        console.info("[MetaOAuth][redirect]", {
-          auth_url_from_backend: response.authUrlFromBackend || response.redirectUrl,
-          final_auth_url_used: response.finalAuthUrlUsed || response.redirectUrl,
+      console.info("META_CONNECT_AUTH_URL", {
+        workspace_id: connectWorkspaceId,
+        source,
+        auth_url: authUrl || null,
+        integration_id: response.integrationId || null,
+      });
+
+      if (!isValidMetaAuthUrl(authUrl)) {
+        console.error("META_CONNECT_INVALID_AUTH_URL", {
+          workspace_id: connectWorkspaceId,
+          source,
+          auth_url: authUrl || null,
         });
-        window.location.href = response.redirectUrl;
-        return;
+        setMetaConnected(false);
+        throw new Error("The backend did not return a valid Meta OAuth URL.");
       }
 
-      if (!response.connected) {
-        throw new Error("The backend did not return a connection URL for Meta.");
+      if (response.integrationId) {
+        setIntegrationReportContext({
+          source,
+          integration: "meta",
+          workspaceId: connectWorkspaceId,
+          integrationId: response.integrationId,
+        });
+      }
+
+      if (typeof window !== "undefined") {
+        window.location.assign(authUrl);
+        return;
       }
     } catch (err: unknown) {
       console.error("meta connect error:", err);
+      setMetaConnected(false);
       setMetaError(
         "We could not start the Facebook Pages connection. Try again."
       );
@@ -210,10 +208,11 @@ function IntegrationsPageContent() {
       source,
       integration: "meta",
       workspaceId: contextWorkspaceId,
-      integrationId:
-        storedContext?.integration === "meta"
-          ? storedContext.integrationId
-          : undefined,
+      integrationId: undefined,
+      datasetId: undefined,
+      pageId: undefined,
+      pageName: undefined,
+      synced: false,
       postConnectRedirect: undefined,
     });
 

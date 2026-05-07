@@ -82,13 +82,13 @@ export function TopBar() {
                 : "border border-[var(--border-soft)] bg-white"
             }`}
           >
-            <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-[var(--measurable-blue)] text-xs font-semibold text-white sm:h-10 sm:w-10 sm:text-sm">
+            <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-[#07111f] text-xs font-semibold text-white sm:h-10 sm:w-10 sm:text-sm">
               {logoDataUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={logoDataUrl}
                   alt="Logo"
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-contain"
                 />
               ) : (
                 initials || "AL"

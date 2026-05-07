@@ -10,6 +10,7 @@ import {
   connectMetaIntegration,
   fetchMetaInstagramAccounts,
   fetchMetaPages,
+  isValidMetaAuthUrl,
 } from "@/lib/api/integrations";
 import {
   isMetaFrontendIntegrationKey,
@@ -19,6 +20,7 @@ import {
 import {
   clearPendingMetaSource,
   clearIntegrationReportContext,
+  clearStoredMetaIntegrationState,
   getIntegrationReportContext,
   setPendingMetaSource,
   setIntegrationReportContext,
@@ -199,10 +201,7 @@ export function IntegrationLibrary({
           source: integration.integrationKey,
           integration: "meta",
           workspaceId: contextWorkspaceId,
-          integrationId:
-            currentContext?.integration === "meta"
-              ? currentContext.integrationId
-              : undefined,
+          integrationId: undefined,
           pageId: undefined,
           pageName: undefined,
           datasetId: undefined,
@@ -213,14 +212,12 @@ export function IntegrationLibrary({
         });
       }
 
-      const connectUrl = `/integrations/meta/connect-pages?workspace_id=${encodeURIComponent(
-        contextWorkspaceId
-      )}`;
+      clearStoredMetaIntegrationState();
 
-      console.log("[MetaOAuth][connect][library]", {
-        activeWorkspaceId: contextWorkspaceId,
+      console.info("META_CONNECT_START", {
+        workspace_id: contextWorkspaceId,
         source: integration.integrationKey,
-        connectUrl,
+        route: "IntegrationLibrary",
       });
 
       const response = await connectMetaIntegration({
@@ -228,15 +225,30 @@ export function IntegrationLibrary({
         source: integration.integrationKey,
       });
 
-      if (response.redirectUrl) {
-        console.info("[MetaOAuth][redirect]", {
-          auth_url_from_backend: response.authUrlFromBackend || response.redirectUrl,
-          final_auth_url_used: response.finalAuthUrlUsed || response.redirectUrl,
+      const authUrl = response.authUrlFromBackend || response.redirectUrl;
+
+      console.info("META_CONNECT_AUTH_URL", {
+        workspace_id: contextWorkspaceId,
+        source: integration.integrationKey,
+        auth_url: authUrl || null,
+        integration_id: response.integrationId || null,
+      });
+
+      if (!isValidMetaAuthUrl(authUrl)) {
+        console.error("META_CONNECT_INVALID_AUTH_URL", {
+          workspace_id: contextWorkspaceId,
+          source: integration.integrationKey,
+          auth_url: authUrl || null,
         });
-        window.location.href = response.redirectUrl;
+        throw new Error("The backend did not return a valid Meta OAuth URL.");
+      }
+
+      if (typeof window !== "undefined") {
+        window.location.assign(authUrl);
       }
     } catch (error) {
       console.error("direct integration connect error:", error);
+      setConnectError("We could not start the Facebook Pages connection. Try again.");
     } finally {
       setConnectingIntegrationKey(null);
     }

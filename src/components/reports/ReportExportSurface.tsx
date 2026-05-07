@@ -4,6 +4,7 @@ import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 
 import { SlideRenderer } from "@/components/reports/SlideRenderer";
 import type { ExecutiveDarkViewModel } from "@/components/reports/report-view.helpers";
+import type { ReportTemplateId } from "@/lib/reports/template-selection";
 import { REPORT_SLIDE_THEME } from "@/lib/reports/theme";
 
 type ReportExportSurfaceProps = {
@@ -12,6 +13,7 @@ type ReportExportSurfaceProps = {
     logoUrl?: string | null;
     source?: string;
   };
+  templateId?: ReportTemplateId;
   onReadyChange?: (ready: boolean) => void;
 };
 
@@ -20,7 +22,7 @@ const EXPORT_SLIDE_HEIGHT = REPORT_SLIDE_THEME.slide.height;
 
 export const ReportExportSurface = forwardRef<HTMLDivElement, ReportExportSurfaceProps>(
   function ReportExportSurface(
-    { model, branding, onReadyChange },
+    { model, branding, templateId = "executive", onReadyChange },
     ref
   ) {
     const rootRef = useRef<HTMLDivElement | null>(null);
@@ -109,7 +111,7 @@ export const ReportExportSurface = forwardRef<HTMLDivElement, ReportExportSurfac
         active = false;
         window.cancelAnimationFrame(firstFrame);
       };
-    }, [fontsReady, branding?.logoUrl, model, onReadyChange]);
+    }, [fontsReady, branding?.logoUrl, model, onReadyChange, templateId]);
 
     const setRefs = useMemo(
       () => (node: HTMLDivElement | null) => {
@@ -147,6 +149,7 @@ export const ReportExportSurface = forwardRef<HTMLDivElement, ReportExportSurfac
           model={model}
           renderMode="export"
           branding={branding}
+          templateId={templateId}
         />
       </div>
     );

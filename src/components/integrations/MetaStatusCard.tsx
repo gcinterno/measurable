@@ -1,6 +1,7 @@
 type MetaStatusCardProps = {
   state:
     | "not_connected"
+    | "connected_no_pages"
     | "connected"
     | "pages_loaded"
     | "page_selected"
@@ -17,6 +18,13 @@ type MetaStatusCardProps = {
 
 function getStateCopy(state: MetaStatusCardProps["state"]) {
   switch (state) {
+    case "connected_no_pages":
+      return {
+        badge: "Reconnect required",
+        title: "Connected but no authorized pages were found",
+        description:
+          "The OAuth callback returned without any approved Facebook Pages. Reconnect and approve at least one page to continue.",
+      };
     case "connected":
       return {
         badge: "Connection ready",

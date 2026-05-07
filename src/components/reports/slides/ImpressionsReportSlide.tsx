@@ -9,6 +9,7 @@ export function ImpressionsReportSlide({
   eyebrow,
   title,
   renderMode,
+  templateId,
   model,
 }: SlideComponentProps<ImpressionsSlideModel>) {
   return (
@@ -17,8 +18,9 @@ export function ImpressionsReportSlide({
       eyebrow={eyebrow}
       title={title}
       renderMode={renderMode}
+      templateId={templateId}
     >
-      <ImpressionsSlide {...model} />
+      <ImpressionsSlide {...model} templateId={templateId} />
     </SlideCanvas>
   );
 }

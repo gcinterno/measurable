@@ -1,6 +1,7 @@
 "use client";
 
 import type { ExecutiveDarkSeriesPoint } from "@/components/reports/report-view.helpers";
+import type { ReportTemplateId } from "@/lib/reports/template-selection";
 import type { ReportRenderMode } from "@/lib/reports/theme";
 
 export type BaseSlideFrameProps = {
@@ -8,6 +9,7 @@ export type BaseSlideFrameProps = {
   eyebrow: string;
   title: string;
   renderMode: ReportRenderMode;
+  templateId: ReportTemplateId;
 };
 
 export type SlideComponentProps<TModel> = BaseSlideFrameProps & {

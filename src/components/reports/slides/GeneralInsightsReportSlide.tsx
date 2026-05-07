@@ -12,6 +12,7 @@ export function GeneralInsightsReportSlide({
   eyebrow,
   title,
   renderMode,
+  templateId,
   model,
 }: SlideComponentProps<GeneralInsightsSlideModel>) {
   return (
@@ -20,8 +21,9 @@ export function GeneralInsightsReportSlide({
       eyebrow={eyebrow}
       title={title}
       renderMode={renderMode}
+      templateId={templateId}
     >
-      <GeneralInsightsSlide {...model} />
+      <GeneralInsightsSlide {...model} templateId={templateId} />
     </SlideCanvas>
   );
 }

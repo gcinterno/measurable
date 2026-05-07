@@ -237,6 +237,19 @@ function getRedirectUrl(text: string) {
   }
 }
 
+export function isValidMetaAuthUrl(value: string) {
+  if (!value) {
+    return false;
+  }
+
+  try {
+    const parsedUrl = new URL(value);
+    return parsedUrl.protocol === "https:" || parsedUrl.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 function normalizePages(response: MetaPagesResponse) {
   const pages = Array.isArray(response)
     ? response

@@ -5,7 +5,9 @@ import { useState } from "react";
 import { ChartBlock } from "@/components/reports/primitives/ChartBlock";
 import { InsightBox } from "@/components/reports/primitives/InsightBox";
 import { KPICard, KPIGrid } from "@/components/reports/primitives/KPIGrid";
+import { getTemplateTone } from "@/components/reports/slides/template";
 import { formatDisplayNumber, formatNumber } from "@/lib/formatters";
+import type { ReportTemplateId } from "@/lib/reports/template-selection";
 
 type ImpressionsDailyPoint = {
   date: string;
@@ -30,6 +32,7 @@ type ImpressionsSlideProps = {
   unavailable?: boolean;
   source_metric_name?: string;
   timeframe_source?: string;
+  templateId?: ReportTemplateId;
 };
 
 type ChartPoint = {
@@ -329,23 +332,25 @@ function buildInsight(
 function ImpressionsChart({
   points,
   metricLabel,
+  dark = true,
 }: {
   points: ChartPoint[];
   metricLabel: string;
+  dark?: boolean;
 }) {
   const [activePointIndex, setActivePointIndex] = useState<number | null>(null);
 
   if (points.length === 0) {
     return (
-      <div className="relative overflow-visible rounded-[30px] border border-white/10 bg-white/[0.04] p-6">
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(56,189,248,0.07)_0%,transparent_100%)]" />
+      <div className={`relative overflow-visible rounded-[30px] border p-6 ${dark ? "border-white/10 bg-white/[0.04]" : "border-slate-200 bg-white"}`}>
+        <div className={`pointer-events-none absolute inset-0 ${dark ? "bg-[linear-gradient(180deg,rgba(56,189,248,0.07)_0%,transparent_100%)]" : "bg-[linear-gradient(180deg,rgba(14,165,233,0.06)_0%,transparent_100%)]"}`} />
         <div className="relative">
           <div className="grid h-[280px] grid-rows-4 gap-0">
             {[0, 1, 2, 3].map((row) => (
-              <div key={row} className="border-b border-white/10" />
+              <div key={row} className={dark ? "border-b border-white/10" : "border-b border-slate-200"} />
             ))}
           </div>
-          <p className="mt-5 text-sm leading-6 text-slate-400">
+          <p className={`mt-5 text-sm leading-6 ${dark ? "text-slate-400" : "text-slate-500"}`}>
             Daily impressions series is not available for this report yet.
           </p>
         </div>
@@ -419,23 +424,23 @@ function ImpressionsChart({
   }
 
   return (
-    <div className="relative overflow-visible rounded-[30px] border border-white/10 bg-white/[0.04] p-6">
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(56,189,248,0.07)_0%,transparent_100%)]" />
+    <div className={`relative overflow-visible rounded-[30px] border p-6 ${dark ? "border-white/10 bg-white/[0.04]" : "border-slate-200 bg-white"}`}>
+      <div className={`pointer-events-none absolute inset-0 ${dark ? "bg-[linear-gradient(180deg,rgba(56,189,248,0.07)_0%,transparent_100%)]" : "bg-[linear-gradient(180deg,rgba(14,165,233,0.06)_0%,transparent_100%)]"}`} />
       <div className="relative">
         {activePoint && activeCoordinates ? (
           <div
-            className="absolute z-[9999] pointer-events-none rounded-2xl border border-sky-300/30 bg-slate-950/92 px-4 py-3 text-white shadow-xl backdrop-blur-md"
+            className={`absolute z-[9999] pointer-events-none rounded-2xl border px-4 py-3 shadow-xl backdrop-blur-md ${dark ? "border-sky-300/30 bg-slate-950/92 text-white" : "border-sky-200 bg-white/95 text-slate-950"}`}
             style={{
               left: tooltipPosition?.left,
               top: `calc(${(activeCoordinates.y / height) * 100}% - 74px)`,
               transform: tooltipPosition?.transform,
             }}
           >
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">
+            <p className={`text-xs font-semibold uppercase tracking-[0.18em] ${dark ? "text-sky-300" : "text-sky-700"}`}>
               {metricLabel}
             </p>
             <p className="mt-1 text-lg font-semibold">{formatMetricValue(activePoint.value)}</p>
-            <p className="mt-1 whitespace-nowrap text-xs text-slate-300">
+            <p className={`mt-1 whitespace-nowrap text-xs ${dark ? "text-slate-300" : "text-slate-500"}`}>
               {formatTooltipDate(activePoint.date)}
             </p>
           </div>
@@ -445,7 +450,7 @@ function ImpressionsChart({
             {yAxisValues.map((value, index) => (
               <span
                 key={`${value}-${index}`}
-                className="absolute right-0 -translate-y-1/2 text-slate-500"
+                className={`absolute right-0 -translate-y-1/2 ${dark ? "text-slate-500" : "text-slate-400"}`}
                 style={{
                   top: `${((paddingY + (index / (yAxisValues.length - 1)) * plotHeight) / height) * 100}%`,
                 }}
@@ -459,7 +464,7 @@ function ImpressionsChart({
               {[0, 1, 2, 3].map((row) => (
                 <div
                   key={row}
-                  className="absolute inset-x-0 border-b border-white/10"
+                  className={`absolute inset-x-0 ${dark ? "border-b border-white/10" : "border-b border-slate-200"}`}
                   style={{
                     top: `${((paddingY + (row / 3) * plotHeight) / height) * 100}%`,
                   }}
@@ -472,11 +477,11 @@ function ImpressionsChart({
                 className="absolute inset-0"
                 aria-hidden="true"
               >
-                <path d={areaPath} fill="rgba(56,189,248,0.10)" />
+                <path d={areaPath} fill={dark ? "rgba(56,189,248,0.10)" : "rgba(14,165,233,0.10)"} />
                 <path
                   d={path}
                   fill="none"
-                  stroke="rgba(125,211,252,0.9)"
+                  stroke={dark ? "rgba(125,211,252,0.9)" : "rgba(2,132,199,0.9)"}
                   strokeWidth="4"
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -490,8 +495,8 @@ function ImpressionsChart({
                       cx={x}
                       cy={y}
                       r="4.5"
-                      fill="#0b1728"
-                      stroke="rgba(125,211,252,0.95)"
+                      fill={dark ? "#0b1728" : "#ffffff"}
+                      stroke={dark ? "rgba(125,211,252,0.95)" : "rgba(2,132,199,0.95)"}
                       strokeWidth="2"
                     />
                   );
@@ -503,7 +508,7 @@ function ImpressionsChart({
                       y1={paddingY}
                       x2={activeCoordinates.x}
                       y2={baselineY}
-                      stroke="rgba(125,211,252,0.28)"
+                      stroke={dark ? "rgba(125,211,252,0.28)" : "rgba(2,132,199,0.28)"}
                       strokeWidth="1.5"
                       strokeDasharray="5 5"
                     />
@@ -511,14 +516,14 @@ function ImpressionsChart({
                       cx={activeCoordinates.x}
                       cy={activeCoordinates.y}
                       r="7"
-                      fill="rgba(125,211,252,0.22)"
+                      fill={dark ? "rgba(125,211,252,0.22)" : "rgba(2,132,199,0.18)"}
                     />
                     <circle
                       cx={activeCoordinates.x}
                       cy={activeCoordinates.y}
                       r="5"
-                      fill="#7dd3fc"
-                      stroke="#0b1728"
+                      fill={dark ? "#7dd3fc" : "#0284c7"}
+                      stroke={dark ? "#0b1728" : "#ffffff"}
                       strokeWidth="2"
                     />
                   </>
@@ -537,13 +542,13 @@ function ImpressionsChart({
           className="mt-5 grid grid-cols-3 items-center text-[11px] font-medium uppercase tracking-[0.18em]"
           style={{ paddingLeft: xAxisPadding, paddingRight: xAxisPadding }}
         >
-          <span className="truncate text-slate-500">
+          <span className={`truncate ${dark ? "text-slate-500" : "text-slate-400"}`}>
             {points[0]?.label || "Start"}
           </span>
-          <span className="truncate text-center text-slate-500">
+          <span className={`truncate text-center ${dark ? "text-slate-500" : "text-slate-400"}`}>
             {points[midIndex]?.label || "Mid"}
           </span>
-          <span className="truncate text-right text-slate-500">
+          <span className={`truncate text-right ${dark ? "text-slate-500" : "text-slate-400"}`}>
             {points[lastIndex]?.label || "End"}
           </span>
         </div>
@@ -566,7 +571,9 @@ export function ImpressionsSlide({
   title,
   unavailable = false,
   timeframe_source,
+  templateId = "executive",
 }: ImpressionsSlideProps) {
+  const tone = getTemplateTone(templateId);
   const points = impressions_daily
     .filter((point) => point && typeof point.value === "number" && Boolean(point.date))
     .map((point) => ({
@@ -613,28 +620,28 @@ export function ImpressionsSlide({
     );
 
   return (
-    <div className="h-full rounded-[32px] border border-white/10 bg-white/[0.04] p-7">
+    <div className={`h-full rounded-[32px] border p-7 ${tone.card}`}>
       <div className="grid h-full grid-cols-[346px_minmax(0,1fr)] gap-6">
         <div className="grid min-h-0 grid-rows-[auto_auto_1fr]">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-300">
+          <p className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${tone.accent}`}>
             Metric
           </p>
           <div className="mt-4">
-          <h2 className="max-w-[14rem] text-4xl font-semibold tracking-[-0.05em] text-white">
+          <h2 className={`max-w-[14rem] text-4xl font-semibold tracking-[-0.05em] ${tone.title}`}>
             {title || metric_label}
           </h2>
-          <p className="mt-2 text-xs text-slate-400">
+          <p className={`mt-2 text-xs ${tone.subtle}`}>
             Basado en datos de Facebook Insights
           </p>
-          <p className="mt-8 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+          <p className={`mt-8 text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.subtle}`}>
             Total de {metric_label.toLowerCase()} del periodo
           </p>
           {unavailable ? (
-            <p className="mt-3 text-base leading-7 text-slate-400">
+            <p className={`mt-3 text-base leading-7 ${tone.subtle}`}>
               No disponible para este periodo
             </p>
           ) : (
-            <p className="mt-3 break-words text-[3.2rem] font-semibold tracking-[-0.06em] text-white">
+            <p className={`mt-3 break-words text-[3.2rem] font-semibold tracking-[-0.06em] ${tone.title}`}>
               {formatMetricDisplayValue(normalizedImpressionsTotal)}
             </p>
           )}
@@ -647,27 +654,32 @@ export function ImpressionsSlide({
                 : insight
             }
             className="mt-8 h-full min-h-0"
+            templateId={templateId}
           />
         </div>
 
         <ChartBlock>
           {unavailable ? (
-            <div className="relative h-[360px] overflow-visible rounded-[30px] border border-white/10 bg-white/[0.04] p-6">
-              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(56,189,248,0.07)_0%,transparent_100%)]" />
+            <div className={`relative h-[360px] overflow-visible rounded-[30px] border p-6 ${tone.card}`}>
+              <div className={`pointer-events-none absolute inset-0 ${templateId !== "modern" ? "bg-[linear-gradient(180deg,rgba(56,189,248,0.07)_0%,transparent_100%)]" : "bg-[linear-gradient(180deg,rgba(14,165,233,0.06)_0%,transparent_100%)]"}`} />
               <div className="relative">
                 <div className="grid h-[280px] grid-rows-4 gap-0">
                   {[0, 1, 2, 3].map((row) => (
-                    <div key={row} className="border-b border-white/10" />
+                    <div key={row} className={templateId !== "modern" ? "border-b border-white/10" : "border-b border-slate-200"} />
                   ))}
                 </div>
-                <p className="mt-5 text-sm leading-6 text-slate-400">
+                <p className={`mt-5 text-sm leading-6 ${tone.subtle}`}>
                   No hay suficientes datos de impresiones disponibles para este periodo.
                 </p>
               </div>
             </div>
           ) : (
             <>
-              <ImpressionsChart points={continuousPoints} metricLabel={metric_label} />
+              <ImpressionsChart
+                points={continuousPoints}
+                metricLabel={metric_label}
+                dark={templateId !== "modern"}
+              />
               <KPIGrid columns={3}>
                 <KPICard
                   label="Highest day"
@@ -677,6 +689,7 @@ export function ImpressionsSlide({
                       ? `${formatMetricValue(resolvedHighestDay.value)} ${metric_label.toLowerCase()}`
                       : "No daily series available yet."
                   }
+                  templateId={templateId}
                 />
                 <KPICard
                   label="Lowest day"
@@ -686,11 +699,13 @@ export function ImpressionsSlide({
                       ? `${formatMetricValue(resolvedLowestDay.value)} ${metric_label.toLowerCase()}`
                       : "No daily series available yet."
                   }
+                  templateId={templateId}
                 />
                 <KPICard
                   label="Frequency"
                   value={Number.isFinite(normalizedFrequency) ? `${normalizedFrequency.toFixed(2)}x` : "0.00x"}
                   meta="avg times each user saw the content"
+                  templateId={templateId}
                 />
               </KPIGrid>
             </>

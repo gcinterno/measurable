@@ -4,7 +4,9 @@ import { useEffect } from "react";
 
 import { InsightBox } from "@/components/reports/primitives/InsightBox";
 import { KPICard, KPIGrid } from "@/components/reports/primitives/KPIGrid";
+import { getTemplateTone } from "@/components/reports/slides/template";
 import { formatDisplayNumber } from "@/lib/formatters";
+import type { ReportTemplateId } from "@/lib/reports/template-selection";
 
 type MetricState = {
   value: string | number;
@@ -36,6 +38,7 @@ type GeneralInsightsSlideProps = {
     link_clicks?: MetricState | null;
     page_visits?: MetricState | null;
   };
+  templateId?: ReportTemplateId;
 };
 
 type InsightCard = {
@@ -212,6 +215,8 @@ function getMetricCard(
 }
 
 export function GeneralInsightsSlide(props: GeneralInsightsSlideProps) {
+  const templateId = props.templateId || "executive";
+  const tone = getTemplateTone(templateId);
   const strictBackendMetrics = props.general_insights_slide_present === true;
 
   const cards: InsightCard[] = [
@@ -282,7 +287,7 @@ export function GeneralInsightsSlide(props: GeneralInsightsSlideProps) {
   ];
 
   return (
-    <div className="flex h-full flex-col rounded-[32px] border border-white/10 bg-white/[0.04] p-7">
+    <div className={`flex h-full flex-col rounded-[32px] border p-7 ${tone.card}`}>
       <KPIGrid columns={4}>
         {cards.map((card) => (
           <KPICard
@@ -293,11 +298,16 @@ export function GeneralInsightsSlide(props: GeneralInsightsSlideProps) {
             trend={card.trend}
             unavailable={card.unavailable}
             className="h-[134px]"
+            templateId={templateId}
           />
         ))}
       </KPIGrid>
 
-      <InsightBox text={buildInsight(props)} className="mt-6 min-h-0 flex-1" />
+      <InsightBox
+        text={buildInsight(props)}
+        className="mt-6 min-h-0 flex-1"
+        templateId={templateId}
+      />
     </div>
   );
 }

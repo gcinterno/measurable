@@ -23,21 +23,30 @@ import {
   getPlanCapabilities,
 } from "@/lib/workspace/plan-limits";
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
-
-type TemplateType = "modern";
+import {
+  type ReportTemplateId,
+  resolveReportTemplateSelection,
+} from "@/lib/reports/template-selection";
 
 const templateOptions: {
-  id: TemplateType;
+  id: ReportTemplateId;
   name: string;
   description: string;
   previewClass: string;
 }[] = [
   {
-    id: "modern",
-    name: "Modern",
-    description: "More visual contrast and highlighted blocks.",
+    id: "executive",
+    name: "Ejecutivo",
+    description: "Contraste alto y lectura clara para presentaciones ejecutivas.",
     previewClass:
       "bg-[linear-gradient(135deg,#0f172a_0%,#1d4ed8_100%)] border-slate-800",
+  },
+  {
+    id: "modern",
+    name: "Moderno",
+    description: "Fondo blanco, limpio y visualmente ligero.",
+    previewClass:
+      "bg-[linear-gradient(180deg,#ffffff_0%,#f5f8fc_100%)] border-slate-200",
   },
 ];
 
@@ -63,7 +72,9 @@ function NewReportFlowGeneratePageContent() {
       : "/reports/new/flow/sync",
   };
   const [selectedTemplate, setSelectedTemplate] =
-    useState<TemplateType>("modern");
+    useState<ReportTemplateId>(
+      resolveReportTemplateSelection(storedIntegrationContext?.templateId)
+    );
   const [selectedSlides, setSelectedSlides] = useState(5);
   const [aiMode, setAiMode] = useState<"standard" | "agents">(
     storedIntegrationContext?.aiMode || "standard"
@@ -105,7 +116,8 @@ function NewReportFlowGeneratePageContent() {
 
   function persistGenerateOptions(
     nextSlides: number,
-    nextAiMode: "standard" | "agents"
+    nextAiMode: "standard" | "agents",
+    nextTemplateId = selectedTemplate
   ) {
     const latestContext = getIntegrationReportContext();
 
@@ -117,6 +129,7 @@ function NewReportFlowGeneratePageContent() {
       ...latestContext,
       requestedSlides: nextSlides,
       aiMode: nextAiMode,
+      templateId: nextTemplateId,
     });
   }
 
@@ -157,6 +170,11 @@ function NewReportFlowGeneratePageContent() {
     setError("");
     setAiMode(nextAiMode);
     persistGenerateOptions(selectedSlides, nextAiMode);
+  }
+
+  function handleSelectTemplate(nextTemplateId: ReportTemplateId) {
+    setSelectedTemplate(nextTemplateId);
+    persistGenerateOptions(selectedSlides, aiMode, nextTemplateId);
   }
 
   useEffect(() => {
@@ -201,7 +219,7 @@ function NewReportFlowGeneratePageContent() {
       endDate: storedIntegrationContext.endDate,
     });
 
-    persistGenerateOptions(selectedSlides, requestedAiMode);
+    persistGenerateOptions(selectedSlides, requestedAiMode, selectedTemplate);
     console.info("[MetaTimeframe][flow.generate.before]", {
       datasetId,
       synced: storedIntegrationContext.synced,
@@ -391,7 +409,7 @@ function NewReportFlowGeneratePageContent() {
                       <button
                         key={template.id}
                         type="button"
-                        onClick={() => setSelectedTemplate(template.id)}
+                        onClick={() => handleSelectTemplate(template.id)}
                         className={`rounded-[20px] border p-3 text-left transition ${
                           active
                             ? "border-slate-950 bg-slate-950/5 shadow-[0_0_0_1px_rgba(15,23,42,0.12)]"
@@ -404,39 +422,39 @@ function NewReportFlowGeneratePageContent() {
                           <div
                             className={`rounded-full ${
                               template.id === "modern"
-                                ? "bg-white/30"
-                                : "bg-slate-200"
+                                ? "bg-slate-300"
+                                : "bg-white/30"
                             } h-2.5 w-16`}
                           />
                           <div className="mt-3 space-y-2">
                             <div
                               className={`h-3 rounded-full ${
                                 template.id === "modern"
-                                  ? "bg-white/80"
-                                  : "bg-slate-300"
+                                  ? "bg-slate-300"
+                                  : "bg-white/80"
                               }`}
                             />
                             <div className="grid grid-cols-2 gap-2">
                               <div
                                 className={`h-12 rounded-xl ${
                                   template.id === "modern"
-                                    ? "bg-white/15"
-                                    : "bg-slate-200"
+                                    ? "bg-slate-200"
+                                    : "bg-white/15"
                                 }`}
                               />
                               <div
                                 className={`h-12 rounded-xl ${
                                   template.id === "modern"
-                                    ? "bg-white/10"
-                                    : "bg-slate-100"
+                                    ? "bg-slate-100"
+                                    : "bg-white/10"
                                 }`}
                               />
                             </div>
                             <div
                               className={`h-16 rounded-2xl ${
                                 template.id === "modern"
-                                  ? "bg-white/10"
-                                  : "bg-slate-100"
+                                  ? "bg-slate-100"
+                                  : "bg-white/10"
                               }`}
                             />
                           </div>

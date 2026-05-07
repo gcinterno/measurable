@@ -7,8 +7,11 @@ import { HeroBlock } from "@/components/reports/primitives/HeroBlock";
 import { SlideDeckViewport } from "@/components/reports/SlideDeckViewport";
 import { SlideCanvas } from "@/components/reports/SlideCanvas";
 import type { ExecutiveDarkViewModel } from "@/components/reports/report-view.helpers";
+import { CoverSlide } from "@/components/reports/slides/CoverSlide";
+import { getTemplateTone } from "@/components/reports/slides/template";
 import { CoverLogo, MetricDailyChart } from "@/components/reports/slides/shared";
 import { formatMetaTimeframeDateRange } from "@/lib/integrations/timeframes";
+import type { ReportTemplateId } from "@/lib/reports/template-selection";
 import { getReportTemplate } from "@/lib/reports/templates";
 import { buildDefaultTemplateContext } from "@/lib/reports/templates/default-view-models";
 import {
@@ -28,6 +31,7 @@ type SlideRendererProps = {
     logoUrl?: string | null;
     source?: string;
   };
+  templateId?: ReportTemplateId;
 };
 
 function getBlockSemanticName(block: ReportVersionBlock) {
@@ -1411,6 +1415,7 @@ function OverviewSlide({
   index,
   totalSlides,
   renderMode,
+  templateId,
   locale,
   hideInsights = false,
 }: {
@@ -1419,9 +1424,12 @@ function OverviewSlide({
   index: number;
   totalSlides: number;
   renderMode: ReportRenderMode;
+  templateId: ReportTemplateId;
   locale?: string;
   hideInsights?: boolean;
 }) {
+  const tone = getTemplateTone(templateId);
+  const modern = templateId === "modern";
   const isFiveSlideReport = totalSlides === 5;
   const slideId = String(index + 1).padStart(2, "0");
   const sortedBlocks = sortBlocksByOrder(blocks);
@@ -1460,14 +1468,15 @@ function OverviewSlide({
       eyebrow=""
       title=""
       renderMode={renderMode}
+      templateId={templateId}
     >
       <div className="flex h-full min-h-0 flex-col gap-6">
         <div className="space-y-2">
-          <h2 className="text-[2.35rem] font-semibold tracking-[-0.06em] text-white">
+          <h2 className={`text-[2.35rem] font-semibold tracking-[-0.06em] ${tone.title}`}>
             Overview
           </h2>
           {timeframeLabel ? (
-            <p className="text-sm font-medium text-slate-400">
+            <p className={`text-sm font-medium ${tone.subtle}`}>
               {timeframeLabel}
             </p>
           ) : null}
@@ -1500,32 +1509,32 @@ function OverviewSlide({
               return (
                 <article
                   key={metric.key}
-                  className={`group flex min-h-[152px] flex-col rounded-[28px] border border-white/10 bg-white/[0.07] p-5 backdrop-blur-md transition duration-300 hover:border-sky-300/30 hover:bg-white/[0.09] ${
+                  className={`group flex min-h-[152px] flex-col rounded-[28px] border p-5 transition duration-300 ${modern && metricIndex === 0 ? tone.cardStrong : tone.card} ${
                     isFiveSlideReport && metricIndex === overviewMetrics.length - 1 && overviewMetrics.length % 2 === 1
                       ? "col-span-2"
                       : ""
                   }`}
                 >
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-300">
+                  <p className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${modern && metricIndex === 0 ? tone.cardStrongAccent : tone.accent}`}>
                     {metric.label}
                   </p>
-                  <p className="mt-4 break-words text-[2.35rem] font-semibold leading-none tracking-[-0.06em] text-white">
+                  <p className={`mt-4 break-words text-[2.35rem] font-semibold leading-none tracking-[-0.06em] ${modern && metricIndex === 0 ? tone.cardStrongTitle : tone.title}`}>
                     {metric.value || "—"}
                   </p>
                   <div className="mt-auto pt-4">
                     {isFiveSlideReport ? null : metric.previousValue ? (
-                      <p className="text-[0.74rem] font-medium text-slate-400">
+                      <p className={`text-[0.74rem] font-medium ${modern && metricIndex === 0 ? tone.cardStrongSubtitle : tone.subtle}`}>
                         vs previous period {metric.previousValue}
                       </p>
                     ) : (
-                      <p className="text-[0.74rem] font-medium text-slate-500">
+                      <p className={`text-[0.74rem] font-medium ${modern && metricIndex === 0 ? tone.cardStrongSubtitle : tone.subtle}`}>
                         {metric.changePercentage === null
                           ? "No previous comparison"
                           : "vs previous period"}
                       </p>
                     )}
                     {isFiveSlideReport ? null : changeText ? (
-                      <div className={`mt-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/15 px-3 py-1.5 text-sm font-semibold ${changeClass}`}>
+                      <div className={`mt-3 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-semibold ${tone.chip} ${changeClass}`}>
                         {arrow ? <span>{arrow}</span> : null}
                         <span>{changeText}</span>
                       </div>
@@ -1537,11 +1546,11 @@ function OverviewSlide({
           </div>
 
           {hideInsights ? null : (
-            <div className="min-h-0 rounded-[28px] border border-sky-300/20 bg-[linear-gradient(135deg,rgba(14,165,233,0.14),rgba(255,255,255,0.045))] p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200">
+            <div className={`min-h-0 rounded-[28px] border p-5 ${tone.insight}`}>
+              <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${modern ? tone.insightTitle : tone.accentSoft}`}>
                 Insights
               </p>
-              <p className="mt-3 text-[0.95rem] leading-7 text-slate-100">
+              <p className={`mt-3 text-[0.95rem] leading-7 ${modern ? tone.insightBody : tone.subtitle}`}>
                 {insight}
               </p>
             </div>
@@ -1669,13 +1678,16 @@ function ExecutiveSummarySlide({
   index,
   totalSlides,
   renderMode,
+  templateId,
 }: {
   block: ReportVersionBlock;
   blocks: ReportVersionBlock[];
   index: number;
   totalSlides: number;
   renderMode: ReportRenderMode;
+  templateId: ReportTemplateId;
 }) {
+  const tone = getTemplateTone(templateId);
   const slideId = String(index + 1).padStart(2, "0");
   const title =
     getStringValue(block.data.title) ||
@@ -1696,6 +1708,7 @@ function ExecutiveSummarySlide({
       eyebrow=""
       title={title}
       renderMode={renderMode}
+      templateId={templateId}
     >
       <div className="flex h-full min-h-0 flex-col gap-5">
         <div className="grid min-h-0 flex-1 grid-cols-4 gap-3">
@@ -1703,27 +1716,27 @@ function ExecutiveSummarySlide({
             visibleCards.map((card) => (
               <article
                 key={card.key}
-                className="min-h-0 rounded-[24px] border border-white/10 bg-white/[0.055] p-4"
+                className={`min-h-0 rounded-[24px] border p-4 ${tone.card}`}
               >
-                <p className="line-clamp-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-300">
+                <p className={`line-clamp-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${tone.accent}`}>
                   {card.title}
                 </p>
                 {card.value ? (
-                  <p className="mt-3 line-clamp-1 text-2xl font-semibold tracking-[-0.05em] text-white">
+                  <p className={`mt-3 line-clamp-1 text-2xl font-semibold tracking-[-0.05em] ${tone.title}`}>
                     {card.value}
                   </p>
                 ) : null}
-                <p className="mt-3 line-clamp-4 text-[0.72rem] leading-5 text-slate-300">
+                <p className={`mt-3 line-clamp-4 text-[0.72rem] leading-5 ${tone.subtitle}`}>
                   {card.insight}
                 </p>
               </article>
             ))
           ) : (
-            <article className="col-span-4 rounded-[24px] border border-white/10 bg-white/[0.055] p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-300">
+            <article className={`col-span-4 rounded-[24px] border p-5 ${tone.card}`}>
+              <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.accent}`}>
                 Summary
               </p>
-              <p className="mt-3 text-sm leading-6 text-slate-300">
+              <p className={`mt-3 text-sm leading-6 ${tone.subtitle}`}>
                 {fallbackText || "No insight cards were available for this report yet."}
               </p>
             </article>
@@ -1731,11 +1744,11 @@ function ExecutiveSummarySlide({
         </div>
 
         {aiAnalysis ? (
-          <div className="rounded-[28px] border border-sky-300/20 bg-[linear-gradient(135deg,rgba(14,165,233,0.13),rgba(255,255,255,0.045))] p-5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-200">
+          <div className={`rounded-[28px] border p-5 ${templateId === "modern" ? tone.cardStrong : tone.insight}`}>
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${templateId === "modern" ? tone.cardStrongAccent : tone.accentSoft}`}>
               AI analysis
             </p>
-            <p className="mt-3 line-clamp-5 text-[0.92rem] leading-6 text-slate-100">
+            <p className={`mt-3 line-clamp-5 text-[0.92rem] leading-6 ${templateId === "modern" ? tone.cardStrongSubtitle : tone.subtitle}`}>
               {aiAnalysis}
             </p>
           </div>
@@ -1753,6 +1766,7 @@ function ReportBlockSlide({
   totalSlides,
   renderMode,
   logoUrl,
+  templateId,
   locale,
   hideOverviewInsights = false,
 }: {
@@ -1763,9 +1777,11 @@ function ReportBlockSlide({
   totalSlides: number;
   renderMode: ReportRenderMode;
   logoUrl: string | null;
+  templateId: ReportTemplateId;
   locale?: string;
   hideOverviewInsights?: boolean;
 }) {
+  const tone = getTemplateTone(templateId);
   const semanticName = getBlockSemanticName(block);
   const isFiveSlideClosingCover = totalSlides === 5 && index === totalSlides - 1;
   const slideId = String(index + 1).padStart(2, "0");
@@ -1844,20 +1860,21 @@ function ReportBlockSlide({
     const coverMeta = coverBlock ? getBlockTimeframeLabel(coverBlock, locale) : "";
 
     return (
-      <SlideCanvas
-        index={slideId}
-        totalSlides={totalSlides}
+      <CoverSlide
+        slideId={slideId}
         eyebrow=""
         title=""
         renderMode={renderMode}
-      >
-        <HeroBlock
-          title={coverTitle || "Marketing Performance Report"}
-          subtitle={coverText}
-          meta={coverMeta}
-          rightSlot={<CoverLogo logoDataUrl={logoUrl} dark />}
-        />
-      </SlideCanvas>
+        templateId={templateId}
+        model={{
+          reportTitle: coverTitle || "Marketing Performance Report",
+          subtitle: coverText,
+          meta: coverMeta,
+          branding: {
+            logoUrl,
+          },
+        }}
+      />
     );
   }
 
@@ -1865,20 +1882,21 @@ function ReportBlockSlide({
     const meta = getBlockTimeframeLabel(block, locale);
 
     return (
-      <SlideCanvas
-        index={slideId}
-        totalSlides={totalSlides}
+      <CoverSlide
+        slideId={slideId}
         eyebrow=""
         title=""
         renderMode={renderMode}
-      >
-        <HeroBlock
-          title={title || "Marketing Performance Report"}
-          subtitle={text}
-          meta={meta}
-          rightSlot={<CoverLogo logoDataUrl={logoUrl} dark />}
-        />
-      </SlideCanvas>
+        templateId={templateId}
+        model={{
+          reportTitle: title || "Marketing Performance Report",
+          subtitle: text,
+          meta,
+          branding: {
+            logoUrl,
+          },
+        }}
+      />
     );
   }
 
@@ -1890,6 +1908,7 @@ function ReportBlockSlide({
         index={index}
         totalSlides={totalSlides}
         renderMode={renderMode}
+        templateId={templateId}
       />
     );
   }
@@ -1912,6 +1931,7 @@ function ReportBlockSlide({
         index={index}
         totalSlides={totalSlides}
         renderMode={renderMode}
+        templateId={templateId}
         locale={locale}
         hideInsights={hideOverviewInsights}
       />
@@ -1926,6 +1946,7 @@ function ReportBlockSlide({
         eyebrow=""
         title=""
         renderMode={renderMode}
+        templateId={templateId}
       >
         <HeroBlock
           eyebrow="Meta"
@@ -1933,7 +1954,8 @@ function ReportBlockSlide({
           subtitle={text || "Gracias por revisar este resumen de desempeno"}
           meta={getBlockTimeframeLabel(block, locale)}
           footer={<FooterMeta text="Reporte generado con Measurable." />}
-          rightSlot={<CoverLogo logoDataUrl={logoUrl} dark />}
+          templateId={templateId}
+          rightSlot={<CoverLogo logoDataUrl={logoUrl} dark={templateId !== "modern"} />}
         />
       </SlideCanvas>
     );
@@ -1946,28 +1968,29 @@ function ReportBlockSlide({
       eyebrow=""
       title={title}
       renderMode={renderMode}
+      templateId={templateId}
     >
       <div className="grid h-full min-h-0 grid-cols-[0.82fr_1.18fr] gap-6">
         <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4">
-          <div className="rounded-[30px] border border-white/10 bg-white/[0.06] p-6">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-300">
+          <div className={`rounded-[30px] border p-6 ${tone.cardStrong}`}>
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${templateId === "modern" ? tone.cardStrongAccent : tone.accent}`}>
               {primaryMetric.label}
             </p>
-            <p className="mt-4 break-words text-[2.65rem] font-semibold leading-none tracking-[-0.06em] text-white">
+            <p className={`mt-4 break-words text-[2.65rem] font-semibold leading-none tracking-[-0.06em] ${templateId === "modern" ? tone.cardStrongTitle : tone.title}`}>
               {primaryMetric.value || "--"}
             </p>
           </div>
 
-          <div className="min-h-0 overflow-hidden rounded-[30px] border border-white/10 bg-white/[0.04] p-5">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+          <div className={`min-h-0 overflow-hidden rounded-[30px] border p-5 ${tone.card}`}>
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.subtle}`}>
               Insight
             </p>
             {text ? (
-              <p className="mt-3 line-clamp-[10] whitespace-pre-wrap text-[0.92rem] leading-6 text-slate-200">
+              <p className={`mt-3 line-clamp-[10] whitespace-pre-wrap text-[0.92rem] leading-6 ${tone.subtitle}`}>
                 {text}
               </p>
             ) : (
-              <p className="mt-3 text-[0.92rem] leading-6 text-slate-400">
+              <p className={`mt-3 text-[0.92rem] leading-6 ${tone.subtle}`}>
                 This slide is ready for the report block content.
               </p>
             )}
@@ -1977,7 +2000,7 @@ function ReportBlockSlide({
                 {listItems.slice(0, 4).map((item, itemIndex) => (
                   <div
                     key={`${item}-${itemIndex}`}
-                    className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-[0.8rem] leading-5 text-slate-200"
+                    className={`rounded-2xl border px-3 py-2 text-[0.8rem] leading-5 ${tone.listItem}`}
                   >
                     {item}
                   </div>
@@ -1993,13 +2016,14 @@ function ReportBlockSlide({
               points={chartPoints}
               isAvailable={chartPoints.length > 0}
               metricLabel={chartMetricLabel}
+              dark={templateId !== "modern"}
             />
           ) : (
-            <div className="flex h-full flex-col items-center justify-center rounded-[30px] border border-white/10 bg-white/[0.04] px-6 text-center">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-300">
+            <div className={`flex h-full flex-col items-center justify-center rounded-[30px] border px-6 text-center ${tone.card}`}>
+              <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.accent}`}>
                 Daily chart
               </p>
-              <p className="mt-3 max-w-xs text-sm leading-6 text-slate-400">
+              <p className={`mt-3 max-w-xs text-sm leading-6 ${tone.subtle}`}>
                 No daily trend was available for this section.
               </p>
             </div>
@@ -2015,6 +2039,7 @@ export function buildReportBlockSlideElements(input: {
   model: ExecutiveDarkViewModel | null | undefined;
   renderMode: ReportRenderMode;
   logoUrl: string | null;
+  templateId: ReportTemplateId;
   locale?: string;
   hideOverviewInsights?: boolean;
 }) {
@@ -2030,6 +2055,7 @@ export function buildReportBlockSlideElements(input: {
       totalSlides={sortedBlocks.length}
       renderMode={input.renderMode}
       logoUrl={input.logoUrl}
+      templateId={input.templateId}
       locale={input.locale}
       hideOverviewInsights={input.hideOverviewInsights}
     />
@@ -2043,6 +2069,7 @@ export function SlideRenderer({
   locale,
   hideOverviewInsights = false,
   branding,
+  templateId = "executive",
 }: SlideRendererProps) {
   const template = getReportTemplate("default");
   const rawLogoUrl = branding?.logoUrl || null;
@@ -2104,6 +2131,7 @@ export function SlideRenderer({
           model,
           renderMode,
           logoUrl: safeBranding.logoUrl,
+          templateId,
           locale,
           hideOverviewInsights,
         })
@@ -2118,6 +2146,7 @@ export function SlideRenderer({
               eyebrow={slide.eyebrow}
               title={slide.title}
               renderMode={renderMode}
+              templateId={templateId}
               model={slideModel}
             />
           ) as ReactElement;

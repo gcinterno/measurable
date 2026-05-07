@@ -11,6 +11,7 @@ import {
 } from "@/lib/api/reports";
 import { resolveReportBranding } from "@/lib/reports/branding";
 import { getReportBrandingSnapshot } from "@/lib/reports/branding-snapshots";
+import { getStoredReportTemplateSelection } from "@/lib/reports/template-selection";
 import { REPORT_SLIDE_THEME } from "@/lib/reports/theme";
 import type {
   ReportDescription,
@@ -97,6 +98,10 @@ export function ReportPdfView({ reportId, exportAuthToken }: ReportPdfViewProps)
   const [slidesRendered, setSlidesRendered] = useState(false);
   const [error, setError] = useState("");
   const rootRef = useRef<HTMLElement | null>(null);
+  const selectedTemplateId = useMemo(
+    () => getStoredReportTemplateSelection(reportId),
+    [reportId]
+  );
 
   useEffect(() => {
     console.log("export page mounted", {
@@ -478,6 +483,7 @@ export function ReportPdfView({ reportId, exportAuthToken }: ReportPdfViewProps)
             model={viewModel}
             renderMode="export"
             branding={resolvedBranding}
+            templateId={selectedTemplateId}
           />
         </div>
       </main>

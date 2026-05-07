@@ -24,6 +24,10 @@ import { resolveReportBranding } from "@/lib/reports/branding";
 import { getReportBrandingSnapshot } from "@/lib/reports/branding-snapshots";
 import { setReportChatContext } from "@/lib/reports/chat-context";
 import { exportReportPdf } from "@/lib/reports/export-pdf";
+import {
+  getReportTemplateLabel,
+  getStoredReportTemplateSelection,
+} from "@/lib/reports/template-selection";
 import { REPORT_SLIDE_THEME } from "@/lib/reports/theme";
 import { getReportTemplate } from "@/lib/reports/templates";
 import { buildDefaultTemplateContext } from "@/lib/reports/templates/default-view-models";
@@ -275,6 +279,10 @@ export default function ReportView({
   const summary = useMemo(() => getReportSummary(blocks), [blocks]);
   const shortSummary = useMemo(() => getShortReportSummary(summary), [summary]);
   const aiModeMetadata = getAiModeMetadata(reportDetail, reportVersionDescription);
+  const selectedTemplateId = useMemo(
+    () => getStoredReportTemplateSelection(reportId),
+    [reportId]
+  );
   const viewModel = useMemo(
     () =>
       buildExecutiveDarkViewModel(blocks, {
@@ -352,6 +360,7 @@ export default function ReportView({
           model: viewModel,
           renderMode: "preview",
           logoUrl: resolvedBranding.logoUrl,
+          templateId: selectedTemplateId,
           locale: language,
           hideOverviewInsights,
         }).map((element, index) => {
@@ -379,13 +388,14 @@ export default function ReportView({
               eyebrow={slide.eyebrow}
               title={slide.title}
               renderMode="preview"
+              templateId={selectedTemplateId}
               model={slideModel}
             />
           ),
         };
       });
     },
-    [blocks, hideOverviewInsights, language, resolvedBranding.logoUrl, template.slides, thumbnailContext, viewModel]
+    [blocks, hideOverviewInsights, language, resolvedBranding.logoUrl, selectedTemplateId, template.slides, thumbnailContext, viewModel]
   );
   useEffect(() => {
     console.info("[AUDIT_RENDER_PATH][ReportView]", {
@@ -703,6 +713,7 @@ export default function ReportView({
           ref={exportSurfaceRef}
           model={viewModel}
           branding={resolvedBranding}
+          templateId={selectedTemplateId}
           onReadyChange={setExportSurfaceReady}
         />
       ) : null}
@@ -731,7 +742,7 @@ export default function ReportView({
                   : "-"}
               </span>
               <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
-                {messages.reports.templateLabel}: Executive Dark
+                {messages.reports.templateLabel}: {getReportTemplateLabel(selectedTemplateId)}
               </span>
               {timeframeLabel ? (
                 <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
@@ -806,6 +817,7 @@ export default function ReportView({
               locale={language}
               hideOverviewInsights={hideOverviewInsights}
               branding={resolvedBranding}
+              templateId={selectedTemplateId}
             />
           </div>
         </div>

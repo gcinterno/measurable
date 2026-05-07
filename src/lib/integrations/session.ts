@@ -1,6 +1,7 @@
 "use client";
 
 import type { MetaTimeframeSelection } from "@/lib/integrations/timeframes";
+import type { ReportTemplateId } from "@/lib/reports/template-selection";
 
 const INTEGRATION_REPORT_CONTEXT_KEY = "integrationReportContext";
 const PENDING_META_SOURCE_KEY = "pendingMetaSource";
@@ -24,6 +25,7 @@ export type IntegrationReportContext = {
   synced?: boolean;
   requestedSlides?: number;
   aiMode?: "standard" | "agents";
+  templateId?: ReportTemplateId;
   postConnectRedirect?: string;
 };
 
@@ -70,6 +72,25 @@ export function clearIntegrationReportContext() {
   }
 
   window.localStorage.removeItem(INTEGRATION_REPORT_CONTEXT_KEY);
+}
+
+export function clearStoredMetaIntegrationState() {
+  const currentContext = getIntegrationReportContext();
+
+  if (!currentContext || currentContext.integration !== "meta") {
+    return;
+  }
+
+  setIntegrationReportContext({
+    ...currentContext,
+    integrationId: undefined,
+    datasetId: undefined,
+    businessId: undefined,
+    adAccountId: undefined,
+    pageId: undefined,
+    pageName: undefined,
+    synced: false,
+  });
 }
 
 export function getPendingMetaSource() {

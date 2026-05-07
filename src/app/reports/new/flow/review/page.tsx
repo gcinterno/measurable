@@ -34,6 +34,10 @@ import { resolveReportBranding } from "@/lib/reports/branding";
 import { getReportBrandingSnapshot } from "@/lib/reports/branding-snapshots";
 import { saveReportBrandingSnapshot } from "@/lib/reports/branding-snapshots";
 import { exportReportPdf } from "@/lib/reports/export-pdf";
+import {
+  resolveReportTemplateSelection,
+  saveReportTemplateSelection,
+} from "@/lib/reports/template-selection";
 import { usePreferencesStore } from "@/lib/store/preferences-store";
 import { getPlanCapabilities } from "@/lib/workspace/plan-limits";
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
@@ -156,7 +160,9 @@ function NewReportFlowReviewPageContent() {
   const [generatedReportId, setGeneratedReportId] = useState("");
   const reportId = generatedReportId || queryReportId;
   const integrationSource = searchParams.get("integration") || "";
-  const selectedTemplate = searchParams.get("template") || "modern";
+  const selectedTemplate = resolveReportTemplateSelection(
+    searchParams.get("template") || storedIntegrationContext?.templateId
+  );
   const preferenceLogoUrl = usePreferencesStore((state) => state.logoDataUrl);
   const currentStep = 4;
   const stepHrefMap: Record<number, string> = {
@@ -328,6 +334,7 @@ function NewReportFlowReviewPageContent() {
           logoUrl: preferenceLogoUrl,
           source: "preferences.logoDataUrl",
         });
+        saveReportTemplateSelection(report.reportId, selectedTemplate);
         console.info("[MetaTimeframe][flow.review.generate] response", {
           reportId: report.reportId,
           raw: report.raw,
@@ -760,6 +767,7 @@ function NewReportFlowReviewPageContent() {
             ref={exportSurfaceRef}
             model={viewModel}
             branding={resolvedBranding}
+            templateId={selectedTemplate}
             onReadyChange={setExportSurfaceReady}
           />
         ) : null}
@@ -994,6 +1002,7 @@ function NewReportFlowReviewPageContent() {
                             blocks={blocks}
                             locale={language}
                             branding={resolvedBranding}
+                            templateId={selectedTemplate}
                           />
                         </div>
                       </div>
