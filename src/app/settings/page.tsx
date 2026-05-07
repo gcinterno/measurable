@@ -71,12 +71,6 @@ export default function SettingsPage() {
         }
 
         setUser(currentUser);
-        const backendLogoUrl = currentUser.branding?.logoUrl || "";
-
-        if (backendLogoUrl) {
-          setLogoUrlDraft(backendLogoUrl);
-          preferences.updatePreferences({ logoDataUrl: backendLogoUrl });
-        }
       } catch (error) {
         if (!isAbortError(error) && !isAuthError(error)) {
           console.error("settings current user error:", error);
@@ -102,14 +96,16 @@ export default function SettingsPage() {
         }
 
         const backendLogoUrl = currentWorkspace.branding?.logoUrl || "";
-        const localCachedLogoUrl = preferences.logoDataUrl || "";
+        const localCachedLogoUrl =
+          preferences.logoSource === "manual" ? preferences.logoDataUrl || "" : "";
         setWorkspace(currentWorkspace);
         setBrandNameDraft(currentWorkspace.name || preferences.brandName);
-        setLogoUrlDraft((current) => current || backendLogoUrl || localCachedLogoUrl || "");
+        setLogoUrlDraft(backendLogoUrl || localCachedLogoUrl || "");
         preferences.updatePreferences({
           brandName: currentWorkspace.name || preferences.brandName,
           displayName: currentWorkspace.name || preferences.displayName,
           logoDataUrl: backendLogoUrl || localCachedLogoUrl || "",
+          logoSource: backendLogoUrl ? "workspace" : localCachedLogoUrl ? "manual" : "",
         });
       } catch (error) {
         if (!isAbortError(error) && !isAuthError(error)) {
@@ -145,7 +141,7 @@ export default function SettingsPage() {
     });
 
     setLogoUrlDraft(dataUrl);
-    preferences.updatePreferences({ logoDataUrl: dataUrl });
+    preferences.updatePreferences({ logoDataUrl: dataUrl, logoSource: "manual" });
     setSaved("");
 
     const workspaceId = getActiveWorkspaceId();
@@ -157,6 +153,7 @@ export default function SettingsPage() {
       setLogoUrlDraft(updatedUser.branding?.logoUrl || dataUrl);
       preferences.updatePreferences({
         logoDataUrl: updatedUser.branding?.logoUrl || dataUrl,
+        logoSource: "manual",
       });
       setSaved(messages.settings.changesSaved);
     } catch (error) {
@@ -178,6 +175,7 @@ export default function SettingsPage() {
       brandName: nextBrandName,
       displayName: nextBrandName,
       logoDataUrl: logoUrlDraft,
+      logoSource: logoUrlDraft ? "manual" : "",
     });
 
     if (!workspaceId) {
@@ -199,6 +197,7 @@ export default function SettingsPage() {
         brandName: updatedWorkspace.name || nextBrandName,
         displayName: updatedWorkspace.name || nextBrandName,
         logoDataUrl: updatedWorkspace.branding?.logoUrl || "",
+        logoSource: updatedWorkspace.branding?.logoUrl ? "workspace" : "",
       });
       setSaved(messages.settings.changesSaved);
     } catch (error) {
@@ -330,7 +329,10 @@ export default function SettingsPage() {
                           type="button"
                           onClick={async () => {
                             setLogoUrlDraft("");
-                            preferences.updatePreferences({ logoDataUrl: "" });
+                            preferences.updatePreferences({
+                              logoDataUrl: "",
+                              logoSource: "",
+                            });
                             setSaved("");
 
                             try {
@@ -340,6 +342,7 @@ export default function SettingsPage() {
                               setLogoUrlDraft(updatedUser.branding?.logoUrl || "");
                               preferences.updatePreferences({
                                 logoDataUrl: updatedUser.branding?.logoUrl || "",
+                                logoSource: updatedUser.branding?.logoUrl ? "manual" : "",
                               });
                               setSaved(messages.settings.changesSaved);
                             } catch (error) {

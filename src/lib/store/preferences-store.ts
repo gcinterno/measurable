@@ -5,12 +5,14 @@ import { persist } from "zustand/middleware";
 
 type ThemeMode = "light" | "dark";
 export type AppLanguage = "en" | "es";
+type LogoSource = "" | "manual" | "workspace";
 
 type PreferencesState = {
   hasHydrated: boolean;
   brandName: string;
   displayName: string;
   logoDataUrl: string;
+  logoSource: LogoSource;
   timezone: string;
   language: AppLanguage;
   theme: ThemeMode;
@@ -19,6 +21,7 @@ type PreferencesState = {
     brandName: string;
     displayName: string;
     logoDataUrl: string;
+    logoSource: LogoSource;
     timezone: string;
     language: AppLanguage;
     theme: ThemeMode;
@@ -28,6 +31,7 @@ type PreferencesState = {
       brandName: string;
       displayName: string;
       logoDataUrl: string;
+      logoSource: LogoSource;
       timezone: string;
       language: AppLanguage;
       theme: ThemeMode;
@@ -42,6 +46,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       brandName: "Measurable",
       displayName: "Alex Lane",
       logoDataUrl: "",
+      logoSource: "",
       timezone: "America/Mexico_City",
       language: "en",
       theme: "light",
@@ -62,6 +67,7 @@ export const usePreferencesStore = create<PreferencesState>()(
           ...persisted,
           brandName: persisted.brandName ?? persisted.displayName ?? currentState.brandName,
           displayName: persisted.displayName ?? currentState.displayName,
+          logoSource: persisted.logoSource ?? currentState.logoSource,
         };
       },
     }

@@ -11,7 +11,7 @@ type IntegrationCardProps = {
   category: string;
   description: string;
   status: IntegrationStatus;
-  actionLabel: string;
+  actionLabel?: string;
   onAction?: () => void;
   secondaryActionLabel?: string;
   onSecondaryAction?: () => void;
@@ -81,27 +81,29 @@ export function IntegrationCard({
       <h2 className="mt-4 text-base font-semibold text-slate-950 sm:text-lg">{name}</h2>
       <p className="mt-2 text-sm leading-5 text-slate-500 sm:leading-6">{description}</p>
       <div className="mt-4 flex flex-wrap gap-3">
-        <button
-          type="button"
-          onClick={onAction}
-          disabled={disabled || loading}
-          className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-sm font-semibold transition sm:w-auto sm:px-4 ${
-            blockedComingSoon
-              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-70 blur-[0.2px]"
-              : status === "Connected"
-                ? "bg-slate-950 !text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                : "border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
-          }`}
-        >
-          {loading ? (
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
-          ) : null}
-          {loading
-            ? messages.integrationsPage.connecting
-            : blockedComingSoon
-              ? messages.common.comingSoon
-              : actionLabel}
-        </button>
+        {actionLabel ? (
+          <button
+            type="button"
+            onClick={onAction}
+            disabled={disabled || loading}
+            className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-sm font-semibold transition sm:w-auto sm:px-4 ${
+              blockedComingSoon
+                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-70 blur-[0.2px]"
+                : status === "Connected"
+                  ? "bg-slate-950 !text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  : "border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+            }`}
+          >
+            {loading ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+            ) : null}
+            {loading
+              ? messages.integrationsPage.connecting
+              : blockedComingSoon
+                ? messages.common.comingSoon
+                : actionLabel}
+          </button>
+        ) : null}
         {secondaryActionLabel && onSecondaryAction ? (
           <button
             type="button"

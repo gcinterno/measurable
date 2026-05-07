@@ -380,7 +380,7 @@ export default function ReportsPage() {
 
         {!loading && !error && reports.length > 0 ? (
           <div className="space-y-5">
-            <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <section className="p-0">
               <div className="flex flex-wrap gap-3">
                 <button
                   type="button"
@@ -391,7 +391,7 @@ export default function ReportsPage() {
                       : "border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
                   }`}
                 >
-                  {messages.reports.folderNone}
+                  All
                 </button>
                 {folders.map((folder) => {
                   const active = activeFolderId === folder.id;
@@ -502,7 +502,7 @@ export default function ReportsPage() {
                       ? messages.reports.folderViewSelected.replace(
                           "{name}",
                           folders.find((folder) => folder.id === activeFolderId)?.name ||
-                            messages.reports.folderNone
+                            "All"
                         )
                       : messages.reports.folderViewNone}
                   </p>

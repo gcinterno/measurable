@@ -277,14 +277,14 @@ function IntegrationsPageContent() {
             actionLabel={
               isMetaFrontendIntegrationKey(integration.integrationKey)
                 ? metaConnected
-                  ? "Select"
+                  ? undefined
                   : "Connect"
                 : integration.actionLabel
             }
             onAction={
               isMetaFrontendIntegrationKey(integration.integrationKey)
                 ? metaConnected
-                  ? () => handleMetaSelectSource(integration.integrationKey)
+                  ? undefined
                   : () => handleMetaConnectSource(integration.integrationKey)
                 : undefined
             }
