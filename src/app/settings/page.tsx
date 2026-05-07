@@ -261,9 +261,9 @@ export default function SettingsPage() {
       <>
       <form
         onSubmit={handleSave}
-        className="grid gap-6"
+        className="grid max-w-full gap-6 overflow-x-hidden"
       >
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
             {messages.settings.setupBrand}
           </p>
@@ -274,8 +274,8 @@ export default function SettingsPage() {
             {messages.settings.brandAssetsDescription}
           </p>
 
-          <div className="mt-8 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-            <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+          <div className="mt-8">
+            <div className="min-w-0 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
               <label className="block">
                 <span className="text-sm font-medium text-slate-950">
                   {messages.settings.brandName}
@@ -361,54 +361,10 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
-
-            <div className="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#0f172a_0%,#111827_100%)] p-6 text-white shadow-sm">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-300">
-                {messages.settings.brandPreview}
-              </p>
-              <div className="mt-6 overflow-hidden rounded-[26px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.18),transparent_35%),linear-gradient(145deg,#07111f_0%,#0f172a_52%,#111827_100%)] p-6 shadow-[0_18px_40px_rgba(2,6,23,0.45)]">
-                <div className="flex items-start justify-between gap-6">
-                  <div className="max-w-[16rem]">
-                    <p className="text-[0.72rem] font-medium uppercase tracking-[0.28em] text-sky-300">
-                      Report preview
-                    </p>
-                    <h3 className="mt-4 text-[2rem] font-semibold leading-[0.95] tracking-[-0.05em] text-white">
-                      Reporte resultados EJEMPLO
-                    </h3>
-                    <div className="mt-4 h-px w-20 bg-gradient-to-r from-sky-300 via-white/70 to-transparent" />
-                    <p className="mt-4 text-sm leading-6 text-slate-300">
-                      Asi se vera tu logotipo en la portada del reporte.
-                    </p>
-                    <p className="mt-4 text-[0.72rem] font-medium uppercase tracking-[0.22em] text-sky-300">
-                      {brandNameDraft || "Measurable"}
-                    </p>
-                  </div>
-
-                  <div className="flex min-h-[220px] flex-1 items-center justify-end">
-                    {logoUrlDraft ? (
-                      <div className="flex max-w-[260px] items-center justify-center">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={logoUrlDraft}
-                          alt="Brand logo report preview"
-                          className="max-h-[220px] w-auto object-contain object-right"
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex h-[220px] w-[220px] items-center justify-center rounded-[28px] border border-dashed border-white/15 bg-white/5 text-center">
-                        <p className="max-w-[140px] text-sm font-medium leading-6 text-slate-300">
-                          {messages.settings.logoPlaceholder}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </section>
 
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
             {messages.settings.profile}
           </p>
@@ -458,7 +414,7 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
             {messages.settings.preferences}
           </p>

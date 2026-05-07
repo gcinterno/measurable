@@ -17,9 +17,12 @@ export function SlideDeckViewport({ children, slides }: SlideDeckViewportProps) 
   const [scaledHeight, setScaledHeight] = useState(0);
   const [activeSlideIndex, setActiveSlideIndex] = useState<number | null>(null);
   const [lightboxScale, setLightboxScale] = useState(1);
+  const [lightboxBaseScale, setLightboxBaseScale] = useState(1);
 
   const fixedWidth = REPORT_SLIDE_THEME.slide.width;
   const fixedHeight = REPORT_SLIDE_THEME.slide.height;
+  const lightboxScaledWidth = fixedWidth * lightboxScale;
+  const lightboxScaledHeight = fixedHeight * lightboxScale;
 
   const updateLayout = useMemo(
     () => () => {
@@ -63,10 +66,25 @@ export function SlideDeckViewport({ children, slides }: SlideDeckViewportProps) 
         availableHeight / fixedHeight
       );
 
-      setLightboxScale(nextScale);
+      setLightboxBaseScale(nextScale);
+      setLightboxScale((current) =>
+        current > nextScale ? nextScale : current || nextScale
+      );
     },
     [fixedHeight, fixedWidth]
   );
+
+  function handleLightboxZoomIn() {
+    setLightboxScale((current) => Math.min(current + 0.15, 2.5));
+  }
+
+  function handleLightboxZoomOut() {
+    setLightboxScale((current) => Math.max(current - 0.15, lightboxBaseScale));
+  }
+
+  function handleLightboxZoomReset() {
+    setLightboxScale(lightboxBaseScale);
+  }
 
   useEffect(() => {
     updateLayout();
@@ -139,6 +157,20 @@ export function SlideDeckViewport({ children, slides }: SlideDeckViewportProps) 
     };
   }, [activeSlideIndex, slides.length]);
 
+  useEffect(() => {
+    const viewport = lightboxSlideRef.current;
+
+    if (!viewport || activeSlideIndex === null) {
+      return;
+    }
+
+    const maxScrollLeft = Math.max(0, lightboxScaledWidth - viewport.clientWidth);
+    const maxScrollTop = Math.max(0, lightboxScaledHeight - viewport.clientHeight);
+
+    viewport.scrollLeft = maxScrollLeft / 2;
+    viewport.scrollTop = maxScrollTop / 2;
+  }, [activeSlideIndex, lightboxScaledHeight, lightboxScaledWidth]);
+
   const activeSlide =
     activeSlideIndex === null ? null : slides[activeSlideIndex] || null;
 
@@ -202,18 +234,59 @@ export function SlideDeckViewport({ children, slides }: SlideDeckViewportProps) 
             </span>
           </div>
 
+          <div className="mt-3 flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={handleLightboxZoomOut}
+              disabled={lightboxScale <= lightboxBaseScale}
+              className="inline-flex h-11 min-w-[3rem] items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-3 text-lg font-semibold text-white disabled:opacity-35"
+            >
+              -
+            </button>
+            <button
+              type="button"
+              onClick={handleLightboxZoomReset}
+              className="inline-flex h-11 min-w-[5.5rem] items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-3 text-sm font-medium text-white"
+            >
+              {Math.round((lightboxScale / lightboxBaseScale) * 100)}%
+            </button>
+            <button
+              type="button"
+              onClick={handleLightboxZoomIn}
+              disabled={lightboxScale >= 2.5}
+              className="inline-flex h-11 min-w-[3rem] items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-3 text-lg font-semibold text-white disabled:opacity-35"
+            >
+              +
+            </button>
+          </div>
+
           <div className="flex flex-1 items-center justify-center">
-            <div ref={lightboxSlideRef} className="flex items-center justify-center">
+            <div
+              ref={lightboxSlideRef}
+              className="flex h-full w-full overflow-auto overscroll-contain"
+              style={{
+                touchAction: lightboxScale > lightboxBaseScale ? "pan-x pan-y" : "auto",
+              }}
+            >
               <div
+                className="m-auto shrink-0"
                 style={{
-                  width: fixedWidth,
-                  transform: `scale(${lightboxScale})`,
-                  transformOrigin: "center center",
+                  width: lightboxScaledWidth,
+                  height: lightboxScaledHeight,
                 }}
               >
-                {cloneElement(activeSlide, {
-                  key: `lightbox-${activeSlideIndex}`,
-                })}
+                <div
+                  style={{
+                    width: fixedWidth,
+                    height: fixedHeight,
+                    transform: `scale(${lightboxScale})`,
+                    transformOrigin: "top left",
+                  }}
+                >
+                  {cloneElement(activeSlide, {
+                    key: `lightbox-${activeSlideIndex}`,
+                  })}
+                </div>
               </div>
             </div>
           </div>

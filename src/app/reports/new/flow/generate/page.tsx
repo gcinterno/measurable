@@ -21,7 +21,6 @@ import {
 import {
   canSelectSlideCount,
   getPlanCapabilities,
-  shouldShowUpgradeCta,
 } from "@/lib/workspace/plan-limits";
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 
@@ -76,13 +75,6 @@ function NewReportFlowGeneratePageContent() {
   });
   const planCapabilities = getPlanCapabilities(workspace);
   const slideCountOptions = [{ value: 5, available: true }];
-  const showUpgradeCta =
-    !FEATURES.ENABLE_APP_REVIEW_MODE &&
-    shouldShowUpgradeCta({
-      workspace,
-      reportsUsedThisMonth,
-      estimatedSlides: selectedSlides,
-    });
   const timeframeLabel = formatMetaTimeframeLabel({
     timeframe: storedIntegrationContext?.timeframe,
     startDate: storedIntegrationContext?.startDate,
@@ -329,14 +321,6 @@ function NewReportFlowGeneratePageContent() {
                     );
                   })}
                 </div>
-                {showUpgradeCta ? (
-                  <Link
-                    href="/plans"
-                    className="mt-4 inline-flex rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
-                  >
-                    Upgrade plan
-                  </Link>
-                ) : null}
               </section>
 
               {FEATURES.ENABLE_AI_AGENTS_MODE ? (
@@ -392,14 +376,6 @@ function NewReportFlowGeneratePageContent() {
                       </span>
                     </button>
                   </div>
-                  {!planCapabilities.canUseAiAgents ? (
-                    <Link
-                      href="/plans"
-                      className="mt-4 inline-flex rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900 transition hover:bg-amber-100"
-                    >
-                      Upgrade plan
-                    </Link>
-                  ) : null}
                 </section>
               ) : null}
 

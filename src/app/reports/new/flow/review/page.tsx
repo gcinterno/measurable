@@ -806,7 +806,7 @@ function NewReportFlowReviewPageContent() {
                     <div className="pr-0 md:pr-1">
                       <div className="rounded-[32px] bg-[#eef3f8] px-2 py-3 md:rounded-[44px] md:px-4 md:py-5">
                         <div className="w-full overflow-hidden">
-                          <div className="flex aspect-[16/9] w-full flex-col items-center justify-center rounded-[28px] border border-slate-800/80 bg-[#07111f] px-6 text-center shadow-[0_18px_40px_rgba(15,23,42,0.12)] md:rounded-[34px]">
+                          <div className="flex min-h-[400px] w-full flex-col items-center justify-center rounded-[28px] border border-slate-800/80 bg-[#07111f] px-6 text-center shadow-[0_18px_40px_rgba(15,23,42,0.12)] md:aspect-[16/9] md:min-h-0 md:rounded-[34px]">
                             <span className="h-12 w-12 animate-spin rounded-full border-[3px] border-white/15 border-t-sky-300" />
                             <p className="mt-5 text-base font-semibold text-white">
                               Generando tu reporte...
@@ -875,7 +875,7 @@ function NewReportFlowReviewPageContent() {
                     <div className="pr-0 md:pr-1">
                       <div className="rounded-[32px] bg-[#eef3f8] px-2 py-3 md:rounded-[44px] md:px-4 md:py-5">
                         <div className="w-full overflow-hidden">
-                          <div className="flex aspect-[16/9] w-full flex-col items-center justify-center rounded-[28px] border border-slate-800/80 bg-[#07111f] px-6 text-center shadow-[0_18px_40px_rgba(15,23,42,0.12)] md:rounded-[34px]">
+                          <div className="flex min-h-[400px] w-full flex-col items-center justify-center rounded-[28px] border border-slate-800/80 bg-[#07111f] px-6 text-center shadow-[0_18px_40px_rgba(15,23,42,0.12)] md:aspect-[16/9] md:min-h-0 md:rounded-[34px]">
                             <span className="h-12 w-12 animate-spin rounded-full border-[3px] border-white/15 border-t-sky-300" />
                             <p className="mt-5 text-base font-semibold text-white">
                               Generando tu reporte...
