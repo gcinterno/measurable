@@ -17,9 +17,14 @@ import {
   syncMetaPages,
 } from "@/lib/api/integrations";
 import {
+  clearPendingMetaOAuth,
+  consumePendingMetaOAuthForRetry,
+  createPendingMetaOAuth,
   clearMetaOAuthDebugUrl,
   getMetaOAuthDebugUrl,
   hasMetaConnectPrerequisites,
+  markMetaRedirectStarted,
+  normalizeMetaAuthUrl,
   showMetaOAuthReadyBanner,
   storeMetaOAuthDebugUrl,
 } from "@/lib/integrations/meta-oauth";
@@ -102,6 +107,25 @@ function MetaIntegrationPageContent() {
   useEffect(() => {
     setOauthUrlReady(getMetaOAuthDebugUrl());
   }, []);
+
+  useEffect(() => {
+    const hasCallbackParams =
+      Boolean(searchParams.get("status")) ||
+      Boolean(searchParams.get("integration_id")) ||
+      Boolean(searchParams.get("error")) ||
+      Boolean(searchParams.get("meta_state")) ||
+      Boolean(searchParams.get("meta_error"));
+    const retryAuthUrl = consumePendingMetaOAuthForRetry({
+      route: "/integrations/meta",
+      hasCallbackParams,
+    });
+
+    if (!retryAuthUrl || connectInFlightRef.current || typeof window === "undefined") {
+      return;
+    }
+
+    window.location.href = retryAuthUrl;
+  }, [searchParams]);
 
   useEffect(() => {
     if (!storedContext || storedContext.integration !== "meta") {
@@ -378,7 +402,8 @@ function MetaIntegrationPageContent() {
         source: currentMetaSource,
       });
 
-      const authUrl = response.authUrlFromBackend || response.redirectUrl;
+      const rawAuthUrl = response.authUrlFromBackend || response.redirectUrl;
+      const authUrl = normalizeMetaAuthUrl(rawAuthUrl);
       const validation = validateMetaAuthUrl(authUrl);
 
       console.info("META_CONNECT_AUTH_URL", {
@@ -409,10 +434,16 @@ function MetaIntegrationPageContent() {
         );
       }
 
+      createPendingMetaOAuth({
+        authUrl,
+        source: currentMetaSource,
+        route: "/integrations/meta",
+      });
       storeMetaOAuthDebugUrl(authUrl);
       await showMetaOAuthReadyBanner();
 
       if (typeof window !== "undefined") {
+        markMetaRedirectStarted();
         window.location.href = authUrl;
         return;
       }

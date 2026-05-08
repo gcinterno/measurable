@@ -14,6 +14,7 @@ import {
   isPendingMetaSource,
   setIntegrationReportContext,
 } from "@/lib/integrations/session";
+import { clearPendingMetaOAuth } from "@/lib/integrations/meta-oauth";
 import { getActiveWorkspaceId } from "@/lib/workspace/session";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +51,7 @@ function MetaIntegrationCallbackContent() {
       });
 
       if (errorParam) {
+        clearPendingMetaOAuth();
         clearPendingMetaSource();
         router.replace(
           `/integrations/meta?meta_error=${encodeURIComponent(
@@ -99,6 +101,7 @@ function MetaIntegrationCallbackContent() {
             pages_count: 0,
             error: error instanceof Error ? error.message : "unknown_error",
           });
+          clearPendingMetaOAuth();
           clearPendingMetaSource();
           router.replace(
             `/integrations/meta?meta_error=${encodeURIComponent(
@@ -109,6 +112,7 @@ function MetaIntegrationCallbackContent() {
         }
 
         if (!metaConnected || !refreshedIntegrationId) {
+          clearPendingMetaOAuth();
           clearPendingMetaSource();
           router.replace(
             `/integrations/meta?meta_error=${encodeURIComponent(
@@ -130,6 +134,7 @@ function MetaIntegrationCallbackContent() {
           requestedSlides: storedContext?.requestedSlides,
           aiMode: storedContext?.aiMode,
         });
+        clearPendingMetaOAuth();
         clearPendingMetaSource();
 
         if (pagesCount === 0) {
@@ -151,6 +156,7 @@ function MetaIntegrationCallbackContent() {
       }
 
       clearPendingMetaSource();
+      clearPendingMetaOAuth();
       router.replace(storedContext?.postConnectRedirect || "/integrations");
     }
 

@@ -12,9 +12,14 @@ import {
   validateMetaAuthUrl,
 } from "@/lib/api/integrations";
 import {
+  clearPendingMetaOAuth,
+  consumePendingMetaOAuthForRetry,
+  createPendingMetaOAuth,
   clearMetaOAuthDebugUrl,
   getMetaOAuthDebugUrl,
   hasMetaConnectPrerequisites,
+  markMetaRedirectStarted,
+  normalizeMetaAuthUrl,
   showMetaOAuthReadyBanner,
   storeMetaOAuthDebugUrl,
 } from "@/lib/integrations/meta-oauth";
@@ -44,6 +49,19 @@ function IntegrationsPageContent() {
 
   useEffect(() => {
     setOauthUrlReady(getMetaOAuthDebugUrl());
+  }, []);
+
+  useEffect(() => {
+    const retryAuthUrl = consumePendingMetaOAuthForRetry({
+      route: "/integrations",
+      hasCallbackParams: false,
+    });
+
+    if (!retryAuthUrl || connectInFlightRef.current || typeof window === "undefined") {
+      return;
+    }
+
+    window.location.href = retryAuthUrl;
   }, []);
 
   useEffect(() => {
@@ -170,7 +188,8 @@ function IntegrationsPageContent() {
         source,
       });
 
-      const authUrl = response.authUrlFromBackend || response.redirectUrl;
+      const rawAuthUrl = response.authUrlFromBackend || response.redirectUrl;
+      const authUrl = normalizeMetaAuthUrl(rawAuthUrl);
       const validation = validateMetaAuthUrl(authUrl);
 
       console.info("META_CONNECT_AUTH_URL", {
@@ -202,10 +221,16 @@ function IntegrationsPageContent() {
         );
       }
 
+      createPendingMetaOAuth({
+        authUrl,
+        source,
+        route: "/integrations",
+      });
       storeMetaOAuthDebugUrl(authUrl);
       await showMetaOAuthReadyBanner();
 
       if (typeof window !== "undefined") {
+        markMetaRedirectStarted();
         window.location.href = authUrl;
         return;
       }
@@ -224,6 +249,7 @@ function IntegrationsPageContent() {
   function handleMetaDisconnect() {
     clearPendingMetaSource();
     clearIntegrationReportContext();
+    clearPendingMetaOAuth();
     clearMetaOAuthDebugUrl();
     setOauthUrlReady("");
     setMetaConnected(false);

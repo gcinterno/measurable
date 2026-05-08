@@ -13,9 +13,14 @@ import {
   validateMetaAuthUrl,
 } from "@/lib/api/integrations";
 import {
+  clearPendingMetaOAuth,
+  consumePendingMetaOAuthForRetry,
+  createPendingMetaOAuth,
   clearMetaOAuthDebugUrl,
   getMetaOAuthDebugUrl,
   hasMetaConnectPrerequisites,
+  markMetaRedirectStarted,
+  normalizeMetaAuthUrl,
   showMetaOAuthReadyBanner,
   storeMetaOAuthDebugUrl,
 } from "@/lib/integrations/meta-oauth";
@@ -103,6 +108,29 @@ export function IntegrationLibrary({
   useEffect(() => {
     setOauthUrlReady(getMetaOAuthDebugUrl());
   }, []);
+
+  useEffect(() => {
+    if (!embedded) {
+      return;
+    }
+
+    const hasCallbackParams =
+      Boolean(searchParams.get("status")) ||
+      Boolean(searchParams.get("integration_id")) ||
+      Boolean(searchParams.get("error")) ||
+      Boolean(searchParams.get("meta_state")) ||
+      Boolean(searchParams.get("meta_error"));
+    const retryAuthUrl = consumePendingMetaOAuthForRetry({
+      route: "/reports/new/flow/sync",
+      hasCallbackParams,
+    });
+
+    if (!retryAuthUrl || connectInFlightRef.current || typeof window === "undefined") {
+      return;
+    }
+
+    window.location.href = retryAuthUrl;
+  }, [embedded, searchParams]);
 
   useEffect(() => {
     const currentContext = getIntegrationReportContext();
@@ -255,7 +283,8 @@ export function IntegrationLibrary({
         source: integration.integrationKey,
       });
 
-      const authUrl = response.authUrlFromBackend || response.redirectUrl;
+      const rawAuthUrl = response.authUrlFromBackend || response.redirectUrl;
+      const authUrl = normalizeMetaAuthUrl(rawAuthUrl);
       const validation = validateMetaAuthUrl(authUrl);
 
       console.info("META_CONNECT_AUTH_URL", {
@@ -286,10 +315,16 @@ export function IntegrationLibrary({
         );
       }
 
+      createPendingMetaOAuth({
+        authUrl,
+        source: integration.integrationKey,
+        route: "IntegrationLibrary",
+      });
       storeMetaOAuthDebugUrl(authUrl);
       await showMetaOAuthReadyBanner();
 
       if (typeof window !== "undefined") {
+        markMetaRedirectStarted();
         window.location.href = authUrl;
       }
     } catch (error) {
