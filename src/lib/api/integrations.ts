@@ -108,6 +108,12 @@ type IntegrationsStatusResult = {
   integrationId: string;
 };
 
+type MetaAuthUrlValidationResult = {
+  isValid: boolean;
+  startsWithFacebook: boolean;
+  containsDialogOAuth: boolean;
+};
+
 function getAuthHeaders() {
   if (typeof window === "undefined") {
     return undefined;
@@ -237,16 +243,35 @@ function getRedirectUrl(text: string) {
   }
 }
 
-export function isValidMetaAuthUrl(value: string) {
+export function validateMetaAuthUrl(value: string): MetaAuthUrlValidationResult {
   if (!value) {
-    return false;
+    return {
+      isValid: false,
+      startsWithFacebook: false,
+      containsDialogOAuth: false,
+    };
   }
 
   try {
     const parsedUrl = new URL(value);
-    return parsedUrl.protocol === "https:" || parsedUrl.protocol === "http:";
+    const isHttpUrl =
+      parsedUrl.protocol === "https:" || parsedUrl.protocol === "http:";
+    const startsWithFacebook = value.startsWith("https://www.facebook.com/");
+    const containsDialogOAuth =
+      parsedUrl.pathname.includes("/dialog/oauth") ||
+      `${parsedUrl.pathname}${parsedUrl.search}`.includes("/dialog/oauth");
+
+    return {
+      isValid: isHttpUrl && startsWithFacebook && containsDialogOAuth,
+      startsWithFacebook,
+      containsDialogOAuth,
+    };
   } catch {
-    return false;
+    return {
+      isValid: false,
+      startsWithFacebook: false,
+      containsDialogOAuth: false,
+    };
   }
 }
 
@@ -375,17 +400,31 @@ export async function connectMetaIntegration(input?: {
     activeWorkspaceId,
     source: input?.source || null,
     connectUrl,
+    hasAuthorization: Boolean(getAuthHeaders()?.Authorization),
   });
+
+  const requestStartedAt = Date.now();
 
   const res = await fetch(
     connectUrl,
     {
       method: "GET",
       headers: getAuthHeaders(),
+      cache: "no-store",
+      credentials: "include",
     }
   );
 
   const text = await readApiResponseText(endpoint, res);
+  console.info("META_CONNECT_RESPONSE", {
+    workspace_id: activeWorkspaceId,
+    source: input?.source || null,
+    status: res.status,
+    ok: res.ok,
+    duration_ms: Date.now() - requestStartedAt,
+    response_text_length: text.length,
+    response_text_preview: text.slice(0, 300),
+  });
 
   return getRedirectUrl(text);
 }

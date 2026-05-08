@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { IntegrationCard } from "@/components/integrations/IntegrationCard";
@@ -9,8 +9,15 @@ import {
   connectMetaIntegration,
   fetchMetaPages,
   fetchIntegrationsConnectionStatus,
-  isValidMetaAuthUrl,
+  validateMetaAuthUrl,
 } from "@/lib/api/integrations";
+import {
+  clearMetaOAuthDebugUrl,
+  getMetaOAuthDebugUrl,
+  hasMetaConnectPrerequisites,
+  showMetaOAuthReadyBanner,
+  storeMetaOAuthDebugUrl,
+} from "@/lib/integrations/meta-oauth";
 import {
   clearPendingMetaSource,
   clearIntegrationReportContext,
@@ -27,11 +34,17 @@ import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 
 function IntegrationsPageContent() {
   const router = useRouter();
-  const { workspace } = useActiveWorkspace();
+  const { workspace, loading: workspaceLoading } = useActiveWorkspace();
   const [metaLoading, setMetaLoading] = useState(false);
   const [metaError, setMetaError] = useState("");
   const [metaConnected, setMetaConnected] = useState(false);
+  const [oauthUrlReady, setOauthUrlReady] = useState("");
   const activeWorkspaceId = workspace?.id || null;
+  const connectInFlightRef = useRef(false);
+
+  useEffect(() => {
+    setOauthUrlReady(getMetaOAuthDebugUrl());
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -97,13 +110,27 @@ function IntegrationsPageContent() {
   }, [activeWorkspaceId]);
 
   async function handleMetaConnect() {
+    if (connectInFlightRef.current) {
+      console.warn("META_CONNECT_DUPLICATE_IGNORED", {
+        route: "/integrations",
+      });
+      return;
+    }
+
     try {
+      connectInFlightRef.current = true;
       setMetaLoading(true);
       setMetaError("");
       const storedContext = getIntegrationReportContext();
       const connectWorkspaceId = activeWorkspaceId || storedContext?.workspaceId || "";
+      const { tokenReady } = hasMetaConnectPrerequisites();
 
-      if (!connectWorkspaceId) {
+      if (!tokenReady) {
+        setMetaError("Your session is not ready yet. Refresh and try again.");
+        return;
+      }
+
+      if (!connectWorkspaceId || workspaceLoading) {
         setMetaError(
           "No active workspace selected. Please choose a workspace and try again."
         );
@@ -115,6 +142,8 @@ function IntegrationsPageContent() {
           ? storedContext.source
           : "facebook_pages";
 
+      clearMetaOAuthDebugUrl();
+      setOauthUrlReady("");
       clearStoredMetaIntegrationState();
 
       if (storedContext?.integration === "meta") {
@@ -142,6 +171,7 @@ function IntegrationsPageContent() {
       });
 
       const authUrl = response.authUrlFromBackend || response.redirectUrl;
+      const validation = validateMetaAuthUrl(authUrl);
 
       console.info("META_CONNECT_AUTH_URL", {
         workspace_id: connectWorkspaceId,
@@ -150,27 +180,33 @@ function IntegrationsPageContent() {
         integration_id: response.integrationId || null,
       });
 
-      if (!isValidMetaAuthUrl(authUrl)) {
+      console.info("META_CONNECT_AUTH_URL_FINAL", {
+        workspace_id: connectWorkspaceId,
+        source,
+        auth_url: authUrl || null,
+        starts_with_facebook: validation.startsWithFacebook,
+        contains_dialog_oauth: validation.containsDialogOAuth,
+      });
+
+      if (!validation.isValid) {
         console.error("META_CONNECT_INVALID_AUTH_URL", {
           workspace_id: connectWorkspaceId,
           source,
           auth_url: authUrl || null,
+          starts_with_facebook: validation.startsWithFacebook,
+          contains_dialog_oauth: validation.containsDialogOAuth,
         });
         setMetaConnected(false);
-        throw new Error("The backend did not return a valid Meta OAuth URL.");
+        throw new Error(
+          "The backend did not return a valid Meta OAuth URL with /dialog/oauth."
+        );
       }
 
-      if (response.integrationId) {
-        setIntegrationReportContext({
-          source,
-          integration: "meta",
-          workspaceId: connectWorkspaceId,
-          integrationId: response.integrationId,
-        });
-      }
+      storeMetaOAuthDebugUrl(authUrl);
+      await showMetaOAuthReadyBanner();
 
       if (typeof window !== "undefined") {
-        window.location.assign(authUrl);
+        window.location.href = authUrl;
         return;
       }
     } catch (err: unknown) {
@@ -180,6 +216,7 @@ function IntegrationsPageContent() {
         "We could not start the Facebook Pages connection. Try again."
       );
     } finally {
+      connectInFlightRef.current = false;
       setMetaLoading(false);
     }
   }
@@ -187,6 +224,8 @@ function IntegrationsPageContent() {
   function handleMetaDisconnect() {
     clearPendingMetaSource();
     clearIntegrationReportContext();
+    clearMetaOAuthDebugUrl();
+    setOauthUrlReady("");
     setMetaConnected(false);
     setMetaError("");
   }
@@ -303,6 +342,11 @@ function IntegrationsPageContent() {
             />
         ))}
       </div>
+      {oauthUrlReady ? (
+        <p className="mt-4 text-xs text-slate-500 break-all">
+          OAuth URL ready: {oauthUrlReady}
+        </p>
+      ) : null}
     </AppShell>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { AdAccountSelector } from "@/components/integrations/AdAccountSelector";
@@ -12,10 +12,17 @@ import { ApiError, isLimitError } from "@/lib/api";
 import {
   connectMetaIntegration,
   fetchMetaPages,
-  isValidMetaAuthUrl,
+  validateMetaAuthUrl,
   selectMetaPage,
   syncMetaPages,
 } from "@/lib/api/integrations";
+import {
+  clearMetaOAuthDebugUrl,
+  getMetaOAuthDebugUrl,
+  hasMetaConnectPrerequisites,
+  showMetaOAuthReadyBanner,
+  storeMetaOAuthDebugUrl,
+} from "@/lib/integrations/meta-oauth";
 import { createMetaPagesReport } from "@/lib/api/reports";
 import { formatNumber } from "@/lib/formatters";
 import {
@@ -53,7 +60,7 @@ function MetaIntegrationPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const storedContext = getIntegrationReportContext();
-  const { workspace, reportsUsedThisMonth } = useActiveWorkspace({
+  const { workspace, reportsUsedThisMonth, loading: workspaceLoading } = useActiveWorkspace({
     includeReportsUsage: true,
   });
   const workspaceId = workspace?.id || null;
@@ -70,8 +77,10 @@ function MetaIntegrationPageContent() {
   const [statusMessage, setStatusMessage] = useState("");
   const [connected, setConnected] = useState(false);
   const [hasNoAuthorizedPages, setHasNoAuthorizedPages] = useState(false);
+  const [oauthUrlReady, setOauthUrlReady] = useState("");
   const [pageSelected, setPageSelected] = useState(false);
   const [syncCompleted, setSyncCompleted] = useState(false);
+  const connectInFlightRef = useRef(false);
   const selectedPage = useMemo(
     () => pages.find((page) => page.id === selectedPageId),
     [pages, selectedPageId]
@@ -89,6 +98,10 @@ function MetaIntegrationPageContent() {
   const currentMetaSource = isPendingMetaSource(storedContext?.source)
     ? storedContext.source
     : "facebook_pages";
+
+  useEffect(() => {
+    setOauthUrlReady(getMetaOAuthDebugUrl());
+  }, []);
 
   useEffect(() => {
     if (!storedContext || storedContext.integration !== "meta") {
@@ -302,11 +315,22 @@ function MetaIntegrationPageContent() {
   ]);
 
   async function handleConnect() {
+    if (connectInFlightRef.current) {
+      console.warn("META_CONNECT_DUPLICATE_IGNORED", {
+        route: "/integrations/meta",
+      });
+      return;
+    }
+
     try {
+      connectInFlightRef.current = true;
       setConnectLoading(true);
       setError("");
       setStatusMessage("");
       const storedContext = getIntegrationReportContext();
+      const { tokenReady } = hasMetaConnectPrerequisites();
+      clearMetaOAuthDebugUrl();
+      setOauthUrlReady("");
       setPendingMetaSource(currentMetaSource);
       clearStoredMetaIntegrationState();
       setConnected(false);
@@ -331,7 +355,12 @@ function MetaIntegrationPageContent() {
 
       const connectWorkspaceId = workspaceId || storedContext?.workspaceId || "";
 
-      if (!connectWorkspaceId) {
+      if (!tokenReady) {
+        setError("Your session is not ready yet. Refresh and try again.");
+        return;
+      }
+
+      if (!connectWorkspaceId || workspaceLoading) {
         setError(
           "No active workspace selected. Please choose a workspace and try again."
         );
@@ -350,6 +379,7 @@ function MetaIntegrationPageContent() {
       });
 
       const authUrl = response.authUrlFromBackend || response.redirectUrl;
+      const validation = validateMetaAuthUrl(authUrl);
 
       console.info("META_CONNECT_AUTH_URL", {
         workspace_id: connectWorkspaceId,
@@ -358,31 +388,32 @@ function MetaIntegrationPageContent() {
         integration_id: response.integrationId || null,
       });
 
-      if (!isValidMetaAuthUrl(authUrl)) {
+      console.info("META_CONNECT_AUTH_URL_FINAL", {
+        workspace_id: connectWorkspaceId,
+        source: currentMetaSource,
+        auth_url: authUrl || null,
+        starts_with_facebook: validation.startsWithFacebook,
+        contains_dialog_oauth: validation.containsDialogOAuth,
+      });
+
+      if (!validation.isValid) {
         console.error("META_CONNECT_INVALID_AUTH_URL", {
           workspace_id: connectWorkspaceId,
           source: currentMetaSource,
           auth_url: authUrl || null,
+          starts_with_facebook: validation.startsWithFacebook,
+          contains_dialog_oauth: validation.containsDialogOAuth,
         });
-        throw new Error("The backend did not return a valid Meta OAuth URL.");
+        throw new Error(
+          "The backend did not return a valid Meta OAuth URL with /dialog/oauth."
+        );
       }
 
-      if (response.integrationId) {
-        setIntegrationId(response.integrationId);
-        setIntegrationReportContext({
-          source: currentMetaSource,
-          integration: "meta",
-          workspaceId: connectWorkspaceId,
-          integrationId: response.integrationId,
-          pageId: selectedPageId || undefined,
-          pageName: selectedPage?.name,
-          datasetId: datasetId || undefined,
-          synced: syncCompleted,
-        });
-      }
+      storeMetaOAuthDebugUrl(authUrl);
+      await showMetaOAuthReadyBanner();
 
       if (typeof window !== "undefined") {
-        window.location.assign(authUrl);
+        window.location.href = authUrl;
         return;
       }
     } catch (err: unknown) {
@@ -395,6 +426,7 @@ function MetaIntegrationPageContent() {
           : "We could not start the Facebook Pages connection. Try again."
       );
     } finally {
+      connectInFlightRef.current = false;
       setConnectLoading(false);
     }
   }
@@ -591,6 +623,11 @@ function MetaIntegrationPageContent() {
           actionDisabled={primaryAction.disabled}
           error={error}
         />
+        {oauthUrlReady ? (
+          <p className="text-xs text-slate-500 break-all">
+            OAuth URL ready: {oauthUrlReady}
+          </p>
+        ) : null}
 
         {loading ? (
           <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
