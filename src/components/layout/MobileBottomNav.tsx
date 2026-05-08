@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useI18n } from "@/components/providers/LanguageProvider";
@@ -16,14 +16,39 @@ export function MobileBottomNav({ items }: MobileBottomNavProps) {
   const pathname = usePathname();
   const { messages } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [selectorOpen, setSelectorOpen] = useState(false);
   const primaryAction = items.find((item) => item.href === "/reports/new/flow");
   const visibleItems = items.filter((item) =>
     ["/dashboard", "/reports", "/integrations"].includes(item.href)
   );
 
+  useEffect(() => {
+    function handleSelectorState(event: Event) {
+      const customEvent = event as CustomEvent<{ open?: boolean }>;
+      setSelectorOpen(Boolean(customEvent.detail?.open));
+    }
+
+    window.addEventListener(
+      "measurable-mobile-selector-state",
+      handleSelectorState as EventListener
+    );
+
+    return () => {
+      window.removeEventListener(
+        "measurable-mobile-selector-state",
+        handleSelectorState as EventListener
+      );
+    };
+  }, []);
+
   return (
     <>
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[linear-gradient(180deg,#0f172a_0%,#08111f_100%)] px-3 pb-[calc(env(safe-area-inset-bottom)+0.45rem)] pt-2 shadow-[0_-18px_40px_rgba(2,6,23,0.35)] md:hidden">
+      <nav
+        className={`fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[linear-gradient(180deg,#0f172a_0%,#08111f_100%)] px-3 pb-[calc(env(safe-area-inset-bottom)+0.45rem)] pt-2 shadow-[0_-18px_40px_rgba(2,6,23,0.35)] transition-opacity duration-150 md:hidden ${
+          selectorOpen ? "pointer-events-none opacity-0" : "pointer-events-auto opacity-100"
+        }`}
+        aria-hidden={selectorOpen}
+      >
         <div className="mx-auto flex max-w-md items-center justify-between rounded-t-[28px]">
         {visibleItems.slice(0, 2).map((item) => {
           const active = isActive(pathname, item);

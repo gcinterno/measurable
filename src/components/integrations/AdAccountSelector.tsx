@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { TouchEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { useI18n } from "@/components/providers/LanguageProvider";
@@ -38,6 +38,7 @@ export function AdAccountSelector({
   const [isMobile, setIsMobile] = useState(false);
   const [portalReady, setPortalReady] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const touchSelectionLockRef = useRef<string | null>(null);
 
   const selectedAccount = useMemo(
     () => accounts.find((account) => account.id === value) || null,
@@ -83,29 +84,112 @@ export function AdAccountSelector({
 
     if (!open || !isMobile) {
       document.body.style.removeProperty("overflow");
+      document.body.dataset.mobileSelectorOpen = "false";
+      window.dispatchEvent(
+        new CustomEvent("measurable-mobile-selector-state", {
+          detail: {
+            open: false,
+          },
+        })
+      );
       return;
     }
 
     document.body.style.overflow = "hidden";
+    document.body.dataset.mobileSelectorOpen = "true";
+    window.dispatchEvent(
+      new CustomEvent("measurable-mobile-selector-state", {
+        detail: {
+          open: true,
+        },
+      })
+    );
 
     return () => {
       document.body.style.removeProperty("overflow");
+      document.body.dataset.mobileSelectorOpen = "false";
+      window.dispatchEvent(
+        new CustomEvent("measurable-mobile-selector-state", {
+          detail: {
+            open: false,
+          },
+        })
+      );
     };
   }, [isMobile, open]);
 
   const disabled = loading || accounts.length === 0;
   const selectorLabel = selectedLabel || messages.integrationsPage.selectedPage;
   const selectorTitle = title || messages.integrationsPage.selectPage;
+
+  function closeSelector() {
+    console.info("MOBILE_SELECTOR_CLOSE", {
+      isMobile,
+    });
+    setOpen(false);
+  }
+
+  function openSelector() {
+    console.info("MOBILE_SELECTOR_OPEN", {
+      isMobile,
+      options_count: accounts.length,
+    });
+    setOpen(true);
+  }
+
+  function selectAccount(accountId: string) {
+    console.info("MOBILE_SELECTOR_SELECTED_VALUE", {
+      selected_value: accountId,
+    });
+    onChange(accountId);
+    closeSelector();
+  }
+
+  function handleOptionTouchEnd(
+    event: TouchEvent<HTMLButtonElement>,
+    accountId: string
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    touchSelectionLockRef.current = accountId;
+    console.info("MOBILE_SELECTOR_OPTION_TAP", {
+      account_id: accountId,
+      trigger: "touchend",
+    });
+    selectAccount(accountId);
+  }
+
+  function handleOptionClick(accountId: string) {
+    if (touchSelectionLockRef.current === accountId) {
+      touchSelectionLockRef.current = null;
+      return;
+    }
+
+    console.info("MOBILE_SELECTOR_OPTION_TAP", {
+      account_id: accountId,
+      trigger: "click",
+    });
+    selectAccount(accountId);
+  }
+
   const mobileSheet = open && isMobile && portalReady && typeof document !== "undefined"
     ? createPortal(
-        <div className="fixed inset-0 z-[90] md:hidden">
-          <button
-            type="button"
-            aria-label="Close selector"
-            className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]"
-            onClick={() => setOpen(false)}
+        <div className="pointer-events-none fixed inset-0 z-[120] md:hidden">
+          <div
+            aria-hidden="true"
+            className="pointer-events-auto absolute inset-0 z-[120] bg-slate-950/55 backdrop-blur-[2px]"
+            onClick={closeSelector}
+            onTouchEnd={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              closeSelector();
+            }}
           />
-          <div className="absolute inset-x-0 bottom-0 rounded-t-[28px] border border-slate-200 bg-white shadow-[0_-24px_80px_rgba(15,23,42,0.22)]">
+          <div
+            className="pointer-events-auto fixed inset-x-0 bottom-0 z-[121] rounded-t-[28px] border border-slate-200 bg-white shadow-[0_-24px_80px_rgba(15,23,42,0.22)]"
+            onClick={(event) => event.stopPropagation()}
+            onTouchEnd={(event) => event.stopPropagation()}
+          >
             <div className="flex justify-center px-4 pt-3">
               <div className="h-1.5 w-14 rounded-full bg-slate-200" />
             </div>
@@ -129,15 +213,17 @@ export function AdAccountSelector({
                     <button
                       key={account.id}
                       type="button"
-                      onClick={() => {
-                        onChange(account.id);
-                        setOpen(false);
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleOptionClick(account.id);
                       }}
+                      onTouchEnd={(event) => handleOptionTouchEnd(event, account.id)}
                       className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition ${
                         selected
                           ? "border-sky-200 bg-sky-50 text-sky-700 shadow-[0_10px_24px_rgba(14,165,233,0.08)]"
                           : "border-slate-200 bg-white text-slate-700"
-                      }`}
+                      } touch-manipulation`}
                     >
                       <span className="truncate text-sm font-medium">
                         {account.name}
@@ -182,11 +268,16 @@ export function AdAccountSelector({
             type="button"
             onClick={() => {
               if (!disabled) {
-                setOpen((current) => !current);
+                if (!open) {
+                  openSelector();
+                  return;
+                }
+
+                closeSelector();
               }
             }}
             disabled={disabled}
-            className="flex w-full items-center justify-between rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-left shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition hover:border-slate-300 disabled:cursor-not-allowed disabled:bg-slate-50"
+            className="flex w-full touch-manipulation items-center justify-between rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-left shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition hover:border-slate-300 disabled:cursor-not-allowed disabled:bg-slate-50"
           >
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -217,9 +308,10 @@ export function AdAccountSelector({
                     <button
                       key={account.id}
                       type="button"
-                      onClick={() => {
-                        onChange(account.id);
-                        setOpen(false);
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleOptionClick(account.id);
                       }}
                       className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left transition ${
                         selected
