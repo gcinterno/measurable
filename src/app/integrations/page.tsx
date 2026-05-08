@@ -16,7 +16,6 @@ import {
   consumePendingMetaOAuthForRetry,
   createPendingMetaOAuth,
   clearMetaOAuthDebugUrl,
-  getMetaOAuthDebugUrl,
   hasMetaConnectPrerequisites,
   markMetaRedirectStarted,
   normalizeMetaAuthUrl,
@@ -43,13 +42,8 @@ function IntegrationsPageContent() {
   const [metaLoading, setMetaLoading] = useState(false);
   const [metaError, setMetaError] = useState("");
   const [metaConnected, setMetaConnected] = useState(false);
-  const [oauthUrlReady, setOauthUrlReady] = useState("");
   const activeWorkspaceId = workspace?.id || null;
   const connectInFlightRef = useRef(false);
-
-  useEffect(() => {
-    setOauthUrlReady(getMetaOAuthDebugUrl());
-  }, []);
 
   useEffect(() => {
     const retryAuthUrl = consumePendingMetaOAuthForRetry({
@@ -161,7 +155,6 @@ function IntegrationsPageContent() {
           : "facebook_pages";
 
       clearMetaOAuthDebugUrl();
-      setOauthUrlReady("");
       clearStoredMetaIntegrationState();
 
       if (storedContext?.integration === "meta") {
@@ -251,7 +244,6 @@ function IntegrationsPageContent() {
     clearIntegrationReportContext();
     clearPendingMetaOAuth();
     clearMetaOAuthDebugUrl();
-    setOauthUrlReady("");
     setMetaConnected(false);
     setMetaError("");
   }
@@ -368,11 +360,6 @@ function IntegrationsPageContent() {
             />
         ))}
       </div>
-      {oauthUrlReady ? (
-        <p className="mt-4 text-xs text-slate-500 break-all">
-          OAuth URL ready: {oauthUrlReady}
-        </p>
-      ) : null}
     </AppShell>
   );
 }

@@ -21,7 +21,6 @@ import {
   consumePendingMetaOAuthForRetry,
   createPendingMetaOAuth,
   clearMetaOAuthDebugUrl,
-  getMetaOAuthDebugUrl,
   hasMetaConnectPrerequisites,
   markMetaRedirectStarted,
   normalizeMetaAuthUrl,
@@ -82,7 +81,6 @@ function MetaIntegrationPageContent() {
   const [statusMessage, setStatusMessage] = useState("");
   const [connected, setConnected] = useState(false);
   const [hasNoAuthorizedPages, setHasNoAuthorizedPages] = useState(false);
-  const [oauthUrlReady, setOauthUrlReady] = useState("");
   const [pageSelected, setPageSelected] = useState(false);
   const [syncCompleted, setSyncCompleted] = useState(false);
   const connectInFlightRef = useRef(false);
@@ -103,10 +101,6 @@ function MetaIntegrationPageContent() {
   const currentMetaSource = isPendingMetaSource(storedContext?.source)
     ? storedContext.source
     : "facebook_pages";
-
-  useEffect(() => {
-    setOauthUrlReady(getMetaOAuthDebugUrl());
-  }, []);
 
   useEffect(() => {
     const hasCallbackParams =
@@ -354,7 +348,6 @@ function MetaIntegrationPageContent() {
       const storedContext = getIntegrationReportContext();
       const { tokenReady } = hasMetaConnectPrerequisites();
       clearMetaOAuthDebugUrl();
-      setOauthUrlReady("");
       setPendingMetaSource(currentMetaSource);
       clearStoredMetaIntegrationState();
       setConnected(false);
@@ -654,12 +647,6 @@ function MetaIntegrationPageContent() {
           actionDisabled={primaryAction.disabled}
           error={error}
         />
-        {oauthUrlReady ? (
-          <p className="text-xs text-slate-500 break-all">
-            OAuth URL ready: {oauthUrlReady}
-          </p>
-        ) : null}
-
         {loading ? (
           <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
             <div className="space-y-3">

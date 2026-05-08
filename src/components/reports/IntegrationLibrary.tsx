@@ -17,7 +17,6 @@ import {
   consumePendingMetaOAuthForRetry,
   createPendingMetaOAuth,
   clearMetaOAuthDebugUrl,
-  getMetaOAuthDebugUrl,
   hasMetaConnectPrerequisites,
   markMetaRedirectStarted,
   normalizeMetaAuthUrl,
@@ -91,7 +90,6 @@ export function IntegrationLibrary({
   const { workspace, loading: workspaceLoading } = useActiveWorkspace();
   const [connectingIntegrationKey, setConnectingIntegrationKey] = useState<string | null>(null);
   const [connectError, setConnectError] = useState("");
-  const [oauthUrlReady, setOauthUrlReady] = useState("");
   const [metaFlowState, setMetaFlowState] = useState<MetaFlowState>("not_connected");
   const [metaCounts, setMetaCounts] = useState<Record<MetaFrontendIntegrationKey, number>>({
     facebook_pages: 0,
@@ -104,10 +102,6 @@ export function IntegrationLibrary({
   );
   const activeWorkspaceId = workspace?.id || null;
   const connectInFlightRef = useRef(false);
-
-  useEffect(() => {
-    setOauthUrlReady(getMetaOAuthDebugUrl());
-  }, []);
 
   useEffect(() => {
     if (!embedded) {
@@ -235,7 +229,6 @@ export function IntegrationLibrary({
       setConnectingIntegrationKey(integration.integrationKey);
       setConnectError("");
       clearMetaOAuthDebugUrl();
-      setOauthUrlReady("");
       const currentContext = getIntegrationReportContext();
       const contextWorkspaceId =
         activeWorkspaceId || currentContext?.workspaceId || "";
@@ -382,12 +375,6 @@ export function IntegrationLibrary({
       {connectError ? (
         <p className="mt-4 text-sm text-red-600">{connectError}</p>
       ) : null}
-      {oauthUrlReady ? (
-        <p className="mt-2 text-xs text-slate-500 break-all">
-          OAuth URL ready: {oauthUrlReady}
-        </p>
-      ) : null}
-
       <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {integrations.map((integration) => {
           const selected = integration.integrationKey === selectedIntegrationKey;
