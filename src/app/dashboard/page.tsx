@@ -2,20 +2,26 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { useI18n } from "@/components/providers/LanguageProvider";
 import { QuickActionCard } from "@/components/dashboard/QuickActionCard";
 import { RecentReportCard } from "@/components/dashboard/RecentReportCard";
 import { IntegrationDropzoneCard } from "@/components/reports/IntegrationDropzoneCard";
-import { isAbortError, isAuthError } from "@/lib/api";
+import { ApiError, isAbortError, isAuthError } from "@/lib/api";
 import { fetchCurrentUser } from "@/lib/api/me";
 import { fetchReports } from "@/lib/api/reports";
 import { integrationCatalog } from "@/lib/integrations/catalog";
 import { useAuthStore } from "@/lib/store/auth-store";
 import type { User } from "@/types/auth";
 import type { Report } from "@/types/report";
+
+type DashboardToast = {
+  variant: "error" | "success";
+  title: string;
+  description: string;
+};
 
 export default function DashboardPage() {
   const { messages } = useI18n();
@@ -26,6 +32,66 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [reportsAvailable, setReportsAvailable] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
+  const [toast, setToast] = useState<DashboardToast | null>(null);
+
+  const refreshRecentReports = useCallback(async () => {
+    const nextReports = await fetchReports();
+    setReports(nextReports.slice(0, 5));
+    setReportsAvailable(true);
+  }, []);
+
+  useEffect(() => {
+    if (!toast) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setToast(null);
+    }, 4200);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [toast]);
+
+  const handleDeleteError = useCallback(
+    (deleteError: unknown) => {
+      const description =
+        deleteError instanceof ApiError && deleteError.message
+          ? deleteError.message
+          : messages.reports.deleteReportError;
+
+      setToast({
+        variant: "error",
+        title: messages.common.error,
+        description,
+      });
+    },
+    [messages.common.error, messages.reports.deleteReportError]
+  );
+
+  const handleReportDeleted = useCallback(
+    async (reportId: string) => {
+      setReports((current) => current.filter((item) => item.id !== reportId));
+
+      try {
+        await refreshRecentReports();
+      } catch (refreshError) {
+        console.error("dashboard refresh after delete error:", refreshError);
+      }
+
+      setToast({
+        variant: "success",
+        title: messages.dashboard.reportDeletedTitle,
+        description: messages.dashboard.reportDeletedDescription,
+      });
+    },
+    [
+      messages.dashboard.reportDeletedDescription,
+      messages.dashboard.reportDeletedTitle,
+      refreshRecentReports,
+    ]
+  );
 
   useEffect(() => {
     let active = true;
@@ -162,6 +228,23 @@ export default function DashboardPage() {
   return (
     <AppShell>
       <div className="max-w-full space-y-5 sm:space-y-6 md:max-w-none">
+        {toast ? (
+          <div className="sticky top-4 z-30 flex justify-end">
+            <div
+              className={`max-w-md rounded-[20px] border px-4 py-3 shadow-[0_18px_45px_rgba(15,23,42,0.14)] backdrop-blur ${
+                toast.variant === "success"
+                  ? "border-emerald-200 bg-emerald-50/95 text-emerald-950"
+                  : "border-red-200 bg-red-50/95 text-red-950"
+              }`}
+              role="status"
+              aria-live="polite"
+            >
+              <p className="text-sm font-semibold tracking-tight">{toast.title}</p>
+              <p className="mt-1 text-sm leading-6">{toast.description}</p>
+            </div>
+          </div>
+        ) : null}
+
         <section>
           <h1 className="text-3xl font-semibold tracking-tight text-[var(--text-primary)] sm:text-5xl">
             Hola, {userName}!
@@ -187,11 +270,8 @@ export default function DashboardPage() {
                 <RecentReportCard
                   key={report.id}
                   report={report}
-                  onDeleted={(reportId) =>
-                    setReports((current) =>
-                      current.filter((item) => item.id !== reportId)
-                    )
-                  }
+                  onDeleted={handleReportDeleted}
+                  onDeleteError={handleDeleteError}
                 />
               ))}
             </div>

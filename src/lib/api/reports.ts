@@ -8,7 +8,7 @@ import type {
   ReportVersionView,
 } from "@/types/report";
 
-import { apiFetch, isAbortError, isAuthError } from "@/lib/api";
+import { apiFetch, isAbortError, isAuthError, readApiResponseText } from "@/lib/api";
 import { apiUrl } from "@/lib/api/config";
 import { FEATURES } from "@/config/features";
 import { usePreferencesStore } from "@/lib/store/preferences-store";
@@ -303,19 +303,37 @@ export async function fetchReports(options?: { signal?: AbortSignal }) {
 }
 
 export async function deleteReport(reportId: string) {
-  const response = await fetch(apiUrl(`/reports/${reportId}`), {
+  const endpoint = `/reports/${reportId}`;
+  const requestUrl = apiUrl(endpoint);
+  const authHeaders = getAuthHeaders();
+
+  console.log("DELETE_REPORT_REQUEST_PAYLOAD", {
+    endpoint,
     method: "DELETE",
-    headers: getAuthHeaders(),
+    reportId,
+    requestUrl,
+    hasBearerToken: Boolean(authHeaders?.Authorization),
+  });
+
+  const response = await fetch(requestUrl, {
+    method: "DELETE",
+    headers: authHeaders,
+    cache: "no-store",
     credentials: "include",
   });
 
-  if (response.ok) {
-    return;
-  }
+  const rawResponseBody = await response.clone().text();
 
-  const rawText = await response.text();
+  console.log("DELETE_REPORT_RESPONSE_STATUS", {
+    endpoint,
+    ok: response.ok,
+    reportId,
+    status: response.status,
+    statusText: response.statusText,
+  });
+  console.log("DELETE_REPORT_RESPONSE_BODY", rawResponseBody || null);
 
-  throw new Error(rawText || "Could not delete the report");
+  await readApiResponseText(endpoint, response);
 }
 
 type ReportDetailResponse = BackendReport | { report?: BackendReport; data?: BackendReport };

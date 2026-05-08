@@ -5,7 +5,8 @@ import type { Report } from "@/types/report";
 
 type RecentReportCardProps = {
   report: Report;
-  onDeleted?: (reportId: string) => void;
+  onDeleted?: (reportId: string) => Promise<void> | void;
+  onDeleteError?: (error: unknown) => void;
 };
 
 const REPORT_FOLDERS_KEY = "reportFolders";
@@ -42,7 +43,11 @@ function loadStoredAssignments() {
   }
 }
 
-export function RecentReportCard({ report, onDeleted }: RecentReportCardProps) {
+export function RecentReportCard({
+  report,
+  onDeleted,
+  onDeleteError,
+}: RecentReportCardProps) {
   const [folders, setFolders] = useState<ReportFolder[]>([]);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
 
@@ -78,6 +83,7 @@ export function RecentReportCard({ report, onDeleted }: RecentReportCardProps) {
         setAssignments(nextAssignments);
       }}
       onDeleted={onDeleted}
+      onDeleteError={onDeleteError}
     />
   );
 }

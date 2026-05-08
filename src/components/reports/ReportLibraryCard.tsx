@@ -20,7 +20,8 @@ type ReportLibraryCardProps = {
   folders: ReportFolder[];
   folderId?: string;
   onMoveToFolder?: (reportId: string, folderId: string) => void;
-  onDeleted?: (reportId: string) => void;
+  onDeleted?: (reportId: string) => Promise<void> | void;
+  onDeleteError?: (error: unknown) => void;
 };
 
 function formatDate(value: string) {
@@ -47,8 +48,9 @@ export function ReportLibraryCard({
   folderId = "",
   onMoveToFolder,
   onDeleted,
+  onDeleteError,
 }: ReportLibraryCardProps) {
-  const { language } = useI18n();
+  const { language, messages } = useI18n();
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -65,11 +67,16 @@ export function ReportLibraryCard({
     try {
       setDeleting(true);
       await deleteReport(report.id);
+      await onDeleted?.(report.id);
       setMenuOpen(false);
-      onDeleted?.(report.id);
     } catch (error) {
       console.error("report library delete error:", error);
-      window.alert("We could not delete the report right now. Please try again.");
+      if (onDeleteError) {
+        onDeleteError(error);
+        return;
+      }
+
+      window.alert(messages.reports.deleteReportError);
     } finally {
       setDeleting(false);
     }

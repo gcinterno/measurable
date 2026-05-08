@@ -4,6 +4,7 @@ const messages = {
   en: {
     common: {
       error: "Error",
+      success: "Success",
       viewAll: "View all",
       connect: "Connect",
       comingSoon: "Coming soon",
@@ -153,6 +154,8 @@ const messages = {
       noRecentReportsDescription: "Create your first report so it appears here as soon as it is ready.",
       reportsUnavailable: "We cannot show recent reports right now.",
       reportsUnavailableDescription: "Your dashboard is still available even if the reports library is not responding yet.",
+      reportDeletedTitle: "Report deleted",
+      reportDeletedDescription: "The report was removed from the dashboard and the list has been refreshed.",
       integrations: "Integrations",
       integrationsDescription: "Visible connectors in a single row with direct access.",
       viewAllIntegrations: "View all integrations",
@@ -341,6 +344,7 @@ const messages = {
   es: {
     common: {
       error: "Error",
+      success: "Éxito",
       viewAll: "Ver todo",
       connect: "Conectar",
       comingSoon: "Próximamente",
@@ -490,6 +494,8 @@ const messages = {
       noRecentReportsDescription: "Crea tu primer reporte para que aparezca aquí en cuanto esté listo.",
       reportsUnavailable: "No podemos mostrar los reportes recientes en este momento.",
       reportsUnavailableDescription: "Tu panel sigue disponible aunque la librería de reportes no esté respondiendo todavía.",
+      reportDeletedTitle: "Reporte eliminado",
+      reportDeletedDescription: "El reporte se quitó del panel y la lista ya se actualizó.",
       integrations: "Integraciones",
       integrationsDescription: "Conectores visibles en una sola fila con acceso directo.",
       viewAllIntegrations: "Ver todas las integraciones",
