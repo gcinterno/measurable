@@ -29,10 +29,12 @@ import {
   type MetaFrontendIntegrationKey,
 } from "@/lib/integrations/catalog";
 import {
+  createEmptySelectedAccountsBySource,
   clearPendingMetaSource,
   clearIntegrationReportContext,
   clearStoredMetaIntegrationState,
   getIntegrationReportContext,
+  type SelectedAccountsBySource,
   setPendingMetaSource,
   setIntegrationReportContext,
 } from "@/lib/integrations/session";
@@ -40,9 +42,10 @@ import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 
 type IntegrationLibraryProps = {
   integrations: readonly IntegrationCatalogItem[];
-  selectedIntegrationKey?: string;
+  selectedIntegrationKeys?: string[];
   embedded?: boolean;
   connectedIntegrationKey?: string;
+  mode?: "report-flow" | "management";
 };
 
 type MetaFlowState =
@@ -77,11 +80,65 @@ function getBadgeClasses(
   }
 }
 
+function buildNextSelectedContext(input: {
+  currentContext: ReturnType<typeof getIntegrationReportContext>;
+  workspaceId: string;
+  integrationId: string;
+  selectedSources: MetaFrontendIntegrationKey[];
+  selectedAccountsBySource: SelectedAccountsBySource;
+}) {
+  const {
+    currentContext,
+    workspaceId,
+    integrationId,
+    selectedSources,
+    selectedAccountsBySource,
+  } = input;
+  const firstSource = selectedSources[0] || "";
+  const firstSourceAccount = firstSource
+    ? selectedAccountsBySource[firstSource]
+    : undefined;
+
+  return {
+    source: firstSource,
+    integration: selectedSources.length > 0 ? "meta" : "",
+    workspaceId: workspaceId || currentContext?.workspaceId || "",
+    integrationId:
+      firstSourceAccount?.integrationId ||
+      integrationId ||
+      currentContext?.integrationId,
+    pageId: firstSourceAccount?.accountId || undefined,
+    pageName: firstSourceAccount?.accountName || undefined,
+    datasetId: firstSourceAccount?.datasetId || undefined,
+    synced:
+      selectedSources.length > 0 &&
+      selectedSources.every(
+        (sourceKey) => selectedAccountsBySource[sourceKey].syncStatus === "synced"
+      ),
+    requestedSlides: currentContext?.requestedSlides,
+    aiMode: currentContext?.aiMode,
+    templateId: currentContext?.templateId,
+    timeframe: currentContext?.timeframe,
+    startDate: currentContext?.startDate,
+    endDate: currentContext?.endDate,
+    timeframeSelection: currentContext?.timeframeSelection,
+    sharedTimeframe: currentContext?.sharedTimeframe,
+    postConnectRedirect: currentContext?.postConnectRedirect,
+    selectedSources,
+    selectedAccountsBySource,
+    reportKind:
+      selectedSources.length > 1
+        ? ("multi_source" as const)
+        : ("single_source" as const),
+  };
+}
+
 export function IntegrationLibrary({
   integrations,
-  selectedIntegrationKey,
+  selectedIntegrationKeys = [],
   embedded = false,
   connectedIntegrationKey,
+  mode = "management",
 }: IntegrationLibraryProps) {
   const { messages } = useI18n();
   const router = useRouter();
@@ -95,6 +152,9 @@ export function IntegrationLibrary({
     facebook_pages: 0,
     instagram_business: 0,
   });
+  const [currentSelectedSources, setCurrentSelectedSources] = useState<
+    MetaFrontendIntegrationKey[]
+  >(() => selectedIntegrationKeys.filter(isMetaFrontendIntegrationKey));
   const [metaIntegrationId, setMetaIntegrationId] = useState(
     storedIntegrationContext?.integration === "meta"
       ? storedIntegrationContext.integrationId || ""
@@ -102,6 +162,12 @@ export function IntegrationLibrary({
   );
   const activeWorkspaceId = workspace?.id || null;
   const connectInFlightRef = useRef(false);
+  const maxSources = 2;
+  const isReportFlowMode = mode === "report-flow";
+
+  useEffect(() => {
+    setCurrentSelectedSources(selectedIntegrationKeys.filter(isMetaFrontendIntegrationKey));
+  }, [selectedIntegrationKeys]);
 
   useEffect(() => {
     if (!embedded) {
@@ -115,7 +181,7 @@ export function IntegrationLibrary({
       Boolean(searchParams.get("meta_state")) ||
       Boolean(searchParams.get("meta_error"));
     const retryAuthUrl = consumePendingMetaOAuthForRetry({
-      route: "/reports/new/flow/sync",
+      route: "/reports/new/flow",
       hasCallbackParams,
     });
 
@@ -259,7 +325,10 @@ export function IntegrationLibrary({
           synced: false,
           requestedSlides: currentContext?.requestedSlides,
           aiMode: currentContext?.aiMode,
-          postConnectRedirect: `/reports/new/flow/sync?integration=${integration.integrationKey}`,
+          postConnectRedirect: "/reports/new/flow",
+          selectedSources: [integration.integrationKey],
+          selectedAccountsBySource: createEmptySelectedAccountsBySource(),
+          reportKind: "single_source",
         });
       }
 
@@ -331,21 +400,283 @@ export function IntegrationLibrary({
 
   function handleMetaSelect(integrationKey: MetaFrontendIntegrationKey) {
     const nextContext = getIntegrationReportContext();
+    const existingSelectedSources = currentSelectedSources;
+    const alreadySelected = existingSelectedSources.includes(integrationKey);
+    const nextSelectedSources = alreadySelected
+      ? existingSelectedSources.filter((sourceKey) => sourceKey !== integrationKey)
+      : [...existingSelectedSources, integrationKey];
 
-    setIntegrationReportContext({
-      source: integrationKey,
-      integration: "meta",
-      workspaceId: activeWorkspaceId || nextContext?.workspaceId || "",
-      integrationId: metaIntegrationId,
-      pageId: undefined,
-      pageName: undefined,
-      datasetId: undefined,
-      synced: false,
-      requestedSlides: nextContext?.requestedSlides,
-      aiMode: nextContext?.aiMode,
-    });
+    if (!alreadySelected && nextSelectedSources.length > maxSources) {
+      setConnectError(`You can select up to ${maxSources} sources for one report.`);
+      return;
+    }
 
-    router.push(`/reports/new/flow/sync?integration=${integrationKey}`);
+    const selectedAccountsBySource = {
+      ...(nextContext?.selectedAccountsBySource || createEmptySelectedAccountsBySource()),
+    };
+
+    if (!alreadySelected) {
+      selectedAccountsBySource[integrationKey] = {
+        ...selectedAccountsBySource[integrationKey],
+        integrationId: metaIntegrationId || selectedAccountsBySource[integrationKey].integrationId,
+      };
+    } else {
+      selectedAccountsBySource[integrationKey] = {
+        ...createEmptySelectedAccountsBySource()[integrationKey],
+        integrationId: "",
+      };
+    }
+
+    setCurrentSelectedSources(nextSelectedSources);
+    setIntegrationReportContext(
+      buildNextSelectedContext({
+        currentContext: nextContext,
+        workspaceId: activeWorkspaceId || nextContext?.workspaceId || "",
+        integrationId: metaIntegrationId,
+        selectedSources: nextSelectedSources,
+        selectedAccountsBySource,
+      })
+    );
+    setConnectError("");
+  }
+
+  function handleContinueWithSelectedSources() {
+    if (currentSelectedSources.length === 0) {
+      setConnectError("Select at least one source to continue.");
+      return;
+    }
+
+    const nextContext = getIntegrationReportContext();
+    const selectedAccountsBySource =
+      nextContext?.selectedAccountsBySource || createEmptySelectedAccountsBySource();
+
+    setIntegrationReportContext(
+      buildNextSelectedContext({
+        currentContext: nextContext,
+        workspaceId: activeWorkspaceId || nextContext?.workspaceId || "",
+        integrationId: metaIntegrationId,
+        selectedSources: currentSelectedSources,
+        selectedAccountsBySource,
+      })
+    );
+    router.push(`/reports/new/flow/sync?integration=${currentSelectedSources[0]}`);
+  }
+
+  function renderCardActions(input: {
+    integration: IntegrationCatalogItem;
+    isMeta: boolean;
+    isMetaConnected: boolean;
+    isConnected: boolean;
+    isConnecting: boolean;
+    isSelected: boolean;
+    isComingSoon: boolean;
+  }) {
+    const {
+      integration,
+      isMeta,
+      isMetaConnected,
+      isConnected,
+      isConnecting,
+      isSelected,
+      isComingSoon,
+    } = input;
+
+    if (isReportFlowMode) {
+      if (isComingSoon) {
+        return (
+          <button
+            type="button"
+            disabled
+            className="inline-flex cursor-not-allowed items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-400 opacity-70 blur-[0.2px]"
+          >
+            {messages.common.comingSoon}
+          </button>
+        );
+      }
+
+      if (isMeta && isMetaConnected) {
+        return (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleMetaSelect(integration.integrationKey as MetaFrontendIntegrationKey);
+            }}
+            className={`inline-flex items-center justify-center rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
+              isSelected
+                ? "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                : "bg-slate-950 !text-white hover:bg-slate-800"
+            }`}
+          >
+            {isSelected ? "Selected" : "Select"}
+          </button>
+        );
+      }
+
+      if (isMeta) {
+        return (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void handleDirectConnect(integration);
+            }}
+            disabled={isConnecting}
+            className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {isConnecting
+              ? messages.integrationsPage.connecting
+              : messages.common.connect}
+          </button>
+        );
+      }
+
+      return (
+        <button
+          type="button"
+          disabled
+          className="inline-flex cursor-not-allowed items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-400 opacity-70 blur-[0.2px]"
+        >
+          {messages.common.comingSoon}
+        </button>
+      );
+    }
+
+    if (isMeta && embedded && isMetaConnected) {
+      return (
+        <>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleMetaSelect(integration.integrationKey as MetaFrontendIntegrationKey);
+            }}
+            className={`inline-flex items-center justify-center rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
+              isSelected
+                ? "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                : "bg-slate-950 !text-white hover:bg-slate-800"
+            }`}
+          >
+            {isSelected ? "Selected" : "Select"}
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              clearPendingMetaSource();
+              clearIntegrationReportContext();
+              setCurrentSelectedSources([]);
+              setMetaIntegrationId("");
+              setMetaCounts({
+                facebook_pages: 0,
+                instagram_business: 0,
+              });
+              setMetaFlowState("not_connected");
+              const nextParams = new URLSearchParams(searchParams.toString());
+              nextParams.set("integration", integration.integrationKey);
+              router.replace(`/reports/new/flow?${nextParams.toString()}`);
+            }}
+            className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+          >
+            Disconnect
+          </button>
+        </>
+      );
+    }
+
+    if (isMeta && embedded && metaFlowState === "checking") {
+      return (
+        <button
+          type="button"
+          disabled
+          className="inline-flex cursor-not-allowed items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-400"
+        >
+          {messages.integrationsPage.connecting}
+        </button>
+      );
+    }
+
+    if (!isMeta && isConnected && embedded) {
+      return (
+        <>
+          <Link
+            href={`/reports/new/flow/sync?integration=${integration.integrationKey}`}
+            className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
+          >
+            Continuar con {integration.name}
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              clearIntegrationReportContext();
+              const nextParams = new URLSearchParams(searchParams.toString());
+              nextParams.set("integration", integration.integrationKey);
+              router.replace(`/reports/new/flow?${nextParams.toString()}`);
+            }}
+            className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+          >
+            Desconectar integracion
+          </button>
+        </>
+      );
+    }
+
+    if (embedded && isMeta && metaFlowState === "not_connected") {
+      return (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            void handleDirectConnect(integration);
+          }}
+          disabled={isConnecting}
+          className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          {isConnecting
+            ? messages.integrationsPage.connecting
+            : messages.common.connect}
+        </button>
+      );
+    }
+
+    if (isComingSoon) {
+      return (
+        <button
+          type="button"
+          disabled
+          className="inline-flex cursor-not-allowed items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-400 opacity-70 blur-[0.2px]"
+        >
+          {messages.common.comingSoon}
+        </button>
+      );
+    }
+
+    return (
+      <Link
+        href={
+          embedded
+            ? integration.status === "Connected"
+              ? `/reports/new/flow/sync?integration=${integration.integrationKey}`
+              : integration.detailHref || "/integrations"
+            : integration.detailHref || "/integrations"
+        }
+        className={`inline-flex items-center justify-center rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
+          integration.status === "Available" || integration.status === "Connected"
+            ? "bg-slate-950 !text-white hover:bg-slate-800"
+            : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+        }`}
+      >
+        {integration.status === "Connected"
+          ? embedded
+            ? messages.reports.confirmIntegration
+            : messages.reports.useIntegration
+          : integration.status === "Available"
+            ? embedded
+              ? integration.actionLabel
+              : messages.reports.useIntegration
+            : messages.reports.viewIntegration}
+      </Link>
+    );
   }
 
   return (
@@ -377,14 +708,12 @@ export function IntegrationLibrary({
       ) : null}
       <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {integrations.map((integration) => {
-          const selected = integration.integrationKey === selectedIntegrationKey;
+          const selected = currentSelectedSources.includes(
+            integration.integrationKey as MetaFrontendIntegrationKey
+          );
           const connected = integration.integrationKey === connectedIntegrationKey;
           const isMeta = isMetaFrontendIntegrationKey(integration.integrationKey);
           const metaConnected = isMeta && metaFlowState === "connected";
-          const canDirectConnect =
-            embedded &&
-            isMeta &&
-            metaFlowState === "not_connected";
           const blockedComingSoon =
             !isMeta && integration.status !== "Connected";
           const isConnecting = connectingIntegrationKey === integration.integrationKey;
@@ -397,17 +726,28 @@ export function IntegrationLibrary({
                 : badgeLabel;
           const metaDescriptionSuffix =
             isMeta && embedded && metaConnected
-              ? getMetaDescriptionSuffix(integration.integrationKey, metaCounts)
+              ? getMetaDescriptionSuffix(
+                  integration.integrationKey as MetaFrontendIntegrationKey,
+                  metaCounts
+                )
               : "";
 
           return (
             <article
               key={integration.integrationKey}
+              onClick={
+                isReportFlowMode && isMeta && embedded && metaConnected
+                  ? () =>
+                      handleMetaSelect(
+                        integration.integrationKey as MetaFrontendIntegrationKey
+                      )
+                  : undefined
+              }
               className={`rounded-[24px] border p-4 transition ${
                 selected
                   ? "border-sky-300 bg-sky-50/60 shadow-[0_0_0_1px_rgba(125,211,252,0.45)]"
                   : "border-slate-200 bg-slate-50/60 hover:border-slate-300 hover:bg-white"
-              }`}
+              } ${isReportFlowMode && isMeta && embedded && metaConnected ? "cursor-pointer" : ""}`}
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200">
@@ -438,117 +778,42 @@ export function IntegrationLibrary({
               </p>
 
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                {isMeta && embedded && metaConnected ? (
-                  <button
-                    type="button"
-                    onClick={() => handleMetaSelect(integration.integrationKey)}
-                    className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
-                  >
-                    Select
-                  </button>
-                ) : null}
-                {isMeta && embedded && metaConnected ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      clearPendingMetaSource();
-                      clearIntegrationReportContext();
-                      setMetaIntegrationId("");
-                      setMetaCounts({
-                        facebook_pages: 0,
-                        instagram_business: 0,
-                      });
-                      setMetaFlowState("not_connected");
-                      const nextParams = new URLSearchParams(searchParams.toString());
-                      nextParams.set("integration", integration.integrationKey);
-                      router.replace(`/reports/new/flow?${nextParams.toString()}`);
-                    }}
-                    className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                  >
-                    Disconnect
-                  </button>
-                ) : isMeta && embedded && metaFlowState === "checking" ? (
-                  <button
-                    type="button"
-                    disabled
-                    className="inline-flex cursor-not-allowed items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-400"
-                  >
-                    {messages.integrationsPage.connecting}
-                  </button>
-                ) : !isMeta && connected && embedded ? (
-                  <>
-                    <Link
-                      href={`/reports/new/flow/sync?integration=${integration.integrationKey}`}
-                      className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
-                    >
-                      Continuar con {integration.name}
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        clearIntegrationReportContext();
-                        const nextParams = new URLSearchParams(searchParams.toString());
-                        nextParams.set("integration", integration.integrationKey);
-                        router.replace(`/reports/new/flow?${nextParams.toString()}`);
-                      }}
-                      className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                    >
-                      Desconectar integracion
-                    </button>
-                  </>
-                ) : canDirectConnect ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleDirectConnect(integration)}
-                    disabled={isConnecting || metaFlowState === "checking"}
-                    className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {isConnecting || metaFlowState === "checking"
-                      ? messages.integrationsPage.connecting
-                      : messages.common.connect}
-                  </button>
-                ) : (
-                  blockedComingSoon ? (
-                    <button
-                      type="button"
-                      disabled
-                      className="inline-flex cursor-not-allowed items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-400 opacity-70 blur-[0.2px]"
-                    >
-                      {messages.common.comingSoon}
-                    </button>
-                  ) : (
-                    <Link
-                      href={
-                        embedded
-                          ? integration.status === "Connected"
-                            ? `/reports/new/flow/sync?integration=${integration.integrationKey}`
-                            : integration.detailHref || "/integrations"
-                          : integration.detailHref || "/integrations"
-                      }
-                      className={`inline-flex items-center justify-center rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
-                        integration.status === "Available" || integration.status === "Connected"
-                          ? "bg-slate-950 !text-white hover:bg-slate-800"
-                          : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                      }`}
-                    >
-                      {integration.status === "Connected"
-                        ? embedded
-                          ? messages.reports.confirmIntegration
-                          : messages.reports.useIntegration
-                        : integration.status === "Available"
-                          ? embedded
-                            ? integration.actionLabel
-                            : messages.reports.useIntegration
-                        : messages.reports.viewIntegration}
-                    </Link>
-                  )
-                )}
+                {renderCardActions({
+                  integration,
+                  isMeta,
+                  isMetaConnected: metaConnected,
+                  isConnected: connected,
+                  isConnecting,
+                  isSelected: selected,
+                  isComingSoon: blockedComingSoon,
+                })}
               </div>
 
             </article>
           );
         })}
       </div>
+
+            {embedded && metaFlowState === "connected" ? (
+        <div className="mt-6 flex flex-col gap-3 rounded-[24px] border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-950">
+              {`${currentSelectedSources.length} source${currentSelectedSources.length === 1 ? "" : "s"} selected`}
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              You can configure up to {maxSources} sources in the next step.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleContinueWithSelectedSources}
+            disabled={currentSelectedSources.length === 0}
+            className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            Continue
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }

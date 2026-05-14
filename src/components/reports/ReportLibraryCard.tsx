@@ -101,6 +101,11 @@ export function ReportLibraryCard({
           <p className="mt-1.5 text-sm text-slate-500">
             {language === "es" ? "Creado" : "Created"} {formatDate(report.createdAt)}
           </p>
+          {report.sourceSummary ? (
+            <p className="mt-1 text-sm text-slate-500">
+              {report.sourceSummary}
+            </p>
+          ) : null}
         </div>
 
         <div className="mt-3 flex items-center justify-between gap-2.5">

@@ -1,9 +1,21 @@
+export type ReportSource = {
+  provider?: string;
+  sourceType?: string;
+  integrationId?: string;
+  integrationAccountId?: string;
+  datasetId?: string;
+  position?: number;
+  label?: string;
+};
+
 export type Report = {
   id: string;
   title: string;
   status: string;
   createdAt: string;
   thumbnailUrl?: string;
+  sourceSummary?: string;
+  reportSources?: ReportSource[];
   branding?: {
     logoUrl?: string;
     source?: string;

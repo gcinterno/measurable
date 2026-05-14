@@ -13,7 +13,10 @@ import {
   getIntegrationReportContext,
   setIntegrationReportContext,
 } from "@/lib/integrations/session";
-import { integrationCatalog } from "@/lib/integrations/catalog";
+import {
+  integrationCatalog,
+  isMetaFrontendIntegrationKey,
+} from "@/lib/integrations/catalog";
 import {
   formatMetaTimeframeLabel,
   normalizeMetaTimeframeSelection,
@@ -58,24 +61,36 @@ function NewReportFlowGeneratePageContent() {
   const storedIntegrationContext = getIntegrationReportContext();
   const integrationSource =
     searchParams.get("integration") || storedIntegrationContext?.source || "";
+  const selectedSources =
+    storedIntegrationContext?.selectedSources?.length
+      ? storedIntegrationContext.selectedSources
+      : integrationSource
+        ? [integrationSource]
+        : [];
+  const normalizedSelectedSources = selectedSources.filter(isMetaFrontendIntegrationKey);
+  const selectedAccountsBySource = storedIntegrationContext?.selectedAccountsBySource;
+  const isMultiSourceReport = normalizedSelectedSources.length >= 2;
+  const primarySource = normalizedSelectedSources[0] || integrationSource;
   const selectedIntegration = integrationCatalog.find(
-    (integration) => integration.integrationKey === integrationSource
+    (integration) => integration.integrationKey === primarySource
   );
   const datasetId = storedIntegrationContext?.datasetId || "";
   const currentStep = 3;
   const stepHrefMap: Record<number, string> = {
-    1: integrationSource
-      ? `/reports/new/flow?integration=${integrationSource}`
+    1: primarySource
+      ? `/reports/new/flow?integration=${primarySource}`
       : "/reports/new/flow",
-    2: integrationSource
-      ? `/reports/new/flow/sync?integration=${integrationSource}`
+    2: primarySource
+      ? `/reports/new/flow/sync?integration=${primarySource}`
       : "/reports/new/flow/sync",
   };
   const [selectedTemplate, setSelectedTemplate] =
     useState<ReportTemplateId>(
       resolveReportTemplateSelection(storedIntegrationContext?.templateId)
     );
-  const [selectedSlides, setSelectedSlides] = useState(5);
+  const [selectedSlides, setSelectedSlides] = useState(
+    storedIntegrationContext?.requestedSlides || 5
+  );
   const [aiMode, setAiMode] = useState<"standard" | "agents">(
     storedIntegrationContext?.aiMode || "standard"
   );
@@ -85,7 +100,10 @@ function NewReportFlowGeneratePageContent() {
     includeReportsUsage: true,
   });
   const planCapabilities = getPlanCapabilities(workspace);
-  const slideCountOptions = [{ value: 5, available: true }];
+  const slideCountOptions = [
+    { value: 5, available: !isMultiSourceReport },
+    { value: 10, available: true },
+  ];
   const timeframeLabel = formatMetaTimeframeLabel({
     timeframe: storedIntegrationContext?.timeframe,
     startDate: storedIntegrationContext?.startDate,
@@ -134,13 +152,20 @@ function NewReportFlowGeneratePageContent() {
   }
 
   function handleSelectSlides(nextSlides: number) {
+    if (isMultiSourceReport && nextSlides !== 10) {
+      setError(
+        "Multi-source reports require the 10-slide format to include platform comparisons and cross-channel insights."
+      );
+      return;
+    }
+
     console.info("[PlanLimits][ui]", {
       currentPlan: planCapabilities.plan,
       maxSlides: planCapabilities.maxSlides,
       selectedSlides: nextSlides,
     });
 
-    if (!canSelectSlideCount(planCapabilities, nextSlides)) {
+    if (!isMultiSourceReport && !canSelectSlideCount(planCapabilities, nextSlides)) {
       setError(
         `Your current plan supports up to ${planCapabilities.maxSlides} slides. Upgrade to select ${nextSlides}.`
       );
@@ -178,6 +203,21 @@ function NewReportFlowGeneratePageContent() {
   }
 
   useEffect(() => {
+    if (isMultiSourceReport && selectedSlides !== 10) {
+      const timeoutId = window.setTimeout(() => {
+        setSelectedSlides(10);
+        persistGenerateOptions(10, aiMode);
+      }, 0);
+
+      return () => {
+        window.clearTimeout(timeoutId);
+      };
+    }
+
+    return undefined;
+  }, [aiMode, isMultiSourceReport, selectedSlides]);
+
+  useEffect(() => {
     if (selectedSlides <= planCapabilities.maxSlides) {
       return;
     }
@@ -190,17 +230,49 @@ function NewReportFlowGeneratePageContent() {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [aiMode, planCapabilities.maxSlides, selectedSlides]);
+  }, [aiMode, isMultiSourceReport, planCapabilities.maxSlides, selectedSlides]);
 
   async function handleGenerateReport() {
-    if (!datasetId || !storedIntegrationContext?.synced) {
+    const hasValidSourceCount =
+      normalizedSelectedSources.length >= 1 &&
+      normalizedSelectedSources.length <= 2;
+    const isSourceConfigured = (sourceKey: string) => {
+      if (!isMetaFrontendIntegrationKey(sourceKey)) {
+        return false;
+      }
+
+      const configuredSource = selectedAccountsBySource?.[sourceKey];
+
+      if (
+        configuredSource?.accountId &&
+        configuredSource.datasetId &&
+        configuredSource.syncStatus === "synced"
+      ) {
+        return true;
+      }
+
+      return (
+        normalizedSelectedSources.length === 1 &&
+        sourceKey === normalizedSelectedSources[0] &&
+        Boolean(datasetId) &&
+        Boolean(storedIntegrationContext?.synced)
+      );
+    };
+    const hasUnconfiguredSource = normalizedSelectedSources.some(
+      (sourceKey) => !isSourceConfigured(sourceKey)
+    );
+
+    if (
+      !hasValidSourceCount ||
+      hasUnconfiguredSource
+    ) {
       setError(
         messages.reports.noDatasetYet
       );
       return;
     }
 
-    if (!canSelectSlideCount(planCapabilities, selectedSlides)) {
+    if (!isMultiSourceReport && !canSelectSlideCount(planCapabilities, selectedSlides)) {
       setError(
         `Your current plan supports up to ${planCapabilities.maxSlides} slides. Choose a smaller report or upgrade.`
       );
@@ -209,46 +281,62 @@ function NewReportFlowGeneratePageContent() {
 
     setLoading(true);
     setError("");
+
+    if (!storedIntegrationContext) {
+      setError(messages.reports.noDatasetYet);
+      setLoading(false);
+      return;
+    }
+
     const requestedAiMode =
       aiMode === "agents" && planCapabilities.canUseAiAgents
         ? "agents"
         : "standard";
+    const requestedSlides = isMultiSourceReport ? 10 : selectedSlides;
     const normalizedSelection = normalizeMetaTimeframeSelection({
       preset: storedIntegrationContext.timeframe,
       startDate: storedIntegrationContext.startDate,
       endDate: storedIntegrationContext.endDate,
     });
 
-    persistGenerateOptions(selectedSlides, requestedAiMode, selectedTemplate);
+    persistGenerateOptions(requestedSlides, requestedAiMode, selectedTemplate);
+    setIntegrationReportContext({
+      ...storedIntegrationContext,
+      requestedSlides,
+      aiMode: requestedAiMode,
+      templateId: selectedTemplate,
+      reportKind:
+        normalizedSelectedSources.length > 1 ? "multi_source" : "single_source",
+    });
     console.info("[MetaTimeframe][flow.generate.before]", {
       datasetId,
       synced: storedIntegrationContext.synced,
       persistedTimeframe: storedIntegrationContext.timeframe,
       persistedContext: storedIntegrationContext,
       timeframeSelection: normalizedSelection,
-      createReportPayload: {
+        createReportPayload: {
         dataset_id: Number(datasetId),
         timeframe: normalizedSelection.key,
         start_date: normalizedSelection.startDate,
         end_date: normalizedSelection.endDate,
-        requested_slides: selectedSlides,
+        requested_slides: requestedSlides,
         ai_mode: requestedAiMode,
       },
     });
     console.info("[PlanLimits][generate.request]", {
       currentPlan: planCapabilities.plan,
       plan: planCapabilities.plan,
-      requestedSlides: selectedSlides,
+      requestedSlides,
       datasetId,
     });
     console.info("[AIAgents][generate.request]", {
       datasetId,
-      requestedSlides: selectedSlides,
+      requestedSlides,
       aiMode: requestedAiMode,
     });
 
     router.replace(
-      `/reports/new/flow/review?integration=${integrationSource}&template=${selectedTemplate}&generate=1`
+      `/reports/new/flow/review?integration=${primarySource}&template=${selectedTemplate}&generate=1`
     );
   }
 
@@ -300,7 +388,7 @@ function NewReportFlowGeneratePageContent() {
                     This period was selected during the sync step.
                   </p>
                   <Link
-                    href={`/reports/new/flow/sync?integration=${integrationSource}`}
+                    href={`/reports/new/flow/sync?integration=${primarySource}`}
                     className="mt-3 inline-flex rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
                   >
                     Change period
@@ -317,6 +405,11 @@ function NewReportFlowGeneratePageContent() {
                     Max slides: {planCapabilities.maxSlides}
                   </p>
                 ) : null}
+                {isMultiSourceReport ? (
+                  <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+                    Multi-source reports require the 10-slide format to include platform comparisons and cross-channel insights.
+                  </div>
+                ) : null}
                 <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {slideCountOptions.map((option) => {
                     const active = option.value === selectedSlides;
@@ -326,13 +419,14 @@ function NewReportFlowGeneratePageContent() {
                         key={option.value}
                         type="button"
                         onClick={() => handleSelectSlides(option.value)}
+                        disabled={!option.available}
                         className={`rounded-2xl border px-4 py-3 text-left transition ${
                           active
                             ? "border-slate-950 bg-slate-950 text-white"
-                            : option.available
+                          : option.available
                               ? "border-slate-200 bg-slate-50 text-slate-950 hover:bg-slate-100"
                               : "border-slate-200 bg-white text-slate-400 hover:border-amber-200 hover:bg-amber-50"
-                        }`}
+                        } disabled:cursor-not-allowed`}
                       >
                         <span className="block text-lg font-semibold">{option.value} slides</span>
                       </button>
@@ -474,7 +568,7 @@ function NewReportFlowGeneratePageContent() {
 
             <div className="mt-6 flex flex-wrap items-center gap-3">
               <Link
-                href={`/reports/new/flow/sync?integration=${integrationSource}`}
+                href={`/reports/new/flow/sync?integration=${primarySource}`}
                 className="inline-flex rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
               >
                 {messages.common.back}

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -7,7 +8,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { useI18n } from "@/components/providers/LanguageProvider";
 import { isAbortError, isAuthError } from "@/lib/api";
 import { deleteAccount } from "@/lib/api/auth";
-import { fetchCurrentUser } from "@/lib/api/me";
+import { fetchCurrentUser, updateCurrentUser } from "@/lib/api/me";
 import { fetchWorkspace, updateWorkspace } from "@/lib/api/workspaces";
 import { startLogoutInProgress } from "@/lib/auth/session";
 import { useAuthStore } from "@/lib/store/auth-store";
@@ -161,6 +162,7 @@ export default function SettingsPage() {
           transform: `translate(${-cropOffsetX * cropPreviewScale}px, ${-cropOffsetY * cropPreviewScale}px)`,
         }
       : undefined;
+  const isFreePlan = workspace?.plan?.trim().toLowerCase() === "free";
 
   function clampCropOffsets(nextOffsetX: number, nextOffsetY: number, nextZoom = cropZoom) {
     const nextVisibleSize = cropMinDimension > 0 ? cropMinDimension / nextZoom : 0;
@@ -400,13 +402,21 @@ export default function SettingsPage() {
           </p>
 
           <div className="mt-8">
-            <div className="min-w-0 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+            <div className="relative min-w-0 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+              <div
+                className={
+                  isFreePlan
+                    ? "pointer-events-none opacity-70 blur-[1.5px]"
+                    : ""
+                }
+              >
               <label className="block">
                 <span className="text-sm font-medium text-slate-950">
                   {messages.settings.brandName}
                 </span>
                 <input
                   type="text"
+                  disabled={isFreePlan}
                   value={brandNameDraft}
                   onChange={(event) => {
                     setBrandNameDraft(event.target.value);
@@ -441,16 +451,23 @@ export default function SettingsPage() {
                       {messages.settings.logoRecommendation}
                     </p>
                     <div className="mt-4 flex flex-wrap gap-3">
-                      <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800">
+                      <label
+                        className={`inline-flex items-center justify-center rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
+                          isFreePlan
+                            ? "cursor-not-allowed bg-slate-300 text-slate-500"
+                            : "cursor-pointer bg-slate-950 text-white hover:bg-slate-800"
+                        }`}
+                      >
                         {messages.settings.uploadLogo}
                         <input
                           type="file"
                           accept="image/*"
                           className="hidden"
+                          disabled={isFreePlan}
                           onChange={handleLogoChange}
                         />
                       </label>
-                      {logoUrlDraft ? (
+                      {logoUrlDraft && !isFreePlan ? (
                         <button
                           type="button"
                           onClick={async () => {
@@ -489,6 +506,41 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </div>
+              </div>
+              {isFreePlan ? (
+                <div className="pointer-events-auto absolute inset-0 z-10 flex items-center justify-center rounded-[24px] bg-white/75 px-5 text-center backdrop-blur-[2px]">
+                  <div className="max-w-md rounded-[24px] border border-slate-200 bg-white/95 p-6 shadow-[0_18px_45px_rgba(15,23,42,0.10)]">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700">
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        className="h-5 w-5"
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M16.5 10V7.75a4.5 4.5 0 1 0-9 0V10m-.75 0h10.5A1.5 1.5 0 0 1 18.75 11.5v7A1.5 1.5 0 0 1 17.25 20h-10.5a1.5 1.5 0 0 1-1.5-1.5v-7A1.5 1.5 0 0 1 6.75 10Z"
+                        />
+                      </svg>
+                    </div>
+                    <h3 className="mt-4 text-lg font-semibold text-slate-950">
+                      Custom branding is available on paid plans
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">
+                      Upgrade your plan to add your own brand name and logo to reports.
+                    </p>
+                    <Link
+                      href="/plans"
+                      className="mt-5 inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                    >
+                      Upgrade your plan
+                    </Link>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         </section>

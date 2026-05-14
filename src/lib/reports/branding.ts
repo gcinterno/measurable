@@ -9,15 +9,21 @@ type BrandingInput =
 export function resolveReportBranding(
   reportVersionBranding?: BrandingInput,
   reportBranding?: BrandingInput,
-  fallbackBranding?: BrandingInput
+  fallbackBranding?: BrandingInput,
+  options?: {
+    overrideBranding?: BrandingInput;
+  }
 ) {
+  const overrideLogo = options?.overrideBranding?.logoUrl?.trim() || null;
   const reportVersionLogo = reportVersionBranding?.logoUrl?.trim() || null;
   const reportLogo = reportBranding?.logoUrl?.trim() || null;
   const fallbackLogo = fallbackBranding?.logoUrl?.trim() || null;
 
   return {
-    logoUrl: reportVersionLogo ?? reportLogo ?? fallbackLogo ?? null,
-    source: reportVersionLogo
+    logoUrl: overrideLogo ?? reportVersionLogo ?? reportLogo ?? fallbackLogo ?? null,
+    source: overrideLogo
+      ? `override.${options?.overrideBranding?.source || "branding.logo_url"}`
+      : reportVersionLogo
       ? `reportVersion.${reportVersionBranding?.source || "branding.logo_url"}`
       : reportLogo
         ? `report.${reportBranding?.source || "branding.logo_url"}`

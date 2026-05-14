@@ -623,3 +623,73 @@ export async function syncMetaPages(input: {
     datasetId,
   };
 }
+
+export async function syncMetaInstagramAccount(input: {
+  accountId: string;
+  integrationId: string;
+  timeframe: string;
+  startDate?: string;
+  endDate?: string;
+  workspaceId?: string | null;
+}) {
+  const workspaceId = await getRequiredWorkspaceId(input.workspaceId);
+  const payload = {
+    integration_id: Number(input.integrationId),
+    instagram_account_id: input.accountId,
+    workspace_id: Number(workspaceId),
+    timeframe: input.timeframe,
+    start_date: input.timeframe === "custom" ? input.startDate ?? null : null,
+    end_date: input.timeframe === "custom" ? input.endDate ?? null : null,
+  };
+  const endpoint = "/integrations/meta/sync-instagram-business";
+  const finalUrl = apiUrl(endpoint);
+  const headers = {
+    "Content-Type": "application/json",
+    ...(getAuthHeaders() || {}),
+  };
+  const body = JSON.stringify(payload);
+
+  console.info("[MetaTimeframe][api.syncInstagram.request]", {
+    finalUrl,
+    method: "POST",
+    body,
+    headers: {
+      contentType: headers["Content-Type"],
+      hasAuthorization: Boolean(headers.Authorization),
+    },
+    integrationId: input.integrationId,
+    instagramAccountId: input.accountId,
+    selectedTimeframe: input.timeframe,
+    startDate: input.startDate,
+    endDate: input.endDate,
+    payload,
+  });
+
+  const res = await fetch(finalUrl, {
+    method: "POST",
+    headers,
+    body,
+  });
+
+  const text = await readApiResponseText(endpoint, res);
+  console.log("meta sync instagram account response:", text);
+
+  const parsedPayload = text
+    ? (JSON.parse(text) as MetaSelectOrSyncResponse)
+    : {};
+  const datasetId = extractDatasetId(parsedPayload);
+
+  return {
+    raw: parsedPayload,
+    message:
+      parsedPayload.message ||
+      parsedPayload.detail ||
+      parsedPayload.data?.message ||
+      parsedPayload.data?.detail ||
+      "Sincronizacion completada.",
+    detail: parsedPayload.detail || parsedPayload.data?.detail || "",
+    integrationId:
+      extractIntegrationId(parsedPayload) || input.integrationId,
+    datasetId,
+  };
+}

@@ -34,6 +34,24 @@ type SlideRendererProps = {
   templateId?: ReportTemplateId;
 };
 
+type BlockChartPoint = {
+  date: string;
+  label: string;
+  value: number;
+};
+
+type BlockChartSeries = {
+  label: string;
+  sourceType?: string;
+  points: BlockChartPoint[];
+};
+
+const MULTI_SERIES_BLOCKS = new Set([
+  "reach_overview",
+  "engagement_overview",
+  "audience_growth",
+]);
+
 function getBlockSemanticName(block: ReportVersionBlock) {
   const value =
     block.data.semantic_name ??
@@ -414,6 +432,64 @@ function normalizeChartPoint(item: unknown, index: number) {
   };
 }
 
+function inferChartSeriesSourceType(record: Record<string, unknown>, label: string) {
+  const explicit =
+    getStringValue(record.source_type) ||
+    getStringValue(record.sourceType) ||
+    getStringValue(record.platform) ||
+    getStringValue(record.provider);
+
+  if (explicit) {
+    return explicit.toLowerCase();
+  }
+
+  const haystack = label.toLowerCase();
+
+  if (haystack.includes("instagram")) {
+    return "instagram_business";
+  }
+
+  if (haystack.includes("facebook")) {
+    return "facebook_pages";
+  }
+
+  return "";
+}
+
+function normalizeChartSeriesItem(item: unknown, index: number): BlockChartSeries | null {
+  const record = getObjectRecord(item);
+
+  if (!record) {
+    return null;
+  }
+
+  const rawPoints =
+    Array.isArray(record.points) ? record.points :
+    Array.isArray(record.data) ? record.data :
+    Array.isArray(record.series) ? record.series :
+    [];
+
+  if (!Array.isArray(rawPoints)) {
+    return null;
+  }
+
+  const label =
+    getStringValue(record.label) ||
+    getStringValue(record.name) ||
+    getStringValue(record.title) ||
+    getStringValue(record.source) ||
+    getStringValue(record.platform) ||
+    `Series ${index + 1}`;
+
+  return {
+    label,
+    sourceType: inferChartSeriesSourceType(record, label) || undefined,
+    points: rawPoints
+      .map(normalizeChartPoint)
+      .filter(Boolean) as BlockChartPoint[],
+  };
+}
+
 function getNestedChartSeries(collection: unknown) {
   if (!Array.isArray(collection)) {
     return null;
@@ -532,7 +608,22 @@ function getBlockChartSource(block: ReportVersionBlock) {
 function getBlockChartPoints(block: ReportVersionBlock) {
   return getBlockChartSource(block).raw
     .map(normalizeChartPoint)
-    .filter(Boolean) as { date: string; label: string; value: number }[];
+    .filter(Boolean) as BlockChartPoint[];
+}
+
+function getBlockChartSeries(block: ReportVersionBlock) {
+  const chart = block.data.chart;
+  const chartRecord = chart && typeof chart === "object" ? chart as Record<string, unknown> : null;
+  const rawSeries =
+    Array.isArray(chartRecord?.series) ? chartRecord.series :
+    Array.isArray(block.data.series) ? block.data.series :
+    Array.isArray(block.data.daily_series) ? block.data.daily_series :
+    Array.isArray(block.data.dailySeries) ? block.data.dailySeries :
+    [];
+
+  return rawSeries
+    .map(normalizeChartSeriesItem)
+    .filter(Boolean) as BlockChartSeries[];
 }
 
 function isEngagementOverviewBlock(block: ReportVersionBlock) {
@@ -1791,7 +1882,14 @@ function ReportBlockSlide({
   const primaryMetric = getPrimaryMetric(block);
   const chartSource = getBlockChartSource(block);
   const chartPoints = getBlockChartPoints(block);
-  const hasChart = chartPoints.length > 0;
+  const chartSeries = getBlockChartSeries(block);
+  const supportsMultiSeries = MULTI_SERIES_BLOCKS.has(semanticName.toLowerCase());
+  const hasMultiSeriesChart =
+    supportsMultiSeries &&
+    chartSeries.length >= 2;
+  const hasChart = hasMultiSeriesChart
+    ? chartSeries.some((series) => series.points.length > 0)
+    : chartPoints.length > 0;
   const isEngagementOverview = isEngagementOverviewBlock(block);
   const renderModeName = hasChart ? "rich-data-slide" : "fallback";
   const chartMetricLabel =
@@ -1818,6 +1916,8 @@ function ReportBlockSlide({
   console.info("[DataSlides][chart.source]", {
     semanticName,
     source: chartSource.source,
+    hasMultiSeriesChart,
+    seriesCount: chartSeries.length,
   });
   if (isEngagementOverview) {
     const chartRecord =
@@ -2014,7 +2114,16 @@ function ReportBlockSlide({
           {hasChart ? (
             <MetricDailyChart
               points={chartPoints}
-              isAvailable={chartPoints.length > 0}
+              series={
+                hasMultiSeriesChart
+                  ? chartSeries.map((series) => ({
+                      label: series.label,
+                      sourceType: series.sourceType,
+                      points: series.points,
+                    }))
+                  : undefined
+              }
+              isAvailable={hasChart}
               metricLabel={chartMetricLabel}
               dark={templateId !== "modern"}
             />

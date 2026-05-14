@@ -341,7 +341,10 @@ function IntegrationsPageContent() {
               isMetaFrontendIntegrationKey(integration.integrationKey)
                 ? metaConnected
                   ? undefined
-                  : () => handleMetaConnectSource(integration.integrationKey)
+                  : () =>
+                      handleMetaConnectSource(
+                        integration.integrationKey as "facebook_pages" | "instagram_business"
+                      )
                 : undefined
             }
             secondaryActionLabel={

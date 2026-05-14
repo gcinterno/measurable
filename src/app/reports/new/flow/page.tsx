@@ -17,11 +17,12 @@ function NewReportFlowPageContent() {
   const sourceParam = searchParams.get("source");
   const integrationParam = searchParams.get("integration");
   const storedIntegrationContext = getIntegrationReportContext();
-  const integrationSource =
-    sourceParam || integrationParam || storedIntegrationContext?.source || "";
-  const selectedIntegration = integrationCatalog.find(
-    (integration) => integration.integrationKey === integrationSource
-  );
+  const selectedIntegrationKeys =
+    storedIntegrationContext?.selectedSources?.length
+      ? storedIntegrationContext.selectedSources
+      : sourceParam || integrationParam || storedIntegrationContext?.source
+        ? [String(sourceParam || integrationParam || storedIntegrationContext?.source)]
+        : [];
   const connectedIntegrationKey =
     storedIntegrationContext?.integrationId &&
       isMetaFrontendIntegrationKey(storedIntegrationContext?.source)
@@ -81,9 +82,10 @@ function NewReportFlowPageContent() {
 
           <IntegrationLibrary
             integrations={integrationCatalog}
-            selectedIntegrationKey={selectedIntegration?.integrationKey}
+            selectedIntegrationKeys={selectedIntegrationKeys}
             embedded
             connectedIntegrationKey={connectedIntegrationKey}
+            mode="report-flow"
           />
         </section>
       </div>

@@ -3,6 +3,7 @@ import type {
   ReportBlock,
   ReportDetail,
   ReportLocale,
+  ReportSource,
   ReportVersion,
   ReportVersionBlock,
   ReportVersionView,
@@ -49,7 +50,23 @@ type BackendReport = {
     logo_url?: string | null;
     logoUrl?: string | null;
   } | null;
+  report_sources?: BackendReportSource[] | null;
+  reportSources?: BackendReportSource[] | null;
   blocks?: BackendBlock[] | null;
+};
+
+type BackendReportSource = {
+  provider?: string | null;
+  source_type?: string | null;
+  sourceType?: string | null;
+  integration_id?: string | number | null;
+  integrationId?: string | number | null;
+  integration_account_id?: string | number | null;
+  integrationAccountId?: string | number | null;
+  dataset_id?: string | number | null;
+  datasetId?: string | number | null;
+  position?: number | null;
+  label?: string | null;
 };
 
 type BackendBlock = {
@@ -110,6 +127,7 @@ function normalizeReport(report: BackendReport, index: number): Report {
   const normalizedThumbnailUrl =
     report.thumbnailUrl || report.thumbnail_url || undefined;
   const branding = extractReportBranding(report);
+  const reportSources = normalizeReportSources(report.report_sources || report.reportSources);
 
   return {
     id: String(id),
@@ -117,6 +135,8 @@ function normalizeReport(report: BackendReport, index: number): Report {
     status: report.status || "No status",
     createdAt: report.created_at || report.createdAt || "",
     thumbnailUrl: normalizedThumbnailUrl,
+    sourceSummary: formatReportSourceSummary(reportSources),
+    reportSources,
     branding: {
       logoUrl: branding.logoUrl,
       source: branding.source,
@@ -244,6 +264,64 @@ function normalizeVersion(version: BackendVersion, index: number): ReportVersion
 
 function normalizeLocale(locale: string | null | undefined): ReportLocale {
   return locale === "es" ? "es" : "en";
+}
+
+function normalizeReportSource(source: BackendReportSource): ReportSource {
+  const integrationId = source.integrationId ?? source.integration_id;
+  const integrationAccountId =
+    source.integrationAccountId ?? source.integration_account_id;
+  const datasetId = source.datasetId ?? source.dataset_id;
+
+  return {
+    provider: source.provider || undefined,
+    sourceType: source.sourceType || source.source_type || undefined,
+    integrationId: integrationId !== null && integrationId !== undefined ? String(integrationId) : undefined,
+    integrationAccountId:
+      integrationAccountId !== null && integrationAccountId !== undefined
+        ? String(integrationAccountId)
+        : undefined,
+    datasetId: datasetId !== null && datasetId !== undefined ? String(datasetId) : undefined,
+    position: typeof source.position === "number" ? source.position : undefined,
+    label: source.label || undefined,
+  };
+}
+
+function normalizeReportSources(value: BackendReportSource[] | null | undefined) {
+  if (!Array.isArray(value)) {
+    return [] as ReportSource[];
+  }
+
+  return value.map(normalizeReportSource);
+}
+
+function humanizeSourceLabel(label: string) {
+  const normalized = label.trim().toLowerCase();
+
+  if (normalized === "facebook page" || normalized === "facebook pages") {
+    return "Facebook";
+  }
+
+  if (normalized === "instagram account" || normalized === "instagram business") {
+    return "Instagram";
+  }
+
+  return label.trim();
+}
+
+function formatReportSourceSummary(reportSources: ReportSource[]) {
+  if (reportSources.length === 0) {
+    return "";
+  }
+
+  const orderedSources = [...reportSources].sort(
+    (left, right) => (left.position ?? 0) - (right.position ?? 0)
+  );
+  const labels = orderedSources
+    .map((source) => source.label?.trim())
+    .filter(Boolean)
+    .map((label) => humanizeSourceLabel(label as string));
+
+  return labels.join(" + ");
 }
 
 export async function fetchReports(options?: { signal?: AbortSignal }) {
@@ -587,6 +665,54 @@ export async function createInstagramBusinessReport(input: {
   });
 
   console.log("create instagram business report response:", response);
+
+  return {
+    raw: response,
+    reportId: extractReportId(response),
+  };
+}
+
+export async function createMultiSourceReport(input: {
+  title: string;
+  timeframe: string;
+  startDate?: string;
+  endDate?: string;
+  requestedSlides?: number;
+  aiMode?: "standard" | "agents";
+  locale?: string;
+  sources: Array<{
+    provider: string;
+    sourceType: string;
+    integrationId: string;
+    integrationAccountId: string;
+    datasetId: string;
+    position: number;
+    label: string;
+  }>;
+}) {
+  const payload = {
+    title: input.title,
+    timeframe: input.timeframe,
+    start_date: input.startDate ?? null,
+    end_date: input.endDate ?? null,
+    requested_slides: input.requestedSlides,
+    ai_mode: input.aiMode || "standard",
+    locale: input.locale || getCurrentLocale(),
+    sources: input.sources.map((source) => ({
+      provider: source.provider,
+      source_type: source.sourceType,
+      integration_id: Number(source.integrationId),
+      integration_account_id: Number(source.integrationAccountId),
+      dataset_id: Number(source.datasetId),
+      position: source.position,
+      label: source.label,
+    })),
+  };
+
+  const response = await apiFetch<CreateReportResponse>("/reports/multi-source", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 
   return {
     raw: response,

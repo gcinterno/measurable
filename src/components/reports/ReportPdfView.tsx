@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { SlideRenderer } from "@/components/reports/SlideRenderer";
 import { buildExecutiveDarkViewModel } from "@/components/reports/report-view.helpers";
+import { getMeasurableBrandingOverride } from "@/lib/branding";
 import {
   fetchReportDetail,
   fetchReportVersions,
@@ -13,6 +14,7 @@ import { resolveReportBranding } from "@/lib/reports/branding";
 import { getReportBrandingSnapshot } from "@/lib/reports/branding-snapshots";
 import { getStoredReportTemplateSelection } from "@/lib/reports/template-selection";
 import { REPORT_SLIDE_THEME } from "@/lib/reports/theme";
+import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 import type {
   ReportDescription,
   ReportDetail,
@@ -102,6 +104,7 @@ export function ReportPdfView({ reportId, exportAuthToken }: ReportPdfViewProps)
     () => getStoredReportTemplateSelection(reportId),
     [reportId]
   );
+  const { workspace } = useActiveWorkspace();
 
   useEffect(() => {
     console.log("export page mounted", {
@@ -295,9 +298,12 @@ export function ReportPdfView({ reportId, exportAuthToken }: ReportPdfViewProps)
       resolveReportBranding(
         reportVersionBranding,
         reportDetail?.branding,
-        getReportBrandingSnapshot(reportId)
+        getReportBrandingSnapshot(reportId),
+        {
+          overrideBranding: getMeasurableBrandingOverride(workspace),
+        }
       ),
-    [reportDetail?.branding, reportId, reportVersionBranding]
+    [reportDetail?.branding, reportId, reportVersionBranding, workspace]
   );
   const exportReady =
     !loading &&

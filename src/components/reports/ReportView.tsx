@@ -13,6 +13,7 @@ import {
 } from "@/components/reports/SlideRenderer";
 import { buildExecutiveDarkViewModel } from "@/components/reports/report-view.helpers";
 import { FEATURES } from "@/config/features";
+import { getMeasurableBrandingOverride } from "@/lib/branding";
 import {
   deleteReport,
   exportReportPptx,
@@ -337,9 +338,12 @@ export default function ReportView({
       resolveReportBranding(
         reportVersionBranding,
         reportDetail?.branding,
-        getReportBrandingSnapshot(reportId)
+        getReportBrandingSnapshot(reportId),
+        {
+          overrideBranding: getMeasurableBrandingOverride(workspace),
+        }
       ),
-    [reportDetail?.branding, reportId, reportVersionBranding]
+    [reportDetail?.branding, reportId, reportVersionBranding, workspace]
   );
   const timeframeLabel =
     formatMetaTimeframeDateRange({
@@ -744,6 +748,11 @@ export default function ReportView({
               <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
                 {messages.reports.templateLabel}: {getReportTemplateLabel(selectedTemplateId)}
               </span>
+              {reportDetail?.sourceSummary ? (
+                <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
+                  {reportDetail.sourceSummary}
+                </span>
+              ) : null}
               {timeframeLabel ? (
                 <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
                   Period: {timeframeLabel}

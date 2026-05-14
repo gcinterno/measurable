@@ -11,6 +11,28 @@ const CHART_HEIGHT = 280;
 const CHART_PADDING_X = 12;
 const CHART_PADDING_Y = 10;
 
+type MetricChartSeries = {
+  label: string;
+  sourceType?: string;
+  points: ExecutiveDarkSeriesPoint[];
+};
+
+type ResolvedChartSeries = {
+  label: string;
+  sourceType?: string;
+  color: string;
+  values: Array<number | null>;
+};
+
+const CHART_COLOR_PALETTE = [
+  "#3b82f6",
+  "#a855f7",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#06b6d4",
+] as const;
+
 export function formatInsightDate(value: string) {
   const isoCandidate = /^\d{4}-\d{2}-\d{2}$/.test(value)
     ? `${value}T12:00:00`
@@ -52,32 +74,40 @@ function formatMetricValue(value: number) {
 }
 
 function buildReachPath(
-  points: ExecutiveDarkSeriesPoint[],
+  values: Array<number | null>,
   width: number,
   height: number,
   paddingX: number,
-  paddingY: number
+  paddingY: number,
+  minValue: number,
+  range: number
 ) {
-  if (points.length === 0) {
+  if (values.length === 0) {
     return "";
   }
 
-  const maxValue = Math.max(...points.map((point) => point.value), 1);
-  const minValue = Math.min(...points.map((point) => point.value), 0);
-  const range = Math.max(maxValue - minValue, 1);
   const plotWidth = Math.max(width - paddingX * 2, 1);
   const plotHeight = Math.max(height - paddingY * 2, 1);
+  const commands: string[] = [];
+  let hasStarted = false;
 
-  return points
-    .map((point, index) => {
+  values.forEach((pointValue, index) => {
+      if (pointValue === null) {
+        hasStarted = false;
+        return;
+      }
+
       const x =
-        points.length === 1
+        values.length === 1
           ? paddingX + plotWidth / 2
-          : paddingX + (index / (points.length - 1)) * plotWidth;
-      const y = paddingY + plotHeight - ((point.value - minValue) / range) * plotHeight;
-      return `${index === 0 ? "M" : "L"} ${x} ${y}`;
+          : paddingX + (index / (values.length - 1)) * plotWidth;
+      const y = paddingY + plotHeight - ((pointValue - minValue) / range) * plotHeight;
+      commands.push(`${hasStarted ? "L" : "M"} ${x} ${y}`);
+      hasStarted = true;
     })
-    .join(" ");
+  ;
+
+  return commands.join(" ");
 }
 
 function buildReachAreaPath(
@@ -93,8 +123,8 @@ function buildReachAreaPath(
   return `${path} L ${endX} ${baselineY} L ${startX} ${baselineY} Z`;
 }
 
-function getReachPointPosition(
-  point: ExecutiveDarkSeriesPoint,
+function getPointPosition(
+  pointValue: number,
   index: number,
   totalPoints: number,
   width: number,
@@ -110,7 +140,7 @@ function getReachPointPosition(
     totalPoints === 1
       ? paddingX + plotWidth / 2
       : paddingX + (index / (totalPoints - 1)) * plotWidth;
-  const y = paddingY + plotHeight - ((point.value - minValue) / range) * plotHeight;
+  const y = paddingY + plotHeight - ((pointValue - minValue) / range) * plotHeight;
 
   return { x, y };
 }
@@ -160,20 +190,104 @@ function getTooltipPosition(x: number, width: number) {
   };
 }
 
+function resolveSeriesColor(label: string, sourceType: string | undefined, index: number) {
+  const haystack = `${sourceType || ""} ${label}`.toLowerCase();
+
+  if (haystack.includes("facebook")) {
+    return "#3b82f6";
+  }
+
+  if (haystack.includes("instagram")) {
+    return "#a855f7";
+  }
+
+  return CHART_COLOR_PALETTE[index % CHART_COLOR_PALETTE.length];
+}
+
+function buildMultiSeriesInput(
+  points: ExecutiveDarkSeriesPoint[],
+  series: MetricChartSeries[] | undefined
+) {
+  if (!series || series.length < 2) {
+    return null;
+  }
+
+  const labels = new Map<string, { date: string; label: string }>();
+
+  series.forEach((entry) => {
+    entry.points.forEach((point) => {
+      const key = point.date || point.label;
+
+      if (!labels.has(key)) {
+        labels.set(key, {
+          date: point.date,
+          label: point.label || point.date,
+        });
+      }
+    });
+  });
+
+  if (labels.size === 0 && points.length > 0) {
+    points.forEach((point) => {
+      const key = point.date || point.label;
+      labels.set(key, {
+        date: point.date,
+        label: point.label || point.date,
+      });
+    });
+  }
+
+  const categories = Array.from(labels.values());
+  const resolvedSeries = series.map((entry, index) => {
+    const pointMap = new Map(
+      entry.points.map((point) => [point.date || point.label, point.value] as const)
+    );
+
+    return {
+      label: entry.label,
+      sourceType: entry.sourceType,
+      color: resolveSeriesColor(entry.label, entry.sourceType, index),
+      values: categories.map((category) => {
+        const key = category.date || category.label;
+        return pointMap.has(key) ? pointMap.get(key) ?? null : null;
+      }),
+    } satisfies ResolvedChartSeries;
+  });
+
+  return {
+    categories,
+    resolvedSeries,
+  };
+}
+
 export function MetricDailyChart({
   points,
+  series,
   isAvailable,
   metricLabel = "Espectadores",
   dark = true,
 }: {
   points: ExecutiveDarkSeriesPoint[];
+  series?: MetricChartSeries[];
   isAvailable: boolean;
   metricLabel?: string;
   dark?: boolean;
 }) {
   const [activePointIndex, setActivePointIndex] = useState<number | null>(null);
+  const multiSeriesInput = buildMultiSeriesInput(points, series);
+  const hasMultiSeries = Boolean(
+    multiSeriesInput && multiSeriesInput.resolvedSeries.length >= 2
+  );
+  const categories = multiSeriesInput?.categories || points;
+  const resolvedSeries = multiSeriesInput?.resolvedSeries || [];
+  const missingSeriesMessages = resolvedSeries
+    .filter((entry) => entry.values.every((value) => value === null))
+    .map((entry) => `${entry.label} did not provide daily trend data for this period.`);
+  const hasAnyMultiSeriesData = resolvedSeries.some((entry) =>
+    entry.values.some((value) => value !== null)
+  );
 
-  if (!isAvailable || points.length === 0) {
+  if ((!isAvailable || points.length === 0) && !hasAnyMultiSeriesData) {
     return (
       <div
         className={`relative overflow-visible rounded-[30px] border p-6 ${
@@ -210,24 +324,43 @@ export function MetricDailyChart({
   const height = CHART_HEIGHT;
   const paddingX = CHART_PADDING_X;
   const paddingY = CHART_PADDING_Y;
-  const path = buildReachPath(points, width, height, paddingX, paddingY);
   const baselineY = height - paddingY;
-  const areaPath = buildReachAreaPath(path, paddingX, width - paddingX, baselineY);
-  const midIndex = Math.floor(points.length / 2);
-  const lastIndex = points.length - 1;
-  const maxValue = Math.max(...points.map((point) => point.value), 0);
-  const minValue = Math.min(...points.map((point) => point.value), 0);
+  const categoryCount = categories.length;
+  const midIndex = Math.floor(categoryCount / 2);
+  const lastIndex = categoryCount - 1;
+  const numericValues = hasMultiSeries
+    ? resolvedSeries.flatMap((entry) => entry.values.filter((value): value is number => value !== null))
+    : points.map((point) => point.value);
+  const maxValue = Math.max(...numericValues, 0);
+  const minValue = Math.min(...numericValues, 0);
   const range = Math.max(maxValue - minValue, 1);
   const plotHeight = height - paddingY * 2;
   const xAxisPadding = `${(paddingX / width) * 100}%`;
-  const activePoint =
-    activePointIndex === null ? null : (points[activePointIndex] ?? null);
+  const activeCategory =
+    activePointIndex === null ? null : (categories[activePointIndex] ?? null);
+  const activeValues = activePointIndex === null
+    ? []
+    : hasMultiSeries
+      ? resolvedSeries
+          .map((entry) => ({
+            label: entry.label,
+            color: entry.color,
+            value: entry.values[activePointIndex] ?? null,
+          }))
+          .filter((entry) => entry.value !== null)
+      : [];
+  const activePrimaryValue =
+    activePointIndex === null
+      ? null
+      : hasMultiSeries
+        ? activeValues[0]?.value ?? null
+        : points[activePointIndex]?.value ?? null;
   const activeCoordinates =
-    activePoint && activePointIndex !== null
-      ? getReachPointPosition(
-          activePoint,
+    activePrimaryValue !== null && activePointIndex !== null
+      ? getPointPosition(
+          activePrimaryValue,
           activePointIndex,
-          points.length,
+          categoryCount,
           width,
           height,
           paddingX,
@@ -246,8 +379,8 @@ export function MetricDailyChart({
     0,
   ];
   const pointCoordinates = points.map((point, index) =>
-    getReachPointPosition(
-      point,
+    getPointPosition(
+      point.value,
       index,
       points.length,
       width,
@@ -256,6 +389,23 @@ export function MetricDailyChart({
       paddingY,
       minValue,
       range
+    )
+  );
+  const multiSeriesCoordinates = resolvedSeries.map((entry) =>
+    entry.values.map((value, index) =>
+      value === null
+        ? null
+        : getPointPosition(
+            value,
+            index,
+            categoryCount,
+            width,
+            height,
+            paddingX,
+            paddingY,
+            minValue,
+            range
+          )
     )
   );
 
@@ -291,7 +441,7 @@ export function MetricDailyChart({
         }`}
       />
       <div className="relative">
-        {activePoint && activeCoordinates ? (
+        {activeCategory && activeCoordinates ? (
           <div
             className={`absolute z-[9999] pointer-events-none rounded-2xl border px-4 py-3 shadow-xl backdrop-blur-md ${
               dark
@@ -307,10 +457,45 @@ export function MetricDailyChart({
             <p className={`text-xs font-semibold uppercase tracking-[0.18em] ${dark ? "text-sky-300" : "text-sky-700"}`}>
               {metricLabel}
             </p>
-            <p className="mt-1 text-lg font-semibold">{formatMetricValue(activePoint.value)}</p>
+            {hasMultiSeries ? (
+              <div className="mt-2 space-y-1.5">
+                {activeValues.map((entry) => (
+                  <div key={entry.label} className="flex items-center gap-2 text-sm">
+                    <span
+                      className="inline-block h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: entry.color }}
+                    />
+                    <span className={dark ? "text-slate-200" : "text-slate-700"}>{entry.label}</span>
+                    <span className="font-semibold">{formatMetricValue(entry.value as number)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-1 text-lg font-semibold">{formatMetricValue(activePrimaryValue ?? 0)}</p>
+            )}
             <p className={`mt-1 whitespace-nowrap text-xs ${dark ? "text-slate-300" : "text-slate-500"}`}>
-              {formatReachTooltipDate(activePoint.date)}
+              {formatReachTooltipDate(activeCategory?.date || activeCategory?.label || "")}
             </p>
+          </div>
+        ) : null}
+        {hasMultiSeries ? (
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            {resolvedSeries.map((entry) => (
+              <div
+                key={entry.label}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${
+                  dark
+                    ? "border-white/10 bg-white/[0.04] text-slate-200"
+                    : "border-slate-200 bg-slate-50 text-slate-700"
+                }`}
+              >
+                <span
+                  className="inline-block h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: entry.color }}
+                />
+                {entry.label}
+              </div>
+            ))}
           </div>
         ) : null}
         <div className="grid grid-cols-[56px_560px] gap-4">
@@ -345,33 +530,108 @@ export function MetricDailyChart({
                 className="absolute inset-0"
                 aria-hidden="true"
               >
-                <path
-                  d={areaPath}
-                  fill={dark ? "rgba(56,189,248,0.10)" : "rgba(14,165,233,0.12)"}
-                />
-                <path
-                  d={path}
-                  fill="none"
-                  stroke={dark ? "rgba(125,211,252,0.9)" : "rgba(2,132,199,0.85)"}
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                {pointCoordinates.map(({ x, y }, index) => {
-                  const point = points[index];
-                  return (
-                    <circle
-                      key={`${point.date}-${index}`}
-                      cx={x}
-                      cy={y}
-                      r="4.5"
-                      fill={dark ? "#0b1728" : "#ffffff"}
-                      stroke={dark ? "rgba(125,211,252,0.95)" : "rgba(2,132,199,0.9)"}
-                      strokeWidth="2"
+                {hasMultiSeries ? (
+                  <>
+                    {resolvedSeries.map((entry, seriesIndex) => {
+                      const path = buildReachPath(
+                        entry.values,
+                        width,
+                        height,
+                        paddingX,
+                        paddingY,
+                        minValue,
+                        range
+                      );
+
+                      return (
+                        <g key={`${entry.label}-${seriesIndex}`}>
+                          <path
+                            d={path}
+                            fill="none"
+                            stroke={entry.color}
+                            strokeWidth="4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          {multiSeriesCoordinates[seriesIndex]?.map((coordinate, pointIndex) => {
+                            if (!coordinate) {
+                              return null;
+                            }
+
+                            const pointValue = entry.values[pointIndex];
+
+                            if (pointValue === null) {
+                              return null;
+                            }
+
+                            return (
+                              <circle
+                                key={`${entry.label}-${pointIndex}`}
+                                cx={coordinate.x}
+                                cy={coordinate.y}
+                                r="4.5"
+                                fill={dark ? "#0b1728" : "#ffffff"}
+                                stroke={entry.color}
+                                strokeWidth="2"
+                              />
+                            );
+                          })}
+                        </g>
+                      );
+                    })}
+                  </>
+                ) : (
+                  <>
+                    <path
+                      d={buildReachAreaPath(
+                        buildReachPath(
+                          points.map((point) => point.value),
+                          width,
+                          height,
+                          paddingX,
+                          paddingY,
+                          minValue,
+                          range
+                        ),
+                        paddingX,
+                        width - paddingX,
+                        baselineY
+                      )}
+                      fill={dark ? "rgba(56,189,248,0.10)" : "rgba(14,165,233,0.12)"}
                     />
-                  );
-                })}
-                {activePoint && activeCoordinates ? (
+                    <path
+                      d={buildReachPath(
+                        points.map((point) => point.value),
+                        width,
+                        height,
+                        paddingX,
+                        paddingY,
+                        minValue,
+                        range
+                      )}
+                      fill="none"
+                      stroke={dark ? "rgba(125,211,252,0.9)" : "rgba(2,132,199,0.85)"}
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    {pointCoordinates.map(({ x, y }, index) => {
+                      const point = points[index];
+                      return (
+                        <circle
+                          key={`${point.date}-${index}`}
+                          cx={x}
+                          cy={y}
+                          r="4.5"
+                          fill={dark ? "#0b1728" : "#ffffff"}
+                          stroke={dark ? "rgba(125,211,252,0.95)" : "rgba(2,132,199,0.9)"}
+                          strokeWidth="2"
+                        />
+                      );
+                    })}
+                  </>
+                )}
+                {activeCategory && activeCoordinates ? (
                   <>
                     <line
                       x1={activeCoordinates.x}
@@ -413,15 +673,27 @@ export function MetricDailyChart({
           style={{ paddingLeft: xAxisPadding, paddingRight: xAxisPadding }}
         >
           <span className={`truncate ${dark ? "text-slate-500" : "text-slate-400"}`}>
-            {points[0]?.label || "Start"}
+            {categories[0]?.label || "Start"}
           </span>
           <span className={`truncate text-center ${dark ? "text-slate-500" : "text-slate-400"}`}>
-            {points[midIndex]?.label || "Mid"}
+            {categories[midIndex]?.label || "Mid"}
           </span>
           <span className={`truncate text-right ${dark ? "text-slate-500" : "text-slate-400"}`}>
-            {points[lastIndex]?.label || "End"}
+            {categories[lastIndex]?.label || "End"}
           </span>
         </div>
+        {missingSeriesMessages.length > 0 ? (
+          <div className="mt-4 space-y-2">
+            {missingSeriesMessages.map((message) => (
+              <p
+                key={message}
+                className={`text-sm leading-6 ${dark ? "text-slate-400" : "text-slate-500"}`}
+              >
+                {message}
+              </p>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );

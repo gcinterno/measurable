@@ -17,13 +17,16 @@ import {
 import { buildExecutiveDarkViewModel } from "@/components/reports/report-view.helpers";
 import { FEATURES } from "@/config/features";
 import { ApiError, isPlanLimitError } from "@/lib/api";
+import { getMeasurableBrandingOverride } from "@/lib/branding";
 import {
   createMetaPagesReport,
+  createMultiSourceReport,
   createInstagramBusinessReport,
   exportReportPptx,
   fetchLatestReportRenderData,
   fetchReports,
 } from "@/lib/api/reports";
+import { isMetaFrontendIntegrationKey } from "@/lib/integrations/catalog";
 import {
   formatMetaTimeframeDateRange,
   formatMetaTimeframeLabel,
@@ -41,6 +44,7 @@ import {
 import { usePreferencesStore } from "@/lib/store/preferences-store";
 import { getPlanCapabilities } from "@/lib/workspace/plan-limits";
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
+import type { SourceKey } from "@/lib/integrations/session";
 import type { ReportDescription, ReportDetail, ReportVersionBlock } from "@/types/report";
 
 const loadingQuotes = [
@@ -131,6 +135,18 @@ type ReviewStatus = "loading" | "error" | "empty" | "ready";
 function getReportTitle(blocks: ReportVersionBlock[]) {
   const titleBlock = blocks.find((block) => block.type === "title");
   return titleBlock?.data.text || "Generated report";
+}
+
+function getSourceDisplayLabel(sourceKey: SourceKey) {
+  return sourceKey === "instagram_business" ? "Instagram Account" : "Facebook Page";
+}
+
+function buildMultiSourceReportTitle(sourceKeys: SourceKey[]) {
+  return sourceKeys
+    .map((sourceKey) =>
+      sourceKey === "instagram_business" ? "Instagram" : "Facebook"
+    )
+    .join(" + ");
 }
 
 function getAiModeMetadata(
@@ -250,15 +266,11 @@ function NewReportFlowReviewPageContent() {
 
       generationStartedRef.current = true;
 
-      if (!storedIntegrationContext?.datasetId || !storedIntegrationContext.synced) {
-        setError(messages.reports.noDatasetYet);
-        setGenerationErrorDetail(messages.reports.noDatasetYet);
-        setReviewStatus("error");
-        setIntroComplete(true);
-        return;
-      }
-
       try {
+        if (!storedIntegrationContext) {
+          throw new Error("Report generation requires an active report creation session.");
+        }
+
         setReviewStatus("loading");
         setError("");
         const normalizedSelection = normalizeMetaTimeframeSelection({
@@ -267,13 +279,49 @@ function NewReportFlowReviewPageContent() {
           endDate: storedIntegrationContext.endDate,
         });
         const requestedAiMode = storedIntegrationContext.aiMode || "standard";
-        const requestedSlides = storedIntegrationContext.requestedSlides || 5;
-        const selectedEntityId = storedIntegrationContext.pageId || "";
-        const selectedSource = integrationSource || storedIntegrationContext.source || "";
+        const selectedSources =
+          storedIntegrationContext.selectedSources?.length
+            ? storedIntegrationContext.selectedSources
+            : integrationSource || storedIntegrationContext.source
+              ? [(integrationSource || storedIntegrationContext.source) as SourceKey]
+              : [];
+        const selectedAccountsBySource = storedIntegrationContext.selectedAccountsBySource;
+        const selectedSource = selectedSources[0] || integrationSource || storedIntegrationContext.source || "";
+        const selectedSourceKey = isMetaFrontendIntegrationKey(selectedSource)
+          ? selectedSource
+          : undefined;
+        const selectedEntityId =
+          (selectedSourceKey &&
+            selectedAccountsBySource?.[selectedSourceKey]?.accountId) ||
+          storedIntegrationContext.pageId ||
+          "";
         const isInstagramBusiness = selectedSource === "instagram_business";
+        const isMultiSource = selectedSources.length > 1;
+        const requestedSlides = isMultiSource
+          ? 10
+          : storedIntegrationContext.requestedSlides || 5;
+        const isSourceConfigured = (sourceKey: SourceKey) => {
+          const configuredSource = selectedAccountsBySource?.[sourceKey];
+
+          if (
+            configuredSource?.accountId &&
+            configuredSource.datasetId &&
+            configuredSource.syncStatus === "synced"
+          ) {
+            return true;
+          }
+
+          return (
+            selectedSources.length === 1 &&
+            sourceKey === selectedSource &&
+            Boolean(storedIntegrationContext.datasetId) &&
+            Boolean(storedIntegrationContext.synced)
+          );
+        };
 
         console.info("[MetaTimeframe][flow.review.generate]", {
           selectedIntegrationSource: selectedSource,
+          selectedSources,
           selectedEntityId,
           persistedContext: storedIntegrationContext,
           facebookPayload: {
@@ -296,6 +344,22 @@ function NewReportFlowReviewPageContent() {
           },
         });
 
+        if (
+          selectedSources.length === 0 ||
+          selectedSources.length > 2 ||
+          (!selectedAccountsBySource && selectedSources.length > 1)
+        ) {
+          throw new Error("Report generation requires one or two configured sources.");
+        }
+
+        if (
+          selectedSources.some(
+            (sourceKey) => !isSourceConfigured(sourceKey)
+          )
+        ) {
+          throw new Error("Each selected source must be synced before creating the report.");
+        }
+
         if (isInstagramBusiness) {
           if (!storedIntegrationContext.integrationId) {
             throw new Error("Instagram Business report generation requires integration_id.");
@@ -306,25 +370,61 @@ function NewReportFlowReviewPageContent() {
           }
         }
 
-        const report = isInstagramBusiness
-          ? await createInstagramBusinessReport({
-              integrationId: storedIntegrationContext.integrationId || "",
-              workspaceId: storedIntegrationContext.workspaceId,
-              accountId: selectedEntityId,
-              timeframe: normalizedSelection.key,
-              startDate: normalizedSelection.startDate,
-              endDate: normalizedSelection.endDate,
-              requestedSlides,
-              aiMode: requestedAiMode,
-            })
-          : await createMetaPagesReport({
-              datasetId: storedIntegrationContext.datasetId,
-              timeframe: normalizedSelection.key,
-              startDate: normalizedSelection.startDate,
-              endDate: normalizedSelection.endDate,
-              requestedSlides,
-              aiMode: requestedAiMode,
-            });
+        let report;
+
+        if (isMultiSource) {
+          if (!selectedAccountsBySource) {
+            throw new Error("Multi-source reports require configured source accounts.");
+          }
+
+          report = await createMultiSourceReport({
+            title: `${buildMultiSourceReportTitle(selectedSources)} report`,
+            timeframe: normalizedSelection.key,
+            startDate: normalizedSelection.startDate,
+            endDate: normalizedSelection.endDate,
+            requestedSlides,
+            aiMode: requestedAiMode,
+            locale: language,
+            sources: selectedSources.map((sourceKey, position) => ({
+              provider: "meta",
+              sourceType: sourceKey,
+              integrationId:
+                selectedAccountsBySource[sourceKey].integrationId ||
+                storedIntegrationContext.integrationId ||
+                "",
+              integrationAccountId:
+                selectedAccountsBySource[sourceKey].integrationAccountId ||
+                selectedAccountsBySource[sourceKey].accountId,
+              datasetId: selectedAccountsBySource[sourceKey].datasetId || "",
+              position,
+              label: getSourceDisplayLabel(sourceKey),
+            })),
+          });
+        } else if (isInstagramBusiness) {
+          report = await createInstagramBusinessReport({
+            integrationId: storedIntegrationContext.integrationId || "",
+            workspaceId: storedIntegrationContext.workspaceId,
+            accountId: selectedEntityId,
+            timeframe: normalizedSelection.key,
+            startDate: normalizedSelection.startDate,
+            endDate: normalizedSelection.endDate,
+            requestedSlides,
+            aiMode: requestedAiMode,
+          });
+        } else {
+          report = await createMetaPagesReport({
+            datasetId:
+              (selectedSourceKey &&
+                selectedAccountsBySource?.[selectedSourceKey]?.datasetId) ||
+              storedIntegrationContext.datasetId ||
+              "",
+            timeframe: normalizedSelection.key,
+            startDate: normalizedSelection.startDate,
+            endDate: normalizedSelection.endDate,
+            requestedSlides,
+            aiMode: requestedAiMode,
+          });
+        }
 
         if (!active) {
           return;
@@ -592,9 +692,12 @@ function NewReportFlowReviewPageContent() {
       resolveReportBranding(
         reportVersionBranding,
         reportDetail?.branding,
-        getReportBrandingSnapshot(reportId)
+        getReportBrandingSnapshot(reportId),
+        {
+          overrideBranding: getMeasurableBrandingOverride(workspace),
+        }
       ),
-    [reportDetail?.branding, reportId, reportVersionBranding]
+    [reportDetail?.branding, reportId, reportVersionBranding, workspace]
   );
   const timeframeLabel =
     formatMetaTimeframeDateRange({
