@@ -48,9 +48,15 @@ export function TopBar() {
     >
       <div className="flex items-center justify-between gap-2 sm:flex-wrap sm:items-center sm:gap-4">
         <div className="min-w-0 shrink-0">
-          <p className="text-sm font-semibold tracking-tight text-[var(--text-primary)] sm:text-xs sm:uppercase sm:tracking-[0.22em] sm:text-[var(--measurable-blue)]">
-            <span className="sm:hidden">Measurable</span>
-            <span className="hidden sm:inline">{messages.shell.measurableWorkspace}</span>
+          <div className="sm:hidden">
+            <img
+              src={darkMode ? "/brand/measurable-logo-white.svg" : "/brand/measurable-logo-black.svg"}
+              alt="Measurable"
+              className="h-8 w-auto object-contain"
+            />
+          </div>
+          <p className="hidden text-xs font-semibold uppercase tracking-[0.22em] text-[var(--measurable-blue)] sm:block">
+            {messages.shell.measurableWorkspace}
           </p>
         </div>
 

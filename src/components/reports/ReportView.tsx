@@ -88,24 +88,14 @@ function saveAssignments(assignments: Record<string, string>) {
   );
 }
 
-function getReportTitle(blocks: ReportVersionBlock[]) {
+function getReportTitle(blocks: ReportVersionBlock[], fallbackTitle?: string | null) {
   const titleBlock = blocks.find((block) => block.type === "title");
-  return titleBlock?.data.text || `Report ${blocks.length > 0 ? "Meta" : ""}`.trim();
+  return titleBlock?.data.text || fallbackTitle?.trim() || `Report ${blocks.length > 0 ? "Meta" : ""}`.trim();
 }
 
 function getReportSummary(blocks: ReportVersionBlock[]) {
   const textBlock = blocks.find((block) => block.type === "text" && block.data.text);
   return textBlock?.data.text || "";
-}
-
-function getShortReportSummary(summary: string) {
-  const trimmedSummary = summary.trim();
-
-  if (trimmedSummary.length <= 120) {
-    return trimmedSummary;
-  }
-
-  return `${trimmedSummary.slice(0, 117).trimEnd()}...`;
 }
 
 function getAiModeMetadata(
@@ -276,9 +266,11 @@ export default function ReportView({
     };
   }, [messages.reports.loadReportDescription, reportId]);
 
-  const title = useMemo(() => getReportTitle(blocks), [blocks]);
+  const title = useMemo(
+    () => getReportTitle(blocks, reportDetail?.title),
+    [blocks, reportDetail?.title]
+  );
   const summary = useMemo(() => getReportSummary(blocks), [blocks]);
-  const shortSummary = useMemo(() => getShortReportSummary(summary), [summary]);
   const aiModeMetadata = getAiModeMetadata(reportDetail, reportVersionDescription);
   const selectedTemplateId = useMemo(
     () => getStoredReportTemplateSelection(reportId),
@@ -291,8 +283,9 @@ export default function ReportView({
           reportDetail?.description?.timeframe ||
           reportVersionDescription?.timeframe ||
           null,
+        fallbackTitle: reportDetail?.title || null,
       }),
-    [blocks, reportDetail?.description?.timeframe, reportVersionDescription?.timeframe]
+    [blocks, reportDetail?.description?.timeframe, reportDetail?.title, reportVersionDescription?.timeframe]
   );
   useEffect(() => {
     console.info("[MetaTimeframe][render.full]", {
@@ -699,17 +692,6 @@ export default function ReportView({
     );
   }
 
-  if (blocks.length === 0) {
-    return (
-      <StateCard
-        title={messages.reports.contentUnavailable}
-        description={messages.reports.contentUnavailableDescription}
-        actionLabel={messages.reports.refresh}
-        onAction={() => window.location.reload()}
-      />
-    );
-  }
-
   return (
     <div className="space-y-8">
       {mountExportSurface ? (
@@ -728,12 +710,6 @@ export default function ReportView({
             <h1 className="text-3xl font-semibold tracking-[-0.05em] text-slate-950 sm:text-4xl">
               {title}
             </h1>
-            <p className="mt-2 text-sm leading-7 text-slate-600 sm:text-base">
-              {shortSummary ||
-                (language === "es"
-                  ? messages.reports.reportReadyDescription
-                  : messages.reports.reportReadyDescription)}
-            </p>
             <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-500">
               <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
                 {language === "es" ? "Creado" : "Created"}:{" "}

@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -615,7 +614,7 @@ function NewReportFlowSyncPageContent() {
             clickableHrefMap={{ 1: previousStepHref }}
           />
 
-          <div className="mt-8 space-y-5 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+          <div className="mt-8 space-y-5">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
                 {messages.reports.confirmedIntegration}
@@ -731,38 +730,9 @@ function NewReportFlowSyncPageContent() {
                     const isSourceSyncing = syncingSource === sourceKey;
 
                     return (
-                      <section
-                        key={sourceKey}
-                        className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm"
-                      >
-                        <div className="flex items-start gap-4">
-                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-50 ring-1 ring-slate-200">
-                            {config.logoUrl ? (
-                              <Image
-                                src={config.logoUrl}
-                                alt={config.logoAlt}
-                                width={24}
-                                height={24}
-                                className="h-6 w-6"
-                                unoptimized
-                              />
-                            ) : null}
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
-                              {config.displayName}
-                            </p>
-                            <h3 className="mt-2 text-xl font-semibold text-slate-950">
-                              {config.selectorTitle}
-                            </h3>
-                            <p className="mt-2 text-sm leading-6 text-slate-500">
-                              {config.selectorDescription}
-                            </p>
-                          </div>
-                        </div>
-
+                      <div key={sourceKey}>
                         {isSourceLoading ? (
-                          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6">
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6">
                             <div className="flex items-center justify-between gap-4 text-sm">
                               <span className="font-medium text-slate-700">
                                 {config.loadingLabel}
@@ -779,7 +749,7 @@ function NewReportFlowSyncPageContent() {
                             </div>
                           </div>
                         ) : sourceSelectorState.error ? (
-                          <div className="mt-5 rounded-[28px] border border-red-200 bg-white p-6 shadow-sm">
+                          <div className="rounded-[28px] border border-red-200 bg-white p-6 shadow-sm">
                             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-red-600">
                               {config.errorEyebrow}
                             </p>
@@ -803,45 +773,48 @@ function NewReportFlowSyncPageContent() {
                             </div>
                           </div>
                         ) : (
-                          <div className="mt-5">
-                            <AdAccountSelector
-                              accounts={sourceSelectorState.accounts}
-                              value={selectedAccount.accountId}
-                              onChange={(value) => handleSelectAccount(sourceKey, value)}
-                              loading={isSourceSyncing}
-                              eyebrow={config.selectorEyebrow}
-                              title=""
-                              description=""
-                              selectedLabel={config.selectedLabel}
-                              emptyMessage={config.emptyMessage}
-                            />
-                          </div>
+                          <AdAccountSelector
+                            accounts={sourceSelectorState.accounts}
+                            value={selectedAccount.accountId}
+                            onChange={(value) => handleSelectAccount(sourceKey, value)}
+                            loading={isSourceSyncing}
+                            eyebrow={config.selectorEyebrow}
+                            title={config.selectorTitle}
+                            description={config.selectorDescription}
+                            selectedLabel={config.selectedLabel}
+                            emptyMessage={config.emptyMessage}
+                            logoUrl={config.logoUrl}
+                            logoAlt={config.logoAlt}
+                            footer={
+                              <>
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleSync(sourceKey)}
+                                    disabled={isSourceLoading || isSourceSyncing || !selectedAccount.accountId}
+                                    className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                                  >
+                                    {isSourceSyncing ? (
+                                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                                    ) : null}
+                                    {isSourceSyncing
+                                      ? messages.reports.syncing
+                                      : selectedAccount.syncStatus === "synced"
+                                        ? "Sync again"
+                                        : `${messages.reports.syncData} ${config.displayName}`}
+                                  </button>
+                                  {selectedAccount.syncStatus === "synced" ? <SuccessBadge /> : null}
+                                </div>
+                                {selectedAccount.error ? (
+                                  <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                                    {selectedAccount.error}
+                                  </div>
+                                ) : null}
+                              </>
+                            }
+                          />
                         )}
-
-                        <div className="mt-4 flex flex-wrap items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => void handleSync(sourceKey)}
-                            disabled={isSourceLoading || isSourceSyncing || !selectedAccount.accountId}
-                            className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                          >
-                            {isSourceSyncing ? (
-                              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                            ) : null}
-                            {isSourceSyncing
-                              ? messages.reports.syncing
-                              : selectedAccount.syncStatus === "synced"
-                                ? "Sync again"
-                                : `${messages.reports.syncData} ${config.displayName}`}
-                          </button>
-                          {selectedAccount.syncStatus === "synced" ? <SuccessBadge /> : null}
-                        </div>
-                        {selectedAccount.error ? (
-                          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                            {selectedAccount.error}
-                          </div>
-                        ) : null}
-                      </section>
+                      </div>
                     );
                   })}
                 </div>

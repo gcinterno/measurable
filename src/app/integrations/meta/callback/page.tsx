@@ -147,10 +147,7 @@ function MetaIntegrationCallbackContent() {
         }
 
         router.replace(
-          storedContext?.postConnectRedirect ||
-            `/integrations/meta?meta_state=connected&integration_id=${encodeURIComponent(
-              refreshedIntegrationId
-            )}&pages_count=${encodeURIComponent(String(pagesCount))}`
+          storedContext?.postConnectRedirect || "/integrations"
         );
         return;
       }

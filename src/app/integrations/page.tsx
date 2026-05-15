@@ -166,7 +166,7 @@ function IntegrationsPageContent() {
           pageId: undefined,
           pageName: undefined,
           synced: false,
-          postConnectRedirect: undefined,
+          postConnectRedirect: "/integrations",
         });
       }
 
@@ -270,7 +270,7 @@ function IntegrationsPageContent() {
       pageId: undefined,
       pageName: undefined,
       synced: false,
-      postConnectRedirect: undefined,
+      postConnectRedirect: "/integrations",
     });
 
     void handleMetaConnect();

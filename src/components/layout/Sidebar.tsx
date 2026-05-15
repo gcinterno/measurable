@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { PlanLimitsSummary } from "@/components/workspace/PlanLimitsSummary";
@@ -120,6 +121,8 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
   const { workspace, reportsUsedThisMonth } = useActiveWorkspace({
     includeReportsUsage: true,
   });
+  const [collapsed, setCollapsed] = useState(false);
+  const isCollapsed = !mobile && collapsed;
 
   async function handleLogout() {
     startLogoutInProgress();
@@ -141,24 +144,48 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
       className={`flex shrink-0 flex-col border-white/10 bg-[linear-gradient(180deg,var(--navy-950)_0%,var(--navy-900)_100%)] text-white ${
         mobile
           ? "h-full w-full max-w-[20rem] border-r"
-          : "sticky top-0 hidden h-screen w-72 border-r md:flex"
+          : isCollapsed
+            ? "sticky top-0 hidden h-screen w-24 border-r md:flex"
+            : "sticky top-0 hidden h-screen w-72 border-r md:flex"
       }`}
     >
-      <div className="border-b border-white/10 px-5 py-6 md:px-6 md:py-7">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--measurable-blue)] text-sm font-semibold tracking-[0.22em] text-white">
-              M
-            </div>
-            <div>
-              <p className="text-lg font-semibold">Measurable</p>
-              <p className="text-sm text-slate-400">{messages.shell.decisionReadyReporting}</p>
-            </div>
+      <div
+        className={`border-b border-white/10 py-6 md:py-7 ${
+          isCollapsed ? "px-3" : "px-5 md:px-6"
+        }`}
+      >
+        <div className={isCollapsed ? "flex flex-col items-center gap-3" : "flex items-center justify-between gap-4"}>
+          <div className={`min-w-0 ${isCollapsed ? "flex justify-center" : "flex-1"}`}>
+            <img
+              src={isCollapsed ? "/brand/measurable-logo.svg" : "/brand/measurable-logo-white.svg"}
+              alt="Measurable"
+              className={`w-auto object-contain ${
+                isCollapsed ? "h-11 max-w-[3rem]" : "h-16 max-w-[10.75rem]"
+              }`}
+            />
           </div>
+          {!mobile ? (
+            <button
+              type="button"
+              onClick={() => setCollapsed((current) => !current)}
+              aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className={`flex shrink-0 items-center justify-center rounded-[1.7rem] border border-white/10 bg-white/6 text-slate-300 transition hover:bg-white/10 hover:text-white ${
+                isCollapsed ? "h-12 w-12" : "h-14 w-14"
+              }`}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                className={`h-5 w-5 stroke-current transition ${isCollapsed ? "rotate-180" : ""}`}
+              >
+                <path d="M15 6l-6 6 6 6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          ) : null}
         </div>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1 px-4 py-5 md:py-6">
+      <nav className={`flex flex-1 flex-col gap-1 py-5 md:py-6 ${isCollapsed ? "px-3" : "px-4"}`}>
         {items.map((item) => {
           const active = isActive(pathname, item);
 
@@ -169,23 +196,24 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
               onClick={onNavigate}
               aria-label={item.label}
               className={`flex items-center rounded-2xl text-sm font-medium transition ${
-                "gap-3 px-4 py-3"
+                isCollapsed ? "justify-center px-3 py-3.5" : "gap-3 px-4 py-3"
               } ${
                 active
                   ? "bg-[rgba(23,73,255,0.22)] text-white shadow-[inset_0_0_0_1px_rgba(191,215,237,0.18)]"
                   : "text-slate-400 hover:bg-white/6 hover:text-white"
               }`}
+              title={isCollapsed ? item.label : undefined}
             >
               <NavIcon icon={item.icon} active={active} />
-              <span>{item.label}</span>
+              {!isCollapsed ? <span>{item.label}</span> : null}
             </Link>
           );
         })}
       </nav>
 
-      <div className="border-t border-white/10 px-5 py-5 md:px-6">
-        <div className="rounded-2xl bg-white/6 p-4">
-          {showPlanSummary && workspace ? (
+      <div className={`border-t border-white/10 py-5 ${isCollapsed ? "px-3" : "px-5 md:px-6"}`}>
+        <div className={`rounded-2xl bg-white/6 ${isCollapsed ? "p-2.5" : "p-4"}`}>
+          {!isCollapsed && showPlanSummary && workspace ? (
             <div className="mb-4">
               <PlanLimitsSummary
                 workspace={workspace}
@@ -195,7 +223,7 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
             </div>
           ) : null}
 
-          {!FEATURES.ENABLE_APP_REVIEW_MODE && showUpgradePlanButton ? (
+          {!isCollapsed && !FEATURES.ENABLE_APP_REVIEW_MODE && showUpgradePlanButton ? (
             <Link
               href="/plans"
               onClick={onNavigate}
@@ -217,11 +245,32 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
           <button
             type="button"
             onClick={() => void handleLogout()}
-            className={`w-full rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-sm font-medium text-white transition hover:bg-white/12 ${
-              FEATURES.ENABLE_APP_REVIEW_MODE || !showUpgradePlanButton ? "" : "mt-4"
+            aria-label={messages.shell.logout}
+            title={isCollapsed ? messages.shell.logout : undefined}
+            className={`rounded-2xl border border-white/10 bg-white/8 text-sm font-medium text-white transition hover:bg-white/12 ${
+              isCollapsed
+                ? "flex h-12 w-full items-center justify-center"
+                : `w-full px-4 py-3 ${FEATURES.ENABLE_APP_REVIEW_MODE || !showUpgradePlanButton ? "" : "mt-4"}`
             }`}
           >
-            {messages.shell.logout}
+            {isCollapsed ? (
+              <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 stroke-current">
+                <path
+                  d="M10 6.75H8.75A2.75 2.75 0 0 0 6 9.5v5A2.75 2.75 0 0 0 8.75 17.25H10"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M13 8.5 17 12l-4 3.5M17 12H9.5"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            ) : (
+              messages.shell.logout
+            )}
           </button>
         </div>
       </div>

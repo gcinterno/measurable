@@ -669,12 +669,16 @@ export function buildExecutiveDarkViewModel(
   blocks: ReportVersionBlock[],
   options?: {
     descriptionTimeframe?: ExecutiveDarkTimeframe | null;
+    fallbackTitle?: string | null;
   }
 ): ExecutiveDarkViewModel {
   const parseErrors: ExecutiveDarkParseError[] = [];
 
   const titleBlock = blocks.find((block) => block.type === "title");
-  const title = getTrimmedText(titleBlock?.data.text) || "Executive Monthly Report";
+  const title =
+    getTrimmedText(titleBlock?.data.text) ||
+    getTrimmedText(options?.fallbackTitle) ||
+    "Executive Monthly Report";
 
   const textBlocks = blocks
     .filter((block) => block.type === "text")

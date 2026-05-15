@@ -1,6 +1,6 @@
 "use client";
 
-import { TouchEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ReactNode, TouchEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { useI18n } from "@/components/providers/LanguageProvider";
@@ -20,6 +20,9 @@ type AdAccountSelectorProps = {
   title?: string;
   description?: string;
   selectedLabel?: string;
+  logoUrl?: string;
+  logoAlt?: string;
+  footer?: ReactNode;
 };
 
 export function AdAccountSelector({
@@ -32,6 +35,9 @@ export function AdAccountSelector({
   title,
   description,
   selectedLabel,
+  logoUrl,
+  logoAlt,
+  footer,
 }: AdAccountSelectorProps) {
   const { messages } = useI18n();
   const [open, setOpen] = useState(false);
@@ -246,9 +252,19 @@ export function AdAccountSelector({
 
   return (
     <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
-        {eyebrow || messages.integrationsPage.facebookPages}
-      </p>
+      <div className="flex items-center gap-3">
+        {logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={logoUrl}
+            alt={logoAlt || `${eyebrow || messages.integrationsPage.facebookPages} logo`}
+            className="h-9 w-9 rounded-xl object-contain"
+          />
+        ) : null}
+        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
+          {eyebrow || messages.integrationsPage.facebookPages}
+        </p>
+      </div>
       <h3 className="mt-3 text-2xl font-semibold text-slate-950">
         {title || messages.integrationsPage.selectPage}
       </h3>
@@ -335,6 +351,7 @@ export function AdAccountSelector({
           ) : null}
         </div>
       )}
+      {footer ? <div className="mt-4">{footer}</div> : null}
       {mobileSheet}
     </section>
   );

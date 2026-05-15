@@ -27,6 +27,39 @@ type OauthHashState = {
   resolved: boolean;
 };
 
+const loginQuotes = [
+  {
+    quote:
+      "Measuring our steps is what differentiate good from great results",
+    author: "Luis. F Aragón | Measurable Founder",
+  },
+  {
+    quote:
+      "What is not measured cannot be improved. What is not improved always deteriorates.",
+    author: "William Thomson (Lord Kelvin)",
+  },
+  {
+    quote:
+      "Without data, you’re just another person with an opinion.",
+    author: "W. Edwards Deming",
+  },
+  {
+    quote:
+      "Measuring progress through small actions is what turns dreams into results.",
+    author: "Tony Robbins",
+  },
+  {
+    quote:
+      "If you can measure it, you can improve it.",
+    author: "Peter Drucker",
+  },
+  {
+    quote:
+      "Good reporting tracks performance. Great reporting explains what to do next.",
+    author: "Measurable",
+  },
+];
+
 function readOauthHashState(): OauthHashState {
   if (typeof window === "undefined") {
     return {
@@ -73,6 +106,7 @@ function LoginPageContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [quoteIndex, setQuoteIndex] = useState(0);
   const [oauthHashState, setOauthHashState] = useState<OauthHashState>({
     accessToken: "",
     errorCode: "",
@@ -101,6 +135,16 @@ function LoginPageContent() {
 
   useEffect(() => {
     setOauthHashState(readOauthHashState());
+  }, []);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setQuoteIndex((currentIndex) => (currentIndex + 1) % loginQuotes.length);
+    }, 5000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
   }, []);
 
   useEffect(() => {
@@ -244,15 +288,14 @@ function LoginPageContent() {
         <section className="flex min-h-screen items-center justify-center px-6 py-10 sm:px-10 lg:px-16 xl:px-20">
           <div className="w-full max-w-md text-center">
             <div className="mb-8">
-              <p className="brand-wordmark text-sm font-semibold uppercase tracking-[0.18em]">
-                Measurable
-              </p>
+              <img
+                src="/brand/measurable-logo-black.svg"
+                alt="Measurable"
+                className="mx-auto h-28 w-auto sm:h-32"
+              />
               <h1 className="mt-4 text-3xl font-semibold tracking-tight text-[var(--text-primary)] sm:text-4xl">
                 {pageTitle}
               </h1>
-              <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)] sm:text-base">
-                {messages.login.description}
-              </p>
             </div>
 
             <form
@@ -317,22 +360,22 @@ function LoginPageContent() {
         <aside className="hidden border-l border-[var(--border-soft)] bg-[var(--surface)] lg:flex lg:min-h-screen lg:flex-col lg:justify-between lg:px-16 lg:py-14 xl:px-20">
           <div className="max-w-lg">
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--measurable-blue)]">
-              {messages.login.platformUpdates}
+              AI reporting workspace
             </p>
             <h2 className="mt-4 text-4xl font-semibold tracking-tight text-[var(--text-primary)]">
-              {messages.login.updatesTitle}
+              Create AI Marketing Reports for your team &amp; Clients
             </h2>
             <p className="mt-4 text-base leading-7 text-[var(--text-secondary)]">
-              {messages.login.updatesDescription}
+              AI-Interpreted reports for freelancers, agencies and businesses. Start measuring your results.
             </p>
           </div>
 
           <div className="brand-card p-8">
             <p className="text-sm font-semibold text-[var(--text-primary)]">
-              {messages.login.comingSoon}
+              “{loginQuotes[quoteIndex]?.quote}”
             </p>
             <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
-              {messages.login.comingSoonDescription}
+              {loginQuotes[quoteIndex]?.author}
             </p>
           </div>
         </aside>
