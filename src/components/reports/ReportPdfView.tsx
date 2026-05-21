@@ -93,7 +93,9 @@ export function ReportPdfView({ reportId, exportAuthToken }: ReportPdfViewProps)
   const [reportLocale, setReportLocale] = useState<ReportLocale>("en");
   const [reportVersionBranding, setReportVersionBranding] = useState<{
     logoUrl?: string;
+    brandName?: string;
     source?: string;
+    brandNameSource?: string;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [fontsReady, setFontsReady] = useState(false);
@@ -296,20 +298,54 @@ export function ReportPdfView({ reportId, exportAuthToken }: ReportPdfViewProps)
   const resolvedBranding = useMemo(
     () =>
       resolveReportBranding(
-        reportVersionBranding,
-        reportDetail?.branding,
-        workspace?.branding?.logoUrl
-          ? {
-              logoUrl: workspace.branding.logoUrl,
-              source: workspace.branding.source || "workspace.branding.logoUrl",
-            }
-          : getReportBrandingSnapshot(reportId),
         {
-          overrideBranding: getMeasurableBrandingOverride(workspace),
+          id: reportId,
+          templateId: selectedTemplateId,
+          branding: reportVersionBranding,
+          report: {
+            branding: reportDetail?.branding,
+          },
+        },
+        workspace?.branding
+          ? {
+              branding: {
+                logoUrl: workspace.branding.logoUrl,
+                brandName: workspace.branding.brandName,
+                source: workspace.branding.source || "workspace.branding.logoUrl",
+                brandNameSource:
+                  workspace.branding.brandNameSource || "workspace.branding.brand_name",
+              },
+            }
+          : {
+              branding: getReportBrandingSnapshot(reportId),
+            },
+        {
+          branding: getMeasurableBrandingOverride(workspace),
         }
       ),
-    [reportDetail?.branding, reportId, reportVersionBranding, workspace]
+    [reportDetail?.branding, reportId, reportVersionBranding, selectedTemplateId, workspace]
   );
+  useEffect(() => {
+    console.info("[ReportBranding][export.cover]", {
+      report_id: reportId,
+      template: selectedTemplateId,
+      branding_received: {
+        report_version: reportVersionBranding,
+        report: reportDetail?.branding,
+        workspace: workspace?.branding,
+      },
+      logoUrl_resuelto: resolvedBranding.logoUrl,
+      brandName_resuelto: resolvedBranding.brandName,
+    });
+  }, [
+    reportDetail?.branding,
+    reportId,
+    reportVersionBranding,
+    resolvedBranding.brandName,
+    resolvedBranding.logoUrl,
+    selectedTemplateId,
+    workspace?.branding,
+  ]);
   const exportReady =
     !loading &&
     !error &&
@@ -491,6 +527,7 @@ export function ReportPdfView({ reportId, exportAuthToken }: ReportPdfViewProps)
       >
         <div className="export-slides">
           <SlideRenderer
+            reportId={reportId}
             model={viewModel}
             renderMode="export"
             branding={resolvedBranding}

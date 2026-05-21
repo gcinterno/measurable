@@ -1,18 +1,25 @@
-import { ClosingSlide } from "@/components/reports/slides/ClosingSlide";
 import { CoverSlide } from "@/components/reports/slides/CoverSlide";
-import { GeneralInsightsReportSlide } from "@/components/reports/slides/GeneralInsightsReportSlide";
 import { ImpressionsReportSlide } from "@/components/reports/slides/ImpressionsReportSlide";
 import { ReachSlide } from "@/components/reports/slides/ReachSlide";
+import { SummarySlide } from "@/components/reports/slides/SummarySlide";
 import type { ReportTemplate } from "@/lib/reports/templates";
 import {
-  buildClosingSlideModel,
   buildCoverSlideModel,
-  buildGeneralInsightsSlideModel,
+  buildEngagementSlideModel,
   buildImpressionsSlideModel,
   buildReachSlideModel,
+  buildSummarySlideModel,
   type DefaultTemplateContext,
 } from "@/lib/reports/templates/default-view-models";
 
+/*
+ * Source of truth for the official 5-slide report structure:
+ * 1. Cover
+ * 2. Reach
+ * 3. Impressions
+ * 4. Engagement
+ * 5. Summary
+ */
 export const DEFAULT_REPORT_TEMPLATE: ReportTemplate<DefaultTemplateContext> = {
   id: "default",
   theme: "minimal-dark",
@@ -46,21 +53,21 @@ export const DEFAULT_REPORT_TEMPLATE: ReportTemplate<DefaultTemplateContext> = {
     },
     {
       id: "04",
-      key: "general-insights",
-      layout: "kpi-grid",
+      key: "engagement",
+      layout: "metric",
       eyebrow: "",
       title: "",
-      component: GeneralInsightsReportSlide,
-      buildModel: buildGeneralInsightsSlideModel,
+      component: ReachSlide,
+      buildModel: buildEngagementSlideModel,
     },
     {
       id: "05",
-      key: "closing",
-      layout: "hero",
+      key: "summary",
+      layout: "summary",
       eyebrow: "",
       title: "",
-      component: ClosingSlide,
-      buildModel: buildClosingSlideModel,
+      component: SummarySlide,
+      buildModel: buildSummarySlideModel,
     },
   ],
 };

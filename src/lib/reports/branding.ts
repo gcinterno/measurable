@@ -1,11 +1,169 @@
+import { MEASURABLE_BRAND_LOGO_URL } from "@/lib/branding";
+
+export const DEFAULT_REPORT_BRAND_NAME = "Measurableapp.com Report Generator";
+
 type BrandingInput =
   | {
       logoUrl?: string | null;
+      logo_url?: string | null;
+      resolved_logo_url?: string | null;
+      resolvedLogoUrl?: string | null;
+      brand_logo_url?: string | null;
+      brandLogoUrl?: string | null;
+      brandName?: string | null;
+      brand_name?: string | null;
+      resolved_brand_name?: string | null;
+      resolvedBrandName?: string | null;
       source?: string;
+      brandNameSource?: string;
+      [key: string]: unknown;
     }
   | null
   | undefined;
 
+type ReportBrandingPayload =
+  | {
+      id?: string | number | null;
+      template?: string | null;
+      templateId?: string | null;
+      branding?: BrandingInput;
+      workspace?: {
+        branding?: BrandingInput;
+        logo_url?: string | null;
+        logoUrl?: string | null;
+        brand_name?: string | null;
+        brandName?: string | null;
+        [key: string]: unknown;
+      } | null;
+      report?: {
+        branding?: BrandingInput;
+        brand_logo_url?: string | null;
+        brandLogoUrl?: string | null;
+        logo_url?: string | null;
+        logoUrl?: string | null;
+        brand_name?: string | null;
+        brandName?: string | null;
+        [key: string]: unknown;
+      } | null;
+      brand_logo_url?: string | null;
+      brandLogoUrl?: string | null;
+      logo_url?: string | null;
+      logoUrl?: string | null;
+      brand_name?: string | null;
+      brandName?: string | null;
+      [key: string]: unknown;
+    }
+  | null
+  | undefined;
+
+type ResolvedReportBranding = {
+  logoUrl: string;
+  brandName: string;
+  source: string;
+  brandNameSource: string;
+};
+
+type BrandingEntity =
+  | {
+      branding?: BrandingInput;
+      [key: string]: unknown;
+    }
+  | null
+  | undefined;
+
+function getFirstString(
+  input: BrandingInput,
+  keys: string[]
+) {
+  if (!input) {
+    return null;
+  }
+
+  for (const key of keys) {
+    const value = input[key];
+
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function getBrandingValue(input: BrandingInput) {
+  return {
+    logoUrl: getFirstString(input, [
+      "resolved_logo_url",
+      "resolvedLogoUrl",
+      "brand_logo_url",
+      "brandLogoUrl",
+      "logoUrl",
+      "logo_url",
+    ]),
+    brandName: getFirstString(input, [
+      "resolved_brand_name",
+      "resolvedBrandName",
+      "brand_name",
+      "brandName",
+    ]),
+    logoSource:
+      getFirstString(input, ["source"]) ||
+      "branding.logo_url",
+    brandNameSource:
+      getFirstString(input, ["brandNameSource"]) ||
+      "branding.brand_name",
+  };
+}
+
+function pickResolvedBranding(
+  candidates: Array<{ label: string; value: BrandingInput }>
+): ResolvedReportBranding {
+  const resolvedLogo =
+    candidates
+      .map((candidate) => ({
+        label: candidate.label,
+        ...getBrandingValue(candidate.value),
+      }))
+      .find((candidate) => candidate.logoUrl) || null;
+  const resolvedBrandName =
+    candidates
+      .map((candidate) => ({
+        label: candidate.label,
+        ...getBrandingValue(candidate.value),
+      }))
+      .find((candidate) => candidate.brandName) || null;
+
+  return {
+    logoUrl: resolvedLogo?.logoUrl || MEASURABLE_BRAND_LOGO_URL,
+    brandName: resolvedBrandName?.brandName || DEFAULT_REPORT_BRAND_NAME,
+    source: resolvedLogo
+      ? `${resolvedLogo.label}.${resolvedLogo.logoSource}`
+      : "fallback.measurable.brand.logo",
+    brandNameSource: resolvedBrandName
+      ? `${resolvedBrandName.label}.${resolvedBrandName.brandNameSource}`
+      : "fallback.measurable.brand_name",
+  };
+}
+
+function looksLikeReportPayload(value: BrandingInput | ReportBrandingPayload) {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      ("branding" in value || "workspace" in value || "report" in value)
+  );
+}
+
+export function resolveReportBranding(
+  report: ReportBrandingPayload
+): ResolvedReportBranding;
+export function resolveReportBranding(
+  report?: ReportBrandingPayload,
+  workspace?: BrandingEntity,
+  user?: BrandingEntity,
+  options?: {
+    overrideBranding?: BrandingInput;
+  }
+): ResolvedReportBranding;
 export function resolveReportBranding(
   reportVersionBranding?: BrandingInput,
   reportBranding?: BrandingInput,
@@ -13,27 +171,61 @@ export function resolveReportBranding(
   options?: {
     overrideBranding?: BrandingInput;
   }
-) {
-  const overrideLogo = options?.overrideBranding?.logoUrl?.trim() || null;
-  const reportVersionLogo = reportVersionBranding?.logoUrl?.trim() || null;
-  const reportLogo = reportBranding?.logoUrl?.trim() || null;
-  const fallbackLogo = fallbackBranding?.logoUrl?.trim() || null;
+): ResolvedReportBranding;
+export function resolveReportBranding(
+  reportOrBranding?: BrandingInput | ReportBrandingPayload,
+  reportBranding?: BrandingInput,
+  fallbackBranding?: BrandingInput,
+  options?: {
+    overrideBranding?: BrandingInput;
+  }
+): ResolvedReportBranding {
+  if (
+    arguments.length <= 1 &&
+    looksLikeReportPayload(reportOrBranding)
+  ) {
+    const report = reportOrBranding as ReportBrandingPayload;
 
-  return {
-    logoUrl:
-      reportVersionLogo ??
-      reportLogo ??
-      fallbackLogo ??
-      overrideLogo ??
-      null,
-    source: reportVersionLogo
-      ? `reportVersion.${reportVersionBranding?.source || "branding.logo_url"}`
-      : reportLogo
-        ? `report.${reportBranding?.source || "branding.logo_url"}`
-        : fallbackLogo
-          ? `fallback.${fallbackBranding?.source || "branding.logo_url"}`
-          : overrideLogo
-            ? `override.${options?.overrideBranding?.source || "branding.logo_url"}`
-            : "empty",
-  };
+    return pickResolvedBranding([
+      { label: "branding", value: report?.branding },
+      { label: "workspace.branding", value: report?.workspace?.branding },
+      { label: "workspace", value: report?.workspace },
+      { label: "report.branding", value: report?.report?.branding },
+      { label: "report", value: report?.report },
+      { label: "root", value: report },
+    ]);
+  }
+
+  if (
+    arguments.length >= 2 &&
+    looksLikeReportPayload(reportOrBranding) &&
+    (reportBranding === null ||
+      reportBranding === undefined ||
+      (typeof reportBranding === "object" && "branding" in (reportBranding as object)))
+  ) {
+    const report = reportOrBranding as ReportBrandingPayload;
+    const workspace = reportBranding as BrandingEntity;
+    const user = fallbackBranding as BrandingEntity;
+
+    return pickResolvedBranding([
+      { label: "report.branding", value: report?.branding },
+      { label: "report.workspace.branding", value: report?.workspace?.branding },
+      { label: "report.workspace", value: report?.workspace },
+      { label: "workspace.branding", value: workspace?.branding },
+      { label: "workspace", value: workspace },
+      { label: "report.report.branding", value: report?.report?.branding },
+      { label: "report.report", value: report?.report },
+      { label: "user.branding", value: user?.branding },
+      { label: "user", value: user },
+      { label: "report.root", value: report },
+      { label: "override", value: options?.overrideBranding },
+    ]);
+  }
+
+  return pickResolvedBranding([
+    { label: "reportVersion", value: reportOrBranding as BrandingInput },
+    { label: "report", value: reportBranding },
+    { label: "fallback", value: fallbackBranding },
+    { label: "override", value: options?.overrideBranding },
+  ]);
 }

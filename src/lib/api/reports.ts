@@ -42,13 +42,29 @@ type BackendReport = {
   workspace_name?: string | null;
   workspaceName?: string | null;
   description?: unknown;
+  brand_name?: string | null;
+  brandName?: string | null;
+  brand_logo_url?: string | null;
+  brandLogoUrl?: string | null;
   logo_url?: string | null;
   logoUrl?: string | null;
+  resolved_logo_url?: string | null;
+  resolvedLogoUrl?: string | null;
+  resolved_brand_name?: string | null;
+  resolvedBrandName?: string | null;
   thumbnail_url?: string | null;
   thumbnailUrl?: string | null;
   branding?: {
+    resolved_logo_url?: string | null;
+    resolvedLogoUrl?: string | null;
+    brand_logo_url?: string | null;
+    brandLogoUrl?: string | null;
     logo_url?: string | null;
     logoUrl?: string | null;
+    brand_name?: string | null;
+    brandName?: string | null;
+    resolved_brand_name?: string | null;
+    resolvedBrandName?: string | null;
   } | null;
   report_sources?: BackendReportSource[] | null;
   reportSources?: BackendReportSource[] | null;
@@ -90,11 +106,27 @@ type BackendVersion = {
   created_at?: string | null;
   createdAt?: string | null;
   locale?: string | null;
+  brand_name?: string | null;
+  brandName?: string | null;
+  brand_logo_url?: string | null;
+  brandLogoUrl?: string | null;
   logo_url?: string | null;
   logoUrl?: string | null;
+  resolved_logo_url?: string | null;
+  resolvedLogoUrl?: string | null;
+  resolved_brand_name?: string | null;
+  resolvedBrandName?: string | null;
   branding?: {
+    resolved_logo_url?: string | null;
+    resolvedLogoUrl?: string | null;
+    brand_logo_url?: string | null;
+    brandLogoUrl?: string | null;
     logo_url?: string | null;
     logoUrl?: string | null;
+    brand_name?: string | null;
+    brandName?: string | null;
+    resolved_brand_name?: string | null;
+    resolvedBrandName?: string | null;
   } | null;
   blocks?: BackendBlock[] | null;
 };
@@ -109,11 +141,27 @@ type BackendVersionViewBlock = {
 type BackendVersionViewResponse = {
   locale?: string | null;
   description?: unknown;
+  brand_name?: string | null;
+  brandName?: string | null;
+  brand_logo_url?: string | null;
+  brandLogoUrl?: string | null;
   logo_url?: string | null;
   logoUrl?: string | null;
+  resolved_logo_url?: string | null;
+  resolvedLogoUrl?: string | null;
+  resolved_brand_name?: string | null;
+  resolvedBrandName?: string | null;
   branding?: {
+    resolved_logo_url?: string | null;
+    resolvedLogoUrl?: string | null;
+    brand_logo_url?: string | null;
+    brandLogoUrl?: string | null;
     logo_url?: string | null;
     logoUrl?: string | null;
+    brand_name?: string | null;
+    brandName?: string | null;
+    resolved_brand_name?: string | null;
+    resolvedBrandName?: string | null;
   } | null;
   blocks?: BackendVersionViewBlock[] | null;
 };
@@ -140,7 +188,9 @@ function normalizeReport(report: BackendReport, index: number): Report {
     description: normalizeReportDescription(report.description),
     branding: {
       logoUrl: branding.logoUrl,
+      brandName: branding.brandName,
       source: branding.source,
+      brandNameSource: branding.brandNameSource,
     },
   };
 }
@@ -185,37 +235,40 @@ function normalizeReportDescription(value: unknown) {
 function extractReportBranding(
   report: BackendReport | BackendVersion | BackendVersionViewResponse
 ) {
-  if (report.branding?.logoUrl) {
-    return {
-      logoUrl: report.branding.logoUrl,
-      source: "branding.logoUrl",
-    };
-  }
-
-  if (report.branding?.logo_url) {
-    return {
-      logoUrl: report.branding.logo_url,
-      source: "branding.logo_url",
-    };
-  }
-
-  if (report.logoUrl) {
-    return {
-      logoUrl: report.logoUrl,
-      source: "logoUrl",
-    };
-  }
-
-  if (report.logo_url) {
-    return {
-      logoUrl: report.logo_url,
-      source: "logo_url",
-    };
-  }
+  const logoSources: Array<[string | null | undefined, string]> = [
+    [report.branding?.resolvedLogoUrl, "branding.resolvedLogoUrl"],
+    [report.branding?.resolved_logo_url, "branding.resolved_logo_url"],
+    [report.branding?.brandLogoUrl, "branding.brandLogoUrl"],
+    [report.branding?.brand_logo_url, "branding.brand_logo_url"],
+    [report.branding?.logoUrl, "branding.logoUrl"],
+    [report.branding?.logo_url, "branding.logo_url"],
+    [report.resolvedLogoUrl, "resolvedLogoUrl"],
+    [report.resolved_logo_url, "resolved_logo_url"],
+    [report.brandLogoUrl, "brandLogoUrl"],
+    [report.brand_logo_url, "brand_logo_url"],
+    [report.logoUrl, "logoUrl"],
+    [report.logo_url, "logo_url"],
+  ];
+  const brandNameSources: Array<[string | null | undefined, string]> = [
+    [report.branding?.resolvedBrandName, "branding.resolvedBrandName"],
+    [report.branding?.resolved_brand_name, "branding.resolved_brand_name"],
+    [report.branding?.brandName, "branding.brandName"],
+    [report.branding?.brand_name, "branding.brand_name"],
+    [report.resolvedBrandName, "resolvedBrandName"],
+    [report.resolved_brand_name, "resolved_brand_name"],
+    [report.brandName, "brandName"],
+    [report.brand_name, "brand_name"],
+  ];
+  const resolvedLogo = logoSources.find(([value]) => typeof value === "string" && value.trim());
+  const resolvedBrandName = brandNameSources.find(
+    ([value]) => typeof value === "string" && value.trim()
+  );
 
   return {
-    logoUrl: undefined,
-    source: "empty",
+    logoUrl: resolvedLogo?.[0]?.trim() || undefined,
+    brandName: resolvedBrandName?.[0]?.trim() || undefined,
+    source: resolvedLogo?.[1] || "empty",
+    brandNameSource: resolvedBrandName?.[1] || "empty",
   };
 }
 
@@ -245,7 +298,9 @@ function normalizeVersion(version: BackendVersion, index: number): ReportVersion
     locale: normalizeLocale(version.locale),
     branding: {
       logoUrl: branding.logoUrl,
+      brandName: branding.brandName,
       source: branding.source,
+      brandNameSource: branding.brandNameSource,
     },
     blocks,
     rawMetadata:
@@ -754,9 +809,12 @@ export async function fetchReportDetail(
     description: normalizeReportDescription(report.description),
     branding: {
       logoUrl: branding.logoUrl,
+      brandName: branding.brandName,
       source: branding.source,
+      brandNameSource: branding.brandNameSource,
     },
     logoUrl: branding.logoUrl,
+    brandName: branding.brandName,
   } satisfies ReportDetail;
 }
 
@@ -828,7 +886,9 @@ export async function fetchReportVersionView(
     description: normalizeReportDescription(response.description),
     branding: {
       logoUrl: branding.logoUrl,
+      brandName: branding.brandName,
       source: branding.source,
+      brandNameSource: branding.brandNameSource,
     },
     blocks: (response.blocks || []).map((block, index) => ({
       id: String(block.id ?? block.block_id ?? `version-block-${index}`),

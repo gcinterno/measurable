@@ -4,13 +4,12 @@ import type {
   ExecutiveDarkViewModel,
 } from "@/components/reports/report-view.helpers";
 import type {
-  ClosingSlideModel,
   CoverSlideModel,
   GeneralInsightsMetricState,
-  GeneralInsightsSlideModel,
   ImpressionsSlideModel,
   ReachSlideCardModel,
   ReachSlideModel,
+  SummarySlideModel,
 } from "@/components/reports/slides/types";
 import { formatDisplayNumber, formatNumber } from "@/lib/formatters";
 import { getIntegrationReportContext } from "@/lib/integrations/session";
@@ -19,6 +18,7 @@ export type DefaultTemplateContext = {
   report: ExecutiveDarkViewModel;
   branding: {
     logoUrl: string | null;
+    brandName: string;
     source?: string;
   };
   coverBrandName: string;
@@ -276,6 +276,7 @@ export function buildDefaultTemplateContext(
   report: ExecutiveDarkViewModel,
   branding: {
     logoUrl: string | null;
+    brandName: string;
     source?: string;
   }
 ): DefaultTemplateContext {
@@ -295,7 +296,7 @@ export function buildDefaultTemplateContext(
   return {
     report,
     branding,
-    coverBrandName: getCoverBrandName(report.title),
+    coverBrandName: branding.brandName || getCoverBrandName(report.title),
     coverIntegrationLabel: getCoverIntegrationLabel(),
     analyzedPeriod: formatAnalyzedPeriod(report),
     reachDisplayLabel,
@@ -340,6 +341,7 @@ export function buildReachSlideModel(
   });
 
   return {
+    metricKey: "reach",
     metricEyebrow: "Metric",
     metricTitle: context.reachDisplayLabel,
     sourceCaption: buildSourceCaption(context.coverIntegrationLabel),
@@ -410,58 +412,70 @@ export function buildImpressionsSlideModel(
   };
 }
 
-export function buildGeneralInsightsSlideModel(
+export function buildEngagementSlideModel(
   context: DefaultTemplateContext
-): GeneralInsightsSlideModel {
+): ReachSlideModel {
+  const extremes = getReachExtremes(context.report.engagementDailyPoints);
+
   return {
-    reach_total: context.viewersTotal,
-    impressions_total: context.impressionsTotal,
-    frequency: context.frequency,
-    followers_total: context.followersTotal,
-    followers_growth: context.followersGrowth,
-    interactions_total: context.interactionsTotal,
-    link_clicks: context.linkClicks,
-    page_visits: context.pageVisits,
-    reach_label: context.report.viewersLabel,
-    impressions_label: context.report.impressionsLabel,
-    general_insights_slide_present: context.report.generalInsightsSlidePresent,
-    raw_general_insights: context.report.generalInsightsRawData,
-    metrics: {
-      reach: toGeneralInsightsMetricState(context.report.generalInsightsMetrics.reach),
-      impressions: toGeneralInsightsMetricState(
-        context.report.generalInsightsMetrics.impressions
-      ),
-      frequency: toGeneralInsightsMetricState(
-        context.report.generalInsightsMetrics.frequency
-      ),
-      followers: toGeneralInsightsMetricState(
-        context.report.generalInsightsMetrics.followers
-      ),
-      followers_growth: toGeneralInsightsMetricState(
-        context.report.generalInsightsMetrics.followersGrowth
-      ),
-      interactions: toGeneralInsightsMetricState(
-        context.report.generalInsightsMetrics.interactions
-      ),
-      link_clicks: toGeneralInsightsMetricState(
-        context.report.generalInsightsMetrics.linkClicks
-      ),
-      page_visits: toGeneralInsightsMetricState(
-        context.report.generalInsightsMetrics.pageVisits
-      ),
-    },
+    metricKey: "engagement",
+    metricEyebrow: "Metric",
+    metricTitle: "ENGAGEMENT",
+    sourceCaption: buildSourceCaption(context.coverIntegrationLabel),
+    totalLabel: "Total engagement this period",
+    totalValue:
+      formatDisplayNumber(context.report.engagementTotalValue) || "N/A",
+    insightText: context.report.engagementInsightText,
+    chartPoints: context.report.engagementDailyPoints,
+    chartAvailable:
+      context.report.engagementDailyAvailable ||
+      context.report.engagementDailyPoints.length > 0,
+    chartMetricLabel: context.report.engagementLabel || "Engagement",
+    highestDayCard: buildReachCard(
+      "Highest day",
+      context.report.engagementHighestDay || extremes.highest,
+      context.report.engagementLabel || "Engagement"
+    ),
+    lowestDayCard: buildReachCard(
+      "Lowest day",
+      context.report.engagementLowestDay || extremes.lowest,
+      context.report.engagementLabel || "Engagement"
+    ),
   };
 }
 
-export function buildClosingSlideModel(
+export function buildSummarySlideModel(
   context: DefaultTemplateContext
-): ClosingSlideModel {
+): SummarySlideModel {
   return {
-    eyebrow: context.coverIntegrationLabel,
-    title: "Fin del reporte",
-    subtitle: "Gracias por revisar este resumen de desempeno",
-    meta: `${context.coverBrandName} · ${context.analyzedPeriod}`,
-    footerText: "Reporte generado con Measurable.",
-    branding: context.branding,
+    title: "Resumen final",
+    aiSummary: context.report.finalSummaryAiText,
+    recommendation: context.report.finalRecommendationText,
+    metrics: [
+      {
+        label: "Reach",
+        value:
+          context.report.finalSummaryMetrics?.reach ||
+          formatDisplayNumber(context.report.viewersTotalValue) ||
+          "N/A",
+        meta: context.report.viewersLabel || "Total reach in period",
+      },
+      {
+        label: "Impressions",
+        value:
+          context.report.finalSummaryMetrics?.impressions ||
+          formatDisplayNumber(context.report.impressionsTotalValue) ||
+          "N/A",
+        meta: context.report.impressionsLabel || "Total impressions in period",
+      },
+      {
+        label: "Engagement",
+        value:
+          context.report.finalSummaryMetrics?.engagement ||
+          formatDisplayNumber(context.report.engagementTotalValue) ||
+          "N/A",
+        meta: context.report.engagementLabel || "Total interactions in period",
+      },
+    ],
   };
 }

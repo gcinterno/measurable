@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import type { ExecutiveDarkSeriesPoint } from "@/components/reports/report-view.helpers";
+import { MEASURABLE_BRAND_LOGO_URL } from "@/lib/branding";
 import { getLogoContentAspectRatio } from "@/lib/reports/logo";
 import { formatNumber } from "@/lib/formatters";
 
@@ -266,12 +267,18 @@ export function MetricDailyChart({
   isAvailable,
   metricLabel = "Espectadores",
   dark = true,
+  slideNumber,
+  metricKey,
+  placeholderText,
 }: {
   points: ExecutiveDarkSeriesPoint[];
   series?: MetricChartSeries[];
   isAvailable: boolean;
   metricLabel?: string;
   dark?: boolean;
+  slideNumber?: string;
+  metricKey?: string;
+  placeholderText?: string;
 }) {
   const [activePointIndex, setActivePointIndex] = useState<number | null>(null);
   const multiSeriesInput = buildMultiSeriesInput(points, series);
@@ -286,6 +293,22 @@ export function MetricDailyChart({
   const hasAnyMultiSeriesData = resolvedSeries.some((entry) =>
     entry.values.some((value) => value !== null)
   );
+
+  if (process.env.NODE_ENV === "development") {
+    console.info("[ReportChart][metric.daily]", {
+      slide_number: slideNumber || null,
+      metric_key: metricKey || metricLabel,
+      daily_series_length: points.length,
+      daily_series_values: points.map((point) => point.value),
+      chart_props_recibidos: {
+        isAvailable,
+        metricLabel,
+        seriesCount: series?.length || 0,
+        hasMultiSeries,
+        hasAnyMultiSeriesData,
+      },
+    });
+  }
 
   if ((!isAvailable || points.length === 0) && !hasAnyMultiSeriesData) {
     return (
@@ -313,7 +336,7 @@ export function MetricDailyChart({
             ))}
           </div>
           <p className={`mt-5 text-sm leading-6 ${dark ? "text-slate-400" : "text-slate-500"}`}>
-            Daily metric series is not available for this report yet.
+            {placeholderText || "Daily metric series is not available for this report yet."}
           </p>
         </div>
       </div>
@@ -414,7 +437,7 @@ export function MetricDailyChart({
       getNearestPointIndex(
         event.clientX,
         event.currentTarget.getBoundingClientRect(),
-        points.length,
+        categoryCount,
         width,
         paddingX
       )
@@ -706,6 +729,7 @@ export function CoverLogo({
   logoDataUrl: string | null;
   dark?: boolean;
 }) {
+  const resolvedLogoUrl = logoDataUrl?.trim() || MEASURABLE_BRAND_LOGO_URL;
   const [logoRatio, setLogoRatio] = useState(1);
   const isSquareLogo = logoRatio >= 0.72 && logoRatio <= 1.32;
   const isHorizontalLogo = logoRatio > 1.32;
@@ -718,49 +742,35 @@ export function CoverLogo({
     <div
       className="pointer-events-none absolute right-0 top-1/2 flex w-[46%] -translate-y-1/2 items-center justify-end"
     >
-      {logoDataUrl ? (
-        <div
-          className="flex items-center justify-center"
+      <div
+        className={`flex items-center justify-center rounded-[40px] border p-10 ${
+          dark
+            ? "border-white/12 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(241,245,249,0.92))] shadow-[0_30px_80px_rgba(2,6,23,0.28)]"
+            : "border-slate-200 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(248,250,252,0.98))] shadow-[0_18px_40px_rgba(37,99,235,0.10)]"
+        }`}
+        style={{
+          width: `${frameWidth}px`,
+          height: `${frameHeight}px`,
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={resolvedLogoUrl}
+          alt="Brand logo"
+          data-report-logo="true"
+          loading="eager"
+          decoding="sync"
+          fetchPriority="high"
+          className="block h-full w-full object-contain object-center"
           style={{
-            width: `${frameWidth}px`,
-            height: `${frameHeight}px`,
+            width: `${imageWidth}px`,
+            height: `${imageHeight}px`,
           }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={logoDataUrl}
-            alt="Brand logo"
-            data-report-logo="true"
-            loading="eager"
-            decoding="sync"
-            fetchPriority="high"
-            className="block object-contain object-right"
-            style={{
-              width: `${imageWidth}px`,
-              height: `${imageHeight}px`,
-            }}
-            onLoad={(event) =>
-              setLogoRatio(getLogoContentAspectRatio(event.currentTarget))
-            }
-          />
-        </div>
-      ) : (
-        <div
-          className={`flex items-center justify-center rounded-[32px] border border-dashed p-8 text-center ${
-            dark
-              ? "border-white/15 bg-white/5"
-              : "border-slate-200 bg-[linear-gradient(135deg,rgba(239,246,255,0.95),rgba(255,255,255,0.98))] shadow-[0_18px_40px_rgba(37,99,235,0.10)]"
-          }`}
-          style={{
-            width: `${frameWidth}px`,
-            height: `${frameHeight}px`,
-          }}
-        >
-          <p className={`max-w-[180px] text-sm font-medium leading-6 ${dark ? "text-slate-300" : "text-slate-500"}`}>
-            Set up your logo in Settings
-          </p>
-        </div>
-      )}
+          onLoad={(event) =>
+            setLogoRatio(getLogoContentAspectRatio(event.currentTarget))
+          }
+        />
+      </div>
     </div>
   );
 }

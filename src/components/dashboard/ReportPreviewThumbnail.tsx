@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/components/providers/LanguageProvider";
 import { CoverSlide } from "@/components/reports/slides/CoverSlide";
+import { resolveReportBranding } from "@/lib/reports/branding";
 import { getCoverThumbnailMeta, getCoverThumbnailSubtitle } from "@/lib/reports/cover-thumbnail";
 import { getReportBrandingSnapshot } from "@/lib/reports/branding-snapshots";
 import {
@@ -28,12 +29,20 @@ export function ReportPreviewThumbnail({ report }: ReportPreviewThumbnailProps) 
   const reportTimeframe: ReportDescriptionTimeframe | null =
     report.description?.timeframe || null;
 
-  const resolvedLogoUrl = useMemo(
+  // LEGACY: this thumbnail still renders CoverSlide directly for dashboard cards.
+  // Source of truth for branding resolution is resolveReportBranding() used by the 5-slide renderer.
+  const resolvedBranding = useMemo(
     () =>
-      report.branding?.logoUrl?.trim() ||
-      getReportBrandingSnapshot(report.id)?.logoUrl?.trim() ||
-      "",
-    [report.branding?.logoUrl, report.id]
+      resolveReportBranding(
+        {
+          id: report.id,
+          branding: report.branding,
+        },
+        {
+          branding: getReportBrandingSnapshot(report.id),
+        }
+      ),
+    [report.branding, report.id]
   );
   const slideModel = useMemo(
     () => ({
@@ -41,10 +50,11 @@ export function ReportPreviewThumbnail({ report }: ReportPreviewThumbnailProps) 
       subtitle: getCoverThumbnailSubtitle(language),
       meta: getCoverThumbnailMeta(language, reportTimeframe),
       branding: {
-        logoUrl: resolvedLogoUrl || null,
+        logoUrl: resolvedBranding.logoUrl || null,
+        brandName: resolvedBranding.brandName,
       },
     }),
-    [language, report.title, reportTimeframe, resolvedLogoUrl]
+    [language, report.title, reportTimeframe, resolvedBranding]
   );
   const slideScale = containerWidth > 0 ? containerWidth / THUMBNAIL_WIDTH : 0;
 

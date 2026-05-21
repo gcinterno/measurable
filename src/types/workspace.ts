@@ -14,6 +14,8 @@ export type Workspace = {
   storageLimitBytes?: number;
   branding?: {
     logoUrl?: string;
+    brandName?: string;
     source?: string;
+    brandNameSource?: string;
   };
 };

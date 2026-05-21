@@ -197,7 +197,9 @@ export default function ReportView({
     useState<ReportDescription | null>(null);
   const [reportVersionBranding, setReportVersionBranding] = useState<{
     logoUrl?: string;
+    brandName?: string;
     source?: string;
+    brandNameSource?: string;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -326,20 +328,54 @@ export default function ReportView({
   const resolvedBranding = useMemo(
     () =>
       resolveReportBranding(
-        reportVersionBranding,
-        reportDetail?.branding,
-        workspace?.branding?.logoUrl
-          ? {
-              logoUrl: workspace.branding.logoUrl,
-              source: workspace.branding.source || "workspace.branding.logoUrl",
-            }
-          : getReportBrandingSnapshot(reportId),
         {
-          overrideBranding: getMeasurableBrandingOverride(workspace),
+          id: reportId,
+          templateId: selectedTemplateId,
+          branding: reportVersionBranding,
+          report: {
+            branding: reportDetail?.branding,
+          },
+        },
+        workspace?.branding
+          ? {
+              branding: {
+                logoUrl: workspace.branding.logoUrl,
+                brandName: workspace.branding.brandName,
+                source: workspace.branding.source || "workspace.branding.logoUrl",
+                brandNameSource:
+                  workspace.branding.brandNameSource || "workspace.branding.brand_name",
+              },
+            }
+          : {
+              branding: getReportBrandingSnapshot(reportId),
+            },
+        {
+          branding: getMeasurableBrandingOverride(workspace),
         }
       ),
-    [reportDetail?.branding, reportId, reportVersionBranding, workspace]
+    [reportDetail?.branding, reportId, reportVersionBranding, selectedTemplateId, workspace]
   );
+  useEffect(() => {
+    console.info("[ReportBranding][preview.cover]", {
+      report_id: reportId,
+      template: selectedTemplateId,
+      branding_received: {
+        report_version: reportVersionBranding,
+        report: reportDetail?.branding,
+        workspace: workspace?.branding,
+      },
+      logoUrl_resuelto: resolvedBranding.logoUrl,
+      brandName_resuelto: resolvedBranding.brandName,
+    });
+  }, [
+    reportDetail?.branding,
+    reportId,
+    reportVersionBranding,
+    resolvedBranding.brandName,
+    resolvedBranding.logoUrl,
+    selectedTemplateId,
+    workspace?.branding,
+  ]);
   const timeframeLabel =
     formatMetaTimeframeDateRange({
       since: viewModel.coverTimeframeSince || viewModel.timeframeSince,
@@ -359,6 +395,7 @@ export default function ReportView({
           model: viewModel,
           renderMode: "preview",
           logoUrl: resolvedBranding.logoUrl,
+          brandName: resolvedBranding.brandName,
           templateId: selectedTemplateId,
           locale: language,
           hideOverviewInsights,
@@ -700,6 +737,7 @@ export default function ReportView({
     <div className="space-y-8">
       {mountExportSurface ? (
         <ReportExportSurface
+          reportId={reportId}
           ref={exportSurfaceRef}
           model={viewModel}
           branding={resolvedBranding}
@@ -801,6 +839,7 @@ export default function ReportView({
         >
           <div className="w-full overflow-hidden">
             <SlideRenderer
+              reportId={reportId}
               model={viewModel}
               blocks={blocks}
               locale={language}

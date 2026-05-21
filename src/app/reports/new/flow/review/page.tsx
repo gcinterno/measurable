@@ -690,14 +690,22 @@ function NewReportFlowReviewPageContent() {
   const resolvedBranding = useMemo(
     () =>
       resolveReportBranding(
-        reportVersionBranding,
-        reportDetail?.branding,
-        getReportBrandingSnapshot(reportId),
         {
-          overrideBranding: getMeasurableBrandingOverride(workspace),
+          id: reportId,
+          templateId: selectedTemplate,
+          branding: reportVersionBranding,
+          report: {
+            branding: reportDetail?.branding,
+          },
+        },
+        {
+          branding: getReportBrandingSnapshot(reportId),
+        },
+        {
+          branding: getMeasurableBrandingOverride(workspace),
         }
       ),
-    [reportDetail?.branding, reportId, reportVersionBranding, workspace]
+    [reportDetail?.branding, reportId, reportVersionBranding, selectedTemplate, workspace]
   );
   const timeframeLabel =
     formatMetaTimeframeDateRange({
@@ -867,6 +875,7 @@ function NewReportFlowReviewPageContent() {
         />
         {mountExportSurface ? (
           <ReportExportSurface
+            reportId={reportId}
             ref={exportSurfaceRef}
             model={viewModel}
             branding={resolvedBranding}
@@ -1085,6 +1094,7 @@ function NewReportFlowReviewPageContent() {
                   <div className="max-h-[720px] overflow-auto rounded-[28px] border border-slate-200 bg-white p-2 shadow-sm md:p-3">
                     <div className="w-full overflow-hidden">
                       <SlideRenderer
+                        reportId={reportId}
                         model={viewModel}
                         blocks={blocks}
                         locale={language}

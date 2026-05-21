@@ -1,5 +1,6 @@
 import type { ReportVersionBlock } from "@/types/report";
 import { formatDisplayNumber } from "@/lib/formatters";
+import { normalizeDailySeries } from "@/lib/reports/daily-series";
 
 export type ExecutiveDarkKpi = {
   id: string;
@@ -83,6 +84,19 @@ export type ExecutiveDarkViewModel = {
   } | null;
   impressionsFrequencyValue: string;
   impressionsInsightText: string;
+  engagementLabel: string;
+  engagementTotalValue: string;
+  engagementDailyPoints: ExecutiveDarkSeriesPoint[];
+  engagementDailyAvailable: boolean;
+  engagementHighestDay: {
+    date: string;
+    value: number;
+  } | null;
+  engagementLowestDay: {
+    date: string;
+    value: number;
+  } | null;
+  engagementInsightText: string;
   reachDailyPoints: ExecutiveDarkSeriesPoint[];
   reachDailyAvailable: boolean;
   followersTotalValue: string;
@@ -102,6 +116,13 @@ export type ExecutiveDarkViewModel = {
     linkClicks: ExecutiveDarkGeneralInsightsMetric | null;
     pageVisits: ExecutiveDarkGeneralInsightsMetric | null;
   };
+  finalSummaryAiText: string;
+  finalRecommendationText: string;
+  finalSummaryMetrics: {
+    reach?: string;
+    impressions?: string;
+    engagement?: string;
+  } | null;
   parseErrors: ExecutiveDarkParseError[];
 };
 
@@ -114,6 +135,140 @@ type ClassifiedTextBlock = {
 
 function getTrimmedText(value: string | null | undefined) {
   return value?.trim() || "";
+}
+
+function normalizeSlideToken(value: string) {
+  return value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+function getBlockMetricKey(block: ReportVersionBlock) {
+  const candidates = [
+    block.data.metric_key,
+    block.data.metricKey,
+    block.data.metric_label,
+    block.data.metricLabel,
+    block.data.semantic_name,
+    block.data.semanticName,
+    block.data.key,
+    block.data.name,
+    block.type,
+  ];
+  const haystack = candidates
+    .map((value) => getTrimmedText(String(value ?? "")))
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (haystack.includes("impression") || haystack.includes("impresion")) {
+    return "impressions";
+  }
+
+  if (
+    haystack.includes("engagement") ||
+    haystack.includes("interaction") ||
+    haystack.includes("interacciones")
+  ) {
+    return "engagement";
+  }
+
+  if (haystack.includes("reach") || haystack.includes("alcance")) {
+    return "reach";
+  }
+
+  return "";
+}
+
+function getBlockSlideType(block: ReportVersionBlock) {
+  const candidates = [
+    block.data.slide_type,
+    block.data.slideType,
+    block.data.semantic_name,
+    block.data.semanticName,
+    block.data.key,
+    block.data.name,
+    block.type,
+  ];
+  const normalized = candidates
+    .map((value) => normalizeSlideToken(getTrimmedText(String(value ?? ""))))
+    .filter(Boolean)
+    .join(" ");
+
+  if (normalized.includes("cover") || normalized.includes("title")) {
+    return "cover";
+  }
+
+  if (
+    normalized.includes("summary") ||
+    normalized.includes("closing") ||
+    normalized.includes("recommendation")
+  ) {
+    return "summary";
+  }
+
+  if (normalized.includes("metric")) {
+    return "metric";
+  }
+
+  return "";
+}
+
+function getBlockSlideNumber(block: ReportVersionBlock) {
+  const rawValue =
+    block.data.slide_number ??
+    block.data.slideNumber ??
+    block.data.order ??
+    block.data.slide_order ??
+    block.data.slideOrder;
+  const parsed = typeof rawValue === "number" ? rawValue : Number(rawValue);
+
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizeFiveSlideBlocks(blocks: ReportVersionBlock[]) {
+  if (blocks.length !== 5) {
+    return blocks;
+  }
+
+  const consumed = new Set<string>();
+  const pick = (
+    predicate: (block: ReportVersionBlock) => boolean
+  ) => {
+    const match = blocks.find((block) => !consumed.has(block.id) && predicate(block)) || null;
+
+    if (match) {
+      consumed.add(match.id);
+    }
+
+    return match;
+  };
+
+  const coverBlock =
+    pick((block) => getBlockSlideNumber(block) === 1) ||
+    pick((block) => getBlockSlideType(block) === "cover") ||
+    pick((block) => block.type === "title");
+  const reachBlock =
+    pick((block) => getBlockSlideNumber(block) === 2) ||
+    pick((block) => getBlockMetricKey(block) === "reach");
+  const impressionsBlock =
+    pick((block) => getBlockSlideNumber(block) === 3) ||
+    pick((block) => getBlockMetricKey(block) === "impressions");
+  const engagementBlock =
+    pick((block) => getBlockSlideNumber(block) === 4) ||
+    pick((block) => getBlockMetricKey(block) === "engagement");
+  const summaryBlock =
+    pick((block) => getBlockSlideNumber(block) === 5) ||
+    pick((block) => getBlockSlideType(block) === "summary");
+
+  const ordered = [
+    coverBlock,
+    reachBlock,
+    impressionsBlock,
+    engagementBlock,
+    summaryBlock,
+    ...blocks.filter((block) => !consumed.has(block.id)),
+  ].filter((block): block is ReportVersionBlock => block !== null);
+
+  return ordered.length === blocks.length ? ordered : blocks;
 }
 
 function getStatValue(value: ReportVersionBlock["data"]["value"]) {
@@ -364,52 +519,6 @@ function coerceSeriesPoint(value: unknown): ExecutiveDarkSeriesPoint | null {
   };
 }
 
-function collectSeriesPoints(value: unknown): ExecutiveDarkSeriesPoint[] {
-  if (!value) {
-    return [];
-  }
-
-  if (Array.isArray(value)) {
-    return value.flatMap((entry) => {
-      const directPoint = coerceSeriesPoint(entry);
-
-      if (directPoint) {
-        return [directPoint];
-      }
-
-      if (entry && typeof entry === "object") {
-        const record = entry as Record<string, unknown>;
-
-        return [
-          ...collectSeriesPoints(record.points),
-          ...collectSeriesPoints(record.data),
-          ...collectSeriesPoints(record.values),
-        ];
-      }
-
-      return [];
-    });
-  }
-
-  if (typeof value !== "object") {
-    return [];
-  }
-
-  const record = value as Record<string, unknown>;
-
-  return [
-    ...collectSeriesPoints(record.points),
-    ...collectSeriesPoints(record.series),
-    ...collectSeriesPoints(record.datasets),
-    ...collectSeriesPoints(record.chart),
-    ...collectSeriesPoints(record.chart_data),
-    ...collectSeriesPoints(record.daily),
-    ...collectSeriesPoints(record.reach_daily),
-    ...collectSeriesPoints(record.impressions_daily),
-    ...collectSeriesPoints(record.engagement_daily),
-  ];
-}
-
 function getMetricChartData(blocks: ReportVersionBlock[], metricAliases: string[]) {
   const chartBlock = blocks.find((block) => {
     if (
@@ -445,7 +554,7 @@ function getMetricChartData(blocks: ReportVersionBlock[], metricAliases: string[
     };
   }
 
-  const rawPoints = collectSeriesPoints(chartBlock.data);
+  const rawPoints = normalizeDailySeries(chartBlock.data);
   const startDate = getTrimmedText(
     String(
       chartBlock.data.timeframe_since ??
@@ -538,15 +647,15 @@ function getMetricTotalValue(
 }
 
 function getImpressionsSlideData(blocks: ReportVersionBlock[]) {
-  const block = blocks.find((item) => item.type === "impressions_slide");
+  const block =
+    blocks.find((item) => getBlockMetricKey(item) === "impressions") ||
+    blocks.find((item) => item.type === "impressions_slide") ||
+    blocks.find((item) => getBlockSlideNumber(item) === 3);
 
   if (!block) {
     return null;
   }
 
-  const rawDaily = Array.isArray(block.data.impressions_daily)
-    ? block.data.impressions_daily
-    : [];
   const timeframeSince = getTrimmedText(String(block.data.timeframe_since ?? ""));
   const timeframeUntil = getTrimmedText(String(block.data.timeframe_until ?? ""));
   const rawImpressionsTotal = block.data.impressions_total;
@@ -555,30 +664,7 @@ function getImpressionsSlideData(blocks: ReportVersionBlock[]) {
       ? ""
       : getTrimmedText(String(rawImpressionsTotal));
   const points = buildContinuousDailyPoints(
-    rawDaily
-      .map((point) => {
-        if (!point || typeof point !== "object") {
-          return null;
-        }
-
-        const date = getTrimmedText(String((point as { date?: unknown }).date ?? ""));
-        const rawValue = (point as { value?: unknown }).value;
-        const value =
-          typeof rawValue === "number"
-            ? rawValue
-            : Number(String(rawValue ?? "").trim());
-
-        if (!date || Number.isNaN(value)) {
-          return null;
-        }
-
-        return {
-          date,
-          label: formatShortDayLabel(date),
-          value,
-        } satisfies ExecutiveDarkSeriesPoint;
-      })
-      .filter((point): point is ExecutiveDarkSeriesPoint => point !== null)
+    normalizeDailySeries(block.data)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
     timeframeSince,
     timeframeUntil
@@ -633,6 +719,63 @@ function getImpressionsSlideData(blocks: ReportVersionBlock[]) {
   };
 }
 
+function getEngagementSlideData(blocks: ReportVersionBlock[]) {
+  const block =
+    blocks.find((item) => getBlockMetricKey(item) === "engagement") ||
+    blocks.find((item) => getBlockSlideNumber(item) === 4) ||
+    null;
+
+  if (!block) {
+    return null;
+  }
+
+  const points = normalizeDailySeries(block.data).sort(
+    (left, right) => new Date(left.date).getTime() - new Date(right.date).getTime()
+  );
+  const highestRaw =
+    block.data.highest_day && typeof block.data.highest_day === "object"
+      ? (block.data.highest_day as { date?: unknown; value?: unknown })
+      : null;
+  const lowestRaw =
+    block.data.lowest_day && typeof block.data.lowest_day === "object"
+      ? (block.data.lowest_day as { date?: unknown; value?: unknown })
+      : null;
+
+  return {
+    label:
+      getTrimmedText(String(block.data.metric_label ?? "")) ||
+      getTrimmedText(String(block.data.metricLabel ?? "")) ||
+      "Engagement",
+    total:
+      getTrimmedText(String(block.data.total ?? "")) ||
+      getTrimmedText(String(block.data.value ?? "")) ||
+      getTrimmedText(String(block.data.engagement ?? "")) ||
+      getTrimmedText(String(block.data.interactions_total ?? "")),
+    points,
+    highestDay:
+      highestRaw && getTrimmedText(String(highestRaw.date ?? ""))
+        ? {
+            date: getTrimmedText(String(highestRaw.date ?? "")),
+            value: Number(String(highestRaw.value ?? "").trim()) || 0,
+          }
+        : null,
+    lowestDay:
+      lowestRaw && getTrimmedText(String(lowestRaw.date ?? ""))
+        ? {
+            date: getTrimmedText(String(lowestRaw.date ?? "")),
+            value: Number(String(lowestRaw.value ?? "").trim()) || 0,
+          }
+        : null,
+    insightText:
+      getTrimmedText(String(block.data.insight_short ?? "")) ||
+      getTrimmedText(String(block.data.insightShort ?? "")) ||
+      getTrimmedText(String(block.data.insight ?? "")) ||
+      getTrimmedText(String(block.data.ai_summary ?? "")) ||
+      getTrimmedText(String(block.data.aiSummary ?? "")) ||
+      getTrimmedText(String(block.data.summary ?? "")),
+  };
+}
+
 function getGeneralInsightsMetric(
   value: unknown,
   available: unknown,
@@ -680,7 +823,10 @@ function getGeneralInsightsMetricFromBlock(
 }
 
 function getGeneralInsightsSlideData(blocks: ReportVersionBlock[]) {
-  const block = blocks.find((item) => item.type === "general_insights_slide");
+  const block =
+    blocks.find((item) => item.type === "general_insights_slide") ||
+    blocks.find((item) => getBlockSlideNumber(item) === 5) ||
+    blocks.find((item) => getBlockSlideType(item) === "summary");
 
   if (!block) {
     return null;
@@ -752,6 +898,38 @@ function getGeneralInsightsSlideData(blocks: ReportVersionBlock[]) {
   };
 }
 
+function getSummarySlideData(blocks: ReportVersionBlock[]) {
+  const block =
+    blocks.find((item) => getBlockSlideNumber(item) === 5) ||
+    blocks.find((item) => getBlockSlideType(item) === "summary") ||
+    blocks.find((item) => item.type === "general_insights_slide") ||
+    null;
+
+  if (!block) {
+    return null;
+  }
+
+  const metricsSummary =
+    block.data.metrics_summary && typeof block.data.metrics_summary === "object"
+      ? (block.data.metrics_summary as Record<string, unknown>)
+      : null;
+
+  return {
+    metricsSummary,
+    aiSummary:
+      getTrimmedText(String(block.data.ai_summary ?? "")) ||
+      getTrimmedText(String(block.data.aiSummary ?? "")) ||
+      getTrimmedText(String(block.data.insight_short ?? "")) ||
+      getTrimmedText(String(block.data.insightShort ?? "")) ||
+      getTrimmedText(String(block.data.insight ?? "")) ||
+      getTrimmedText(String(block.data.summary ?? "")),
+    recommendation:
+      getTrimmedText(String(block.data.recommendation ?? "")) ||
+      getTrimmedText(String(block.data.actionable_recommendation ?? "")) ||
+      getTrimmedText(String(block.data.actionableRecommendation ?? "")),
+  };
+}
+
 export function buildExecutiveDarkViewModel(
   blocks: ReportVersionBlock[],
   options?: {
@@ -759,15 +937,16 @@ export function buildExecutiveDarkViewModel(
     fallbackTitle?: string | null;
   }
 ): ExecutiveDarkViewModel {
+  const orderedBlocks = normalizeFiveSlideBlocks(blocks);
   const parseErrors: ExecutiveDarkParseError[] = [];
 
-  const titleBlock = blocks.find((block) => block.type === "title");
+  const titleBlock = orderedBlocks.find((block) => block.type === "title");
   const title =
     getTrimmedText(titleBlock?.data.text) ||
     getTrimmedText(options?.fallbackTitle) ||
     "Executive Monthly Report";
 
-  const textBlocks = blocks
+  const textBlocks = orderedBlocks
     .filter((block) => block.type === "text")
     .map((block, index) => {
       const parseState = safeParseBlock(block.rawDataJson);
@@ -789,7 +968,7 @@ export function buildExecutiveDarkViewModel(
     })
     .filter((block) => block.text);
 
-  const kpis = blocks
+  const kpis = orderedBlocks
     .filter((block) => block.type === "stat")
     .map((block, index) => {
       const parseState = safeParseBlock(block.rawDataJson);
@@ -825,12 +1004,15 @@ export function buildExecutiveDarkViewModel(
   const secondaryNarrative =
     getPreferredText(textBlocks, ["recent_posts_summary", "generic", "summary"]) ||
     "No additional context is available for this period.";
-  const impressionsSlideData = getImpressionsSlideData(blocks);
-  const generalInsightsSlideData = getGeneralInsightsSlideData(blocks);
-  const viewersChart = getMetricChartData(blocks, ["viewers", "viewer", "reach", "espectadores"]);
-  const impressionsChart = getMetricChartData(blocks, ["impressions", "impresiones", "views", "view", "visualizaciones"]);
+  const impressionsSlideData = getImpressionsSlideData(orderedBlocks);
+  const engagementSlideData = getEngagementSlideData(orderedBlocks);
+  const generalInsightsSlideData = getGeneralInsightsSlideData(orderedBlocks);
+  const summarySlideData = getSummarySlideData(orderedBlocks);
+  const viewersChart = getMetricChartData(orderedBlocks, ["viewers", "viewer", "reach", "espectadores"]);
+  const impressionsChart = getMetricChartData(orderedBlocks, ["impressions", "impresiones", "views", "view", "visualizaciones"]);
+  const engagementChart = getMetricChartData(orderedBlocks, ["engagement", "interactions", "interacciones"]);
   const descriptionTimeframe = options?.descriptionTimeframe || null;
-  const titleBlockTimeframe = getTitleBlockTimeframe(blocks);
+  const titleBlockTimeframe = getTitleBlockTimeframe(orderedBlocks);
   const blockTimeframeSince =
     viewersChart.timeframeSince ||
     impressionsSlideData?.timeframeSince ||
@@ -900,6 +1082,12 @@ export function buildExecutiveDarkViewModel(
   const interactionsTotalValue = getKpiValue(kpis, ["interactions", "engagement"]);
   const linkClicksValue = getKpiValue(kpis, ["link clicks", "clicks"]);
   const pageVisitsValue = getKpiValue(kpis, ["page visits", "visits"]);
+  const engagementLabel =
+    engagementSlideData?.label ||
+    getKpiLabel(kpis, ["interactions", "engagement"], engagementChart.sourceLabel || "ENGAGEMENT");
+  const engagementTotalValue =
+    engagementSlideData?.total ||
+    getMetricTotalValue(kpis, ["interactions", "engagement"], engagementChart.points);
 
   return {
     title,
@@ -937,6 +1125,18 @@ export function buildExecutiveDarkViewModel(
     impressionsLowestDay: impressionsSlideData?.lowestDay || null,
     impressionsFrequencyValue: impressionsSlideData?.frequency || "",
     impressionsInsightText: impressionsSlideData?.insightText || "",
+    engagementLabel,
+    engagementTotalValue,
+    engagementDailyPoints: engagementSlideData?.points || engagementChart.points,
+    engagementDailyAvailable: engagementSlideData
+      ? engagementSlideData.points.length > 0
+      : engagementChart.isAvailable,
+    engagementHighestDay: engagementSlideData?.highestDay || null,
+    engagementLowestDay: engagementSlideData?.lowestDay || null,
+    engagementInsightText:
+      engagementSlideData?.insightText ||
+      premiumInsight ||
+      "Engagement insight is not available yet.",
     kpis,
     heroMetrics: kpis.slice(0, 3),
     reachTotalValue: viewersTotalValue,
@@ -962,6 +1162,22 @@ export function buildExecutiveDarkViewModel(
       linkClicks: generalInsightsSlideData?.linkClicks || null,
       pageVisits: generalInsightsSlideData?.pageVisits || null,
     },
+    finalSummaryAiText:
+      summarySlideData?.aiSummary ||
+      premiumInsight ||
+      secondaryNarrative,
+    finalRecommendationText:
+      summarySlideData?.recommendation ||
+      "Keep reinforcing the strongest content pattern, protect reach efficiency, and test one focused iteration next period.",
+    finalSummaryMetrics: summarySlideData?.metricsSummary
+      ? {
+          reach: getTrimmedText(String(summarySlideData.metricsSummary.reach ?? "")) || undefined,
+          impressions:
+            getTrimmedText(String(summarySlideData.metricsSummary.impressions ?? "")) || undefined,
+          engagement:
+            getTrimmedText(String(summarySlideData.metricsSummary.engagement ?? "")) || undefined,
+        }
+      : null,
     parseErrors,
   };
 }

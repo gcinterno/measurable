@@ -6,6 +6,7 @@ import { ChartBlock } from "@/components/reports/primitives/ChartBlock";
 import { InsightBox } from "@/components/reports/primitives/InsightBox";
 import { KPICard, KPIGrid } from "@/components/reports/primitives/KPIGrid";
 import { getTemplateTone } from "@/components/reports/slides/template";
+import { MetricDailyChart } from "@/components/reports/slides/shared";
 import { formatDisplayNumber, formatNumber } from "@/lib/formatters";
 import type { ReportTemplateId } from "@/lib/reports/template-selection";
 
@@ -43,6 +44,10 @@ type ChartPoint = {
   value: number;
 };
 
+/*
+ * LEGACY: this slide still keeps local preprocessing helpers from the earlier renderer.
+ * Source of truth for daily-series rendering is normalizeDailySeries() plus MetricDailyChart.
+ */
 const CHART_WIDTH = 560;
 const CHART_HEIGHT = 280;
 const CHART_PADDING_X = 12;
@@ -623,10 +628,20 @@ export function ImpressionsSlide({
       normalizedReachTotal
     );
 
+  if (process.env.NODE_ENV === "development") {
+    console.log("[5-slide metric slide]", {
+      slideNumber: "03",
+      metricKey: "impressions",
+      title: title || metric_label,
+      total: normalizedImpressionsTotal,
+      dailySeriesLength: continuousPoints.length,
+      values: continuousPoints.map((point) => point.value),
+    });
+  }
+
   return (
-    <div className={`h-full rounded-[32px] border p-7 ${tone.card}`}>
-      <div className="grid h-full grid-cols-[346px_minmax(0,1fr)] gap-6">
-        <div className="grid min-h-0 grid-rows-[auto_auto_1fr]">
+    <div className="grid h-full min-h-0 grid-cols-[346px_minmax(0,1fr)] gap-6">
+        <div className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
           <p className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${tone.accent}`}>
             Metric
           </p>
@@ -657,33 +672,34 @@ export function ImpressionsSlide({
                 ? unavailable_message
                 : insight
             }
-            className="mt-8 h-full min-h-0"
+            label="AI Insight"
+            className="mt-7 max-h-[220px]"
             templateId={templateId}
           />
         </div>
 
-        <ChartBlock>
+        <ChartBlock className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-4">
           {unavailable ? (
-            <div className={`relative h-[360px] overflow-visible rounded-[30px] border p-6 ${tone.card}`}>
-              <div className={`pointer-events-none absolute inset-0 ${tone.dark ? "bg-[linear-gradient(180deg,rgba(56,189,248,0.07)_0%,transparent_100%)]" : "bg-[linear-gradient(180deg,rgba(14,165,233,0.06)_0%,transparent_100%)]"}`} />
-              <div className="relative">
-                <div className="grid h-[280px] grid-rows-4 gap-0">
-                  {[0, 1, 2, 3].map((row) => (
-                    <div key={row} className={tone.dark ? "border-b border-white/10" : "border-b border-slate-200"} />
-                  ))}
-                </div>
-                <p className={`mt-5 text-sm leading-6 ${tone.subtle}`}>
-                  {unavailable_message}
-                </p>
-              </div>
-            </div>
+            <MetricDailyChart
+              points={[]}
+              isAvailable={false}
+              metricLabel={metric_label}
+              dark={tone.dark}
+              slideNumber="03"
+              metricKey="impressions"
+              placeholderText={unavailable_message}
+            />
           ) : (
             <>
-                <ImpressionsChart
-                  points={continuousPoints}
-                  metricLabel={metric_label}
-                  dark={tone.dark}
-                />
+              <MetricDailyChart
+                points={continuousPoints}
+                isAvailable={continuousPoints.length > 0}
+                metricLabel={metric_label}
+                dark={tone.dark}
+                slideNumber="03"
+                metricKey="impressions"
+                placeholderText={unavailable_message}
+              />
               <KPIGrid columns={3}>
                 <KPICard
                   label="Highest day"
@@ -715,7 +731,6 @@ export function ImpressionsSlide({
             </>
           )}
         </ChartBlock>
-      </div>
     </div>
   );
 }

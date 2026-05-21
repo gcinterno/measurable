@@ -7,6 +7,11 @@ import { CoverLogo } from "@/components/reports/slides/shared";
 import { isLightTemplate } from "@/components/reports/slides/template";
 import type { ClosingSlideModel, SlideComponentProps } from "@/components/reports/slides/types";
 
+/*
+ * LEGACY / candidate for removal after contract is stable.
+ * Official 5-slide closing summary uses SummarySlide via lib/reports/templates/default.ts.
+ * Keep this component only for legacy flows that still expect the old closing payload shape.
+ */
 export function ClosingSlide({
   slideId,
   eyebrow,

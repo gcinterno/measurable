@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
-
 import { InsightBox } from "@/components/reports/primitives/InsightBox";
 import { KPICard, KPIGrid } from "@/components/reports/primitives/KPIGrid";
 import { getTemplateTone } from "@/components/reports/slides/template";
@@ -287,7 +285,7 @@ export function GeneralInsightsSlide(props: GeneralInsightsSlideProps) {
   ];
 
   return (
-    <div className={`flex h-full flex-col rounded-[32px] border p-7 ${tone.card}`}>
+    <div className="flex h-full min-h-0 flex-col gap-6">
       <KPIGrid columns={4}>
         {cards.map((card) => (
           <KPICard
@@ -305,7 +303,8 @@ export function GeneralInsightsSlide(props: GeneralInsightsSlideProps) {
 
       <InsightBox
         text={buildInsight(props)}
-        className="mt-6 min-h-0 flex-1"
+        label="AI Insight"
+        className="min-h-0 max-h-[220px]"
         templateId={templateId}
       />
     </div>

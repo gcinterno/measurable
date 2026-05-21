@@ -12,6 +12,8 @@ import { CoverSlide } from "@/components/reports/slides/CoverSlide";
 import { getTemplateTone } from "@/components/reports/slides/template";
 import { CoverLogo, MetricDailyChart } from "@/components/reports/slides/shared";
 import { formatMetaTimeframeDateRange } from "@/lib/integrations/timeframes";
+import { resolveReportBranding } from "@/lib/reports/branding";
+import { normalizeDailySeries } from "@/lib/reports/daily-series";
 import type { ReportTemplateId } from "@/lib/reports/template-selection";
 import { getReportTemplate } from "@/lib/reports/templates";
 import { buildDefaultTemplateContext } from "@/lib/reports/templates/default-view-models";
@@ -23,6 +25,7 @@ import { formatDisplayNumber } from "@/lib/formatters";
 import type { ReportVersionBlock } from "@/types/report";
 
 type SlideRendererProps = {
+  reportId?: string;
   model: ExecutiveDarkViewModel | null | undefined;
   renderMode?: ReportRenderMode;
   blocks?: ReportVersionBlock[];
@@ -30,7 +33,9 @@ type SlideRendererProps = {
   hideOverviewInsights?: boolean;
   branding?: {
     logoUrl?: string | null;
+    brandName?: string | null;
     source?: string;
+    brandNameSource?: string;
   };
   templateId?: ReportTemplateId;
 };
@@ -238,7 +243,12 @@ function getNormalizedBlockSemanticName(block: ReportVersionBlock) {
 }
 
 function getBlockOrder(block: ReportVersionBlock, index: number) {
-  const rawOrder = block.data.order ?? block.data.slide_order ?? block.data.slideOrder;
+  const rawOrder =
+    block.data.slide_number ??
+    block.data.slideNumber ??
+    block.data.order ??
+    block.data.slide_order ??
+    block.data.slideOrder;
   const order = typeof rawOrder === "number" ? rawOrder : Number(rawOrder);
 
   return Number.isFinite(order) && order > 0 ? order : index + 1;
@@ -272,8 +282,112 @@ export function shouldRenderBlocksAsSlides(blocks?: ReportVersionBlock[]) {
   return Boolean(blocks?.length && blocks.length > templateSlideCount);
 }
 
+function getBlockMetricKey(block: ReportVersionBlock) {
+  const haystack = [
+    getStringValue(block.data.metric_key),
+    getStringValue(block.data.metricKey),
+    getStringValue(block.data.metric_label),
+    getStringValue(block.data.metricLabel),
+    getStringValue(block.data.semantic_name),
+    getStringValue(block.data.semanticName),
+    getStringValue(block.data.key),
+    getStringValue(block.data.name),
+    block.type,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (haystack.includes("impression") || haystack.includes("impresion")) {
+    return "impressions";
+  }
+
+  if (
+    haystack.includes("engagement") ||
+    haystack.includes("interaction") ||
+    haystack.includes("interacciones")
+  ) {
+    return "engagement";
+  }
+
+  if (haystack.includes("reach") || haystack.includes("alcance")) {
+    return "reach";
+  }
+
+  return "";
+}
+
+function getBlockSlideType(block: ReportVersionBlock) {
+  const haystack = [
+    getStringValue(block.data.slide_type),
+    getStringValue(block.data.slideType),
+    getStringValue(block.data.semantic_name),
+    getStringValue(block.data.semanticName),
+    getStringValue(block.data.key),
+    getStringValue(block.data.name),
+    block.type,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (haystack.includes("cover") || haystack.includes("title")) {
+    return "cover";
+  }
+
+  if (
+    haystack.includes("summary") ||
+    haystack.includes("closing") ||
+    haystack.includes("recommendation")
+  ) {
+    return "summary";
+  }
+
+  if (haystack.includes("metric")) {
+    return "metric";
+  }
+
+  return "";
+}
+
+function normalizeFiveSlideBlockOrder(blocks: ReportVersionBlock[]) {
+  if (blocks.length !== 5) {
+    return blocks;
+  }
+
+  const consumed = new Set<string>();
+  const pick = (predicate: (block: ReportVersionBlock) => boolean) => {
+    const match = blocks.find((block) => !consumed.has(block.id) && predicate(block)) || null;
+
+    if (match) {
+      consumed.add(match.id);
+    }
+
+    return match;
+  };
+
+  const ordered = [
+    pick((block) => getBlockOrder(block, 0) === 1) ||
+      pick((block) => getBlockSlideType(block) === "cover") ||
+      pick((block) => block.type === "title"),
+    pick((block) => getBlockOrder(block, 0) === 2) ||
+      pick((block) => getBlockMetricKey(block) === "reach"),
+    pick((block) => getBlockOrder(block, 0) === 3) ||
+      pick((block) => getBlockMetricKey(block) === "impressions"),
+    pick((block) => getBlockOrder(block, 0) === 4) ||
+      pick((block) => getBlockMetricKey(block) === "engagement"),
+    pick((block) => getBlockOrder(block, 0) === 5) ||
+      pick((block) => getBlockSlideType(block) === "summary"),
+    ...blocks.filter((block) => !consumed.has(block.id)),
+  ].filter((block): block is ReportVersionBlock => block !== null);
+
+  return ordered.length === blocks.length ? ordered : blocks;
+}
+
 function sortBlocksByOrder(blocks: ReportVersionBlock[]) {
-  return blocks
+  const normalizedBlocks = normalizeFiveSlideBlockOrder(blocks);
+
+  return normalizedBlocks
     .map((block, index) => ({
       block,
       index,
@@ -697,6 +811,18 @@ function getNestedChartSeries(collection: unknown) {
 function getBlockChartSource(block: ReportVersionBlock) {
   const chart = block.data.chart;
   const chartRecord = chart && typeof chart === "object" ? chart as Record<string, unknown> : null;
+  const metricRecord =
+    block.data.metric && typeof block.data.metric === "object"
+      ? (block.data.metric as Record<string, unknown>)
+      : null;
+  const chartData =
+    block.data.chart_data && typeof block.data.chart_data === "object"
+      ? (block.data.chart_data as Record<string, unknown>)
+      : null;
+  const dailyChart =
+    block.data.dailyChart && typeof block.data.dailyChart === "object"
+      ? (block.data.dailyChart as Record<string, unknown>)
+      : null;
   const dailyEngagement = block.data.daily_engagement;
   const dailyEngagementRecord = getObjectRecord(dailyEngagement);
 
@@ -728,6 +854,20 @@ function getBlockChartSource(block: ReportVersionBlock) {
     };
   }
 
+  if (Array.isArray(chartData?.points)) {
+    return {
+      source: "data_json.chart_data.points" as const,
+      raw: chartData.points,
+    };
+  }
+
+  if (Array.isArray(dailyChart?.points)) {
+    return {
+      source: "data_json.dailyChart.points" as const,
+      raw: dailyChart.points,
+    };
+  }
+
   if (Array.isArray(block.data.points)) {
     return {
       source: "data_json.points" as const,
@@ -751,6 +891,29 @@ function getBlockChartSource(block: ReportVersionBlock) {
     };
   }
 
+  if (Array.isArray(chartData?.data)) {
+    const nestedChartDataPoints = getNestedChartSeries(chartData.data);
+
+    if (nestedChartDataPoints) {
+      return {
+        source: "data_json.chart_data.data.points" as const,
+        raw: nestedChartDataPoints,
+      };
+    }
+
+    return {
+      source: "data_json.chart_data.data" as const,
+      raw: chartData.data,
+    };
+  }
+
+  if (Array.isArray(dailyChart?.data)) {
+    return {
+      source: "data_json.dailyChart.data" as const,
+      raw: dailyChart.data,
+    };
+  }
+
   if (Array.isArray(chartRecord?.series)) {
     const nestedSeriesPoints = getNestedChartSeries(chartRecord.series);
 
@@ -767,12 +930,31 @@ function getBlockChartSource(block: ReportVersionBlock) {
     };
   }
 
+  if (Array.isArray(chartData?.series)) {
+    const nestedChartSeriesPoints = getNestedChartSeries(chartData.series);
+
+    if (nestedChartSeriesPoints) {
+      return {
+        source: "data_json.chart_data.series.points" as const,
+        raw: nestedChartSeriesPoints,
+      };
+    }
+
+    return {
+      source: "data_json.chart_data.series" as const,
+      raw: chartData.series,
+    };
+  }
+
   const raw =
     Array.isArray(block.data.data) ? block.data.data :
     Array.isArray(block.data.series) ? block.data.series :
     Array.isArray(block.data.daily) ? block.data.daily :
     Array.isArray(block.data.daily_series) ? block.data.daily_series :
     Array.isArray(block.data.dailySeries) ? block.data.dailySeries :
+    Array.isArray(metricRecord?.daily_series) ? metricRecord.daily_series :
+    Array.isArray(metricRecord?.dailySeries) ? metricRecord.dailySeries :
+    Array.isArray(block.data.chart_data) ? block.data.chart_data :
     [];
 
   return {
@@ -782,19 +964,28 @@ function getBlockChartSource(block: ReportVersionBlock) {
 }
 
 function getBlockChartPoints(block: ReportVersionBlock) {
-  return getBlockChartSource(block).raw
-    .map(normalizeChartPoint)
-    .filter(Boolean) as BlockChartPoint[];
+  return normalizeDailySeries(block.data) as BlockChartPoint[];
 }
 
 function getBlockChartSeries(block: ReportVersionBlock) {
   const chart = block.data.chart;
   const chartRecord = chart && typeof chart === "object" ? chart as Record<string, unknown> : null;
+  const chartData =
+    block.data.chart_data && typeof block.data.chart_data === "object"
+      ? (block.data.chart_data as Record<string, unknown>)
+      : null;
+  const metricRecord =
+    block.data.metric && typeof block.data.metric === "object"
+      ? (block.data.metric as Record<string, unknown>)
+      : null;
   const rawSeries =
     Array.isArray(chartRecord?.series) ? chartRecord.series :
+    Array.isArray(chartData?.series) ? chartData.series :
     Array.isArray(block.data.series) ? block.data.series :
     Array.isArray(block.data.daily_series) ? block.data.daily_series :
     Array.isArray(block.data.dailySeries) ? block.data.dailySeries :
+    Array.isArray(metricRecord?.daily_series) ? metricRecord.daily_series :
+    Array.isArray(metricRecord?.dailySeries) ? metricRecord.dailySeries :
     [];
 
   return rawSeries
@@ -1154,6 +1345,8 @@ function getMetricNumber(block: ReportVersionBlock, aliases: string[]) {
 
 function getBlockInsightText(block: ReportVersionBlock, fallback?: string) {
   return (
+    getStringValue(block.data.insight_short) ||
+    getStringValue(block.data.insightShort) ||
     getStringValue(block.data.ai_analysis) ||
     getStringValue(block.data.aiAnalysis) ||
     getStringValue(block.data.analysis) ||
@@ -2492,6 +2685,11 @@ function getExecutiveAiAnalysis(
   return `The strongest readout comes from ${leadingSignals}. Reviewed together, these signals help connect audience size, content response and performance momentum into one executive view.`;
 }
 
+/*
+ * LEGACY / candidate for removal after contract is stable.
+ * Official 5-slide summary is SummarySlide via lib/reports/templates/default.ts.
+ * This block-based summary remains only for reports that still render dynamic block decks.
+ */
 function ExecutiveSummarySlide({
   block,
   blocks,
@@ -2955,6 +3153,23 @@ function MultiSourceMetricSlide({
   const insightItems = getBlockInsightItems(block);
   const strongestDay = getStrongestDay(block, chartPoints);
   const trendDirection = getBlockTrendDirection(block, chartPoints);
+  const conciseInsightText = insightItems[0] || insightText;
+
+  if (process.env.NODE_ENV === "development") {
+    console.info("[ReportChart][metric.slide]", {
+      slide_number: slideId,
+      metric_key: variant,
+      daily_series_length: chartPoints.length,
+      daily_series_values: chartPoints.map((point) => point.value),
+      chart_props_recibidos: {
+        semanticName,
+        hasChart,
+        hasMultiSeriesChart,
+        seriesCount: chartSeries.length,
+        timeframeLabel,
+      },
+    });
+  }
 
   if (variant === "reach") {
     return (
@@ -2966,91 +3181,85 @@ function MultiSourceMetricSlide({
         renderMode={renderMode}
         templateId={templateId}
       >
-        <div className="grid h-full min-h-0 grid-cols-[1.22fr_0.78fr] gap-6">
-          <section className={`flex min-h-0 flex-col rounded-[32px] border p-5 ${tone.card}`}>
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className={`text-[11px] font-semibold uppercase tracking-[0.25em] ${tone.accent}`}>
-                  Reach / Visibility
-                </p>
-                <h2 className={`mt-3 text-[2.3rem] font-semibold tracking-[-0.06em] ${tone.title}`}>
-                  {platformLabel}
-                </h2>
-              </div>
+        <div className="grid h-full min-h-0 grid-cols-[0.82fr_1.18fr] gap-6">
+          <section className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
+            <div>
+              <p className={`text-[11px] font-semibold uppercase tracking-[0.25em] ${tone.accent}`}>
+                Metric
+              </p>
+              <h2 className={`mt-3 text-[2.3rem] font-semibold tracking-[-0.06em] ${tone.title}`}>
+                {platformLabel}
+              </h2>
+              <p className={`mt-2 text-xs ${tone.subtle}`}>
+                Reach / visibility performance
+              </p>
+              <p className={`mt-7 text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.subtle}`}>
+                Total reach this period
+              </p>
+              <p className={`mt-3 text-[3rem] font-semibold leading-none tracking-[-0.06em] ${tone.title}`}>
+                {getMetricDisplay(block, ["reach", "total_reach"], "—")}
+              </p>
               {timeframeLabel ? (
-                <div className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${tone.chip}`}>
+                <p className={`mt-3 text-sm font-medium ${tone.subtle}`}>
                   {timeframeLabel}
-                </div>
+                </p>
               ) : null}
             </div>
-            <div className="mt-5 min-h-0 flex-1">
-              {hasChart ? (
-                <MetricDailyChart
-                  points={chartPoints}
-                  series={
-                    hasMultiSeriesChart
-                      ? chartSeries.map((series) => ({
-                          label: series.label,
-                          sourceType: series.sourceType,
-                          points: series.points,
-                        }))
-                      : undefined
-                  }
-                  isAvailable={hasChart}
-                  metricLabel={getStringValue(block.data.metric) || "Reach"}
-                  dark={tone.dark}
-                />
-              ) : (
-                renderEmptyChartState(tone)
-              )}
-            </div>
+            <div />
+            <InsightBox
+              text={
+                conciseInsightText ||
+                "Visibility trends indicate how efficiently this platform converted activity into sustained awareness."
+              }
+              label="AI Insight"
+              className="max-h-[220px]"
+              templateId={templateId}
+            />
           </section>
 
-          <section className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-4">
-            <div className="grid grid-cols-2 gap-3">
-              {renderMetricStatCard({
-                label: "Reach",
-                value: getMetricDisplay(block, ["reach", "total_reach"], "—"),
-                tone,
-                strong: true,
-              })}
-              {renderMetricStatCard({
-                label: "Impressions",
-                value: getMetricDisplay(block, ["impressions", "total_impressions"], "—"),
-                tone,
-              })}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {renderMetricStatCard({
-                label: "Strongest day",
-                value: strongestDay,
-                tone,
-              })}
-              {renderMetricStatCard({
-                label: "Trend direction",
-                value: trendDirection,
-                tone,
-              })}
-            </div>
-            <article className={`min-h-0 rounded-[30px] border p-5 ${tone.insight}`}>
-              <p className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${templateId === "modern" ? tone.insightTitle : tone.accentSoft}`}>
-                AI Insight
-              </p>
-              <p className={`mt-3 text-[0.93rem] leading-7 ${templateId === "modern" ? tone.insightBody : tone.subtitle}`}>
-                {insightText || "Visibility trends indicate how efficiently this platform converted activity into sustained awareness."}
-              </p>
-              {insightItems.length > 0 ? (
-                <div className="mt-4 space-y-2">
-                  {insightItems.slice(0, 3).map((item, itemIndex) => (
-                    <div key={`${item}-${itemIndex}`} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                      <p className={`text-[0.8rem] leading-5 ${templateId === "modern" ? tone.insightBody : tone.subtitle}`}>
-                        {item}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </article>
+          <section className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-4">
+            {hasChart ? (
+              <MetricDailyChart
+                points={chartPoints}
+                series={
+                  hasMultiSeriesChart
+                    ? chartSeries.map((series) => ({
+                        label: series.label,
+                        sourceType: series.sourceType,
+                        points: series.points,
+                      }))
+                    : undefined
+                }
+                isAvailable={hasChart}
+                metricLabel={getStringValue(block.data.metric) || "Reach"}
+                dark={tone.dark}
+                slideNumber={slideId}
+                metricKey="reach"
+                placeholderText="Daily reach series is not available for this report yet."
+              />
+            ) : (
+              renderEmptyChartState(tone)
+            )}
+            <KPIGrid columns={3}>
+              <KPICard
+                label="Impressions"
+                value={getMetricDisplay(block, ["impressions", "total_impressions"], "—")}
+                meta="Total content exposures in period"
+                templateId={templateId}
+              />
+              <KPICard
+                label="Highest day"
+                value={strongestDay}
+                meta="Strongest daily reach point"
+                templateId={templateId}
+              />
+              <KPICard
+                label="Trend"
+                value={trendDirection}
+                meta="Direction versus opening days"
+                templateId={templateId}
+              />
+            </KPIGrid>
           </section>
         </div>
       </SlideCanvas>
@@ -3067,89 +3276,99 @@ function MultiSourceMetricSlide({
         renderMode={renderMode}
         templateId={templateId}
       >
-        <div className="flex h-full min-h-0 flex-col gap-5">
-          <div className="flex items-end justify-between gap-4">
+        <div className="grid h-full min-h-0 grid-cols-[0.82fr_1.18fr] gap-5">
+          <section className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
             <div>
               <p className={`text-[11px] font-semibold uppercase tracking-[0.25em] ${tone.accent}`}>
-                Engagement Analysis
+                Metric
               </p>
               <h2 className={`mt-3 text-[2.4rem] font-semibold tracking-[-0.06em] ${tone.title}`}>
                 {platformLabel}
               </h2>
-            </div>
-            {timeframeLabel ? (
-              <div className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${tone.chip}`}>
-                {timeframeLabel}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="grid grid-cols-4 gap-3">
-            {renderMetricStatCard({
-              label: "Engagement",
-              value: getMetricDisplay(block, ["engagement", "total_engagement", "interactions_total"], "—"),
-              tone,
-              strong: true,
-            })}
-            {renderMetricStatCard({
-              label: "Engagement rate",
-              value: getMetricDisplay(block, ["engagement_rate", "average_engagement_rate"], "—"),
-              tone,
-            })}
-            {renderMetricStatCard({
-              label: "Interaction spikes",
-              value: strongestDay,
-              tone,
-            })}
-            {renderMetricStatCard({
-              label: "Trend",
-              value: trendDirection,
-              tone,
-            })}
-          </div>
-
-          <div className="grid min-h-0 flex-1 grid-cols-[1.08fr_0.92fr] gap-5">
-            <section className={`min-h-0 rounded-[32px] border p-5 ${tone.card}`}>
-              {hasChart ? (
-                <MetricDailyChart
-                  points={chartPoints}
-                  series={
-                    hasMultiSeriesChart
-                      ? chartSeries.map((series) => ({
-                          label: series.label,
-                          sourceType: series.sourceType,
-                          points: series.points,
-                        }))
-                      : undefined
-                  }
-                  isAvailable={hasChart}
-                  metricLabel={getStringValue(block.data.metric) || "Engagement"}
-                  dark={tone.dark}
-                />
-              ) : (
-                renderEmptyChartState(tone)
-              )}
-            </section>
-            <section className={`min-h-0 rounded-[32px] border p-5 ${tone.insight}`}>
-              <p className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${templateId === "modern" ? tone.insightTitle : tone.accentSoft}`}>
-                Editorial interpretation
+              <p className={`mt-2 text-xs ${tone.subtle}`}>
+                Engagement performance and daily interaction intensity
               </p>
-              <p className={`mt-3 text-[0.98rem] leading-7 ${templateId === "modern" ? tone.insightBody : tone.subtitle}`}>
-                {insightText || "Engagement quality reflects where audience attention concentrated, how interactions clustered, and whether the channel sustained momentum beyond isolated spikes."}
+              <p className={`mt-7 text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.subtle}`}>
+                Total engagement this period
               </p>
-              {insightItems.length > 0 ? (
-                <div className="mt-4 grid gap-2">
-                  {insightItems.slice(0, 4).map((item, itemIndex) => (
-                    <div key={`${item}-${itemIndex}`} className="rounded-[20px] border border-white/10 bg-white/5 px-3 py-2.5">
-                      <p className={`text-[0.82rem] leading-5 ${templateId === "modern" ? tone.insightBody : tone.subtitle}`}>
-                        {item}
-                      </p>
-                    </div>
-                  ))}
-                </div>
+              <p className={`mt-3 text-[3rem] font-semibold leading-none tracking-[-0.06em] ${tone.title}`}>
+                {getMetricDisplay(block, ["engagement", "total_engagement", "interactions_total"], "—")}
+              </p>
+              {timeframeLabel ? (
+                <p className={`mt-3 text-sm font-medium ${tone.subtle}`}>
+                  {timeframeLabel}
+                </p>
               ) : null}
-            </section>
-          </div>
+            </div>
+
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              {renderMetricStatCard({
+                label: "Engagement rate",
+                value: getMetricDisplay(block, ["engagement_rate", "average_engagement_rate"], "—"),
+                tone,
+              })}
+              {renderMetricStatCard({
+                label: "Frequency",
+                value: getMetricDisplay(block, ["frequency"], "—"),
+                tone,
+              })}
+            </div>
+
+            <InsightBox
+              text={
+                conciseInsightText ||
+                "Engagement quality reflects where audience attention concentrated, how interactions clustered, and whether the channel sustained momentum beyond isolated spikes."
+              }
+              label="AI Insight"
+              className="mt-6 max-h-[220px]"
+              templateId={templateId}
+            />
+          </section>
+
+          <section className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-4">
+            {hasChart ? (
+              <MetricDailyChart
+                points={chartPoints}
+                series={
+                  hasMultiSeriesChart
+                    ? chartSeries.map((series) => ({
+                        label: series.label,
+                        sourceType: series.sourceType,
+                        points: series.points,
+                      }))
+                    : undefined
+                }
+                isAvailable={hasChart}
+                metricLabel={getStringValue(block.data.metric) || "Engagement"}
+                dark={tone.dark}
+                slideNumber={slideId}
+                metricKey="engagement"
+                placeholderText="Daily engagement series is not available for this report yet."
+              />
+            ) : (
+              renderEmptyChartState(tone)
+            )}
+            <KPIGrid columns={3}>
+              <KPICard
+                label="Highest day"
+                value={strongestDay}
+                meta="Largest interaction spike"
+                templateId={templateId}
+              />
+              <KPICard
+                label="Trend"
+                value={trendDirection}
+                meta="Direction of the daily curve"
+                templateId={templateId}
+              />
+              <KPICard
+                label="Interactions"
+                value={getMetricDisplay(block, ["interactions_total", "engagement"], "—")}
+                meta="Total actions recorded in period"
+                templateId={templateId}
+              />
+            </KPIGrid>
+          </section>
         </div>
       </SlideCanvas>
     );
@@ -3873,6 +4092,7 @@ function ReportBlockSlide({
   totalSlides,
   renderMode,
   logoUrl,
+  brandName,
   templateId,
   locale,
   hideOverviewInsights = false,
@@ -3884,6 +4104,7 @@ function ReportBlockSlide({
   totalSlides: number;
   renderMode: ReportRenderMode;
   logoUrl: string | null;
+  brandName: string;
   templateId: ReportTemplateId;
   locale?: string;
   hideOverviewInsights?: boolean;
@@ -4007,6 +4228,7 @@ function ReportBlockSlide({
           meta: coverMeta,
           branding: {
             logoUrl,
+            brandName,
           },
         }}
       />
@@ -4029,6 +4251,7 @@ function ReportBlockSlide({
           meta,
           branding: {
             logoUrl,
+            brandName,
           },
         }}
       />
@@ -4299,6 +4522,7 @@ export function buildReportBlockSlideElements(input: {
   model: ExecutiveDarkViewModel | null | undefined;
   renderMode: ReportRenderMode;
   logoUrl: string | null;
+  brandName: string;
   templateId: ReportTemplateId;
   locale?: string;
   hideOverviewInsights?: boolean;
@@ -4315,6 +4539,7 @@ export function buildReportBlockSlideElements(input: {
       totalSlides={sortedBlocks.length}
       renderMode={input.renderMode}
       logoUrl={input.logoUrl}
+      brandName={input.brandName}
       templateId={input.templateId}
       locale={input.locale}
       hideOverviewInsights={input.hideOverviewInsights}
@@ -4322,7 +4547,12 @@ export function buildReportBlockSlideElements(input: {
   )) as ReactElement[];
 }
 
+/*
+ * Source of truth renderer for report preview/export.
+ * The official 5-slide structure is defined in lib/reports/templates/default.ts.
+ */
 export function SlideRenderer({
+  reportId,
   model,
   renderMode = "preview",
   blocks,
@@ -4332,13 +4562,14 @@ export function SlideRenderer({
   templateId = "executive",
 }: SlideRendererProps) {
   const template = getReportTemplate("default");
-  const rawLogoUrl = branding?.logoUrl || null;
-  const safeBranding = {
-    logoUrl: rawLogoUrl,
-    source: branding?.source,
-  };
+  const safeBranding = resolveReportBranding({
+    id: reportId,
+    templateId,
+    branding,
+  });
   const context = buildDefaultTemplateContext(model, {
-    logoUrl: safeBranding.logoUrl,
+    logoUrl: safeBranding.logoUrl || null,
+    brandName: safeBranding.brandName,
     source: safeBranding.source,
   });
   const rootClassName =
@@ -4348,16 +4579,36 @@ export function SlideRenderer({
   const shouldUseBlockSlides =
     renderMode !== "export" && shouldRenderBlocksAsSlides(blocks);
   const sortedBlocks = blocks ? sortBlocksByOrder(blocks) : [];
-  console.info("[AUDIT_RENDER_PATH][SlideRenderer]", {
-    entered: true,
-    renderMode,
-    blocksLength: blocks?.length ?? 0,
-    sortedBlocksLength: sortedBlocks.length,
-    semanticNames: sortedBlocks.map((block) => getBlockSemanticName(block)),
-    usingBlocks: shouldUseBlockSlides,
-    usingTemplate: !shouldUseBlockSlides,
-    templateSlidesLength: template.slides.length,
-  });
+  const normalizedOrder = sortedBlocks.map((block) => ({
+    slideNumber:
+      block.data.slide_number ??
+      block.data.slideNumber ??
+      block.data.order ??
+      block.data.slide_order ??
+      block.data.slideOrder ??
+      null,
+    slideType:
+      getStringValue(block.data.slide_type) ||
+      getStringValue(block.data.slideType) ||
+      getBlockSlideType(block) ||
+      null,
+    metricKey:
+      getStringValue(block.data.metric_key) ||
+      getStringValue(block.data.metricKey) ||
+      getBlockMetricKey(block) ||
+      null,
+    blockType: block.type,
+  }));
+
+  if (process.env.NODE_ENV === "development") {
+    console.log("[5-slide renderer source of truth]", {
+      reportId,
+      template: templateId,
+      slideCount: shouldUseBlockSlides ? sortedBlocks.length : template.slides.length,
+      normalizedOrder,
+      branding: safeBranding,
+    });
+  }
 
   if (shouldUseBlockSlides && blocks && template.slides.length < blocks.length) {
     console.warn("[Report10][legacy.limit.detected]", {
@@ -4391,6 +4642,7 @@ export function SlideRenderer({
           model,
           renderMode,
           logoUrl: safeBranding.logoUrl,
+          brandName: safeBranding.brandName,
           templateId,
           locale,
           hideOverviewInsights,

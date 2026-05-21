@@ -8,6 +8,7 @@ import type { ReportTemplateId } from "@/lib/reports/template-selection";
 import { REPORT_SLIDE_THEME } from "@/lib/reports/theme";
 
 type ReportExportSurfaceProps = {
+  reportId?: string;
   model: ExecutiveDarkViewModel;
   branding?: {
     logoUrl?: string | null;
@@ -22,7 +23,7 @@ const EXPORT_SLIDE_HEIGHT = REPORT_SLIDE_THEME.slide.height;
 
 export const ReportExportSurface = forwardRef<HTMLDivElement, ReportExportSurfaceProps>(
   function ReportExportSurface(
-    { model, branding, templateId = "executive", onReadyChange },
+    { reportId, model, branding, templateId = "executive", onReadyChange },
     ref
   ) {
     const rootRef = useRef<HTMLDivElement | null>(null);
@@ -146,6 +147,7 @@ export const ReportExportSurface = forwardRef<HTMLDivElement, ReportExportSurfac
         }}
       >
         <SlideRenderer
+          reportId={reportId}
           model={model}
           renderMode="export"
           branding={branding}

@@ -16,6 +16,10 @@ type BackendWorkspace = {
   storageUsedBytes?: string | number | null;
   storage_limit_bytes?: string | number | null;
   storageLimitBytes?: string | number | null;
+  brand_name?: string | null;
+  brandName?: string | null;
+  brand_logo_url?: string | null;
+  brandLogoUrl?: string | null;
   plan_limits?: {
     reports_per_month?: string | number | null;
     reportsPerMonth?: string | number | null;
@@ -34,9 +38,21 @@ type BackendWorkspace = {
   } | null;
   logo_url?: string | null;
   logoUrl?: string | null;
+  resolved_logo_url?: string | null;
+  resolvedLogoUrl?: string | null;
+  resolved_brand_name?: string | null;
+  resolvedBrandName?: string | null;
   branding?: {
+    resolved_logo_url?: string | null;
+    resolvedLogoUrl?: string | null;
+    brand_logo_url?: string | null;
+    brandLogoUrl?: string | null;
     logo_url?: string | null;
     logoUrl?: string | null;
+    brand_name?: string | null;
+    brandName?: string | null;
+    resolved_brand_name?: string | null;
+    resolvedBrandName?: string | null;
   } | null;
 };
 
@@ -66,37 +82,40 @@ type WorkspaceDetailResponse =
     };
 
 function extractWorkspaceBranding(workspace: BackendWorkspace) {
-  if (workspace.branding?.logoUrl) {
-    return {
-      logoUrl: workspace.branding.logoUrl,
-      source: "branding.logoUrl",
-    };
-  }
-
-  if (workspace.branding?.logo_url) {
-    return {
-      logoUrl: workspace.branding.logo_url,
-      source: "branding.logo_url",
-    };
-  }
-
-  if (workspace.logoUrl) {
-    return {
-      logoUrl: workspace.logoUrl,
-      source: "logoUrl",
-    };
-  }
-
-  if (workspace.logo_url) {
-    return {
-      logoUrl: workspace.logo_url,
-      source: "logo_url",
-    };
-  }
+  const logoSources: Array<[string | null | undefined, string]> = [
+    [workspace.branding?.resolvedLogoUrl, "branding.resolvedLogoUrl"],
+    [workspace.branding?.resolved_logo_url, "branding.resolved_logo_url"],
+    [workspace.branding?.brandLogoUrl, "branding.brandLogoUrl"],
+    [workspace.branding?.brand_logo_url, "branding.brand_logo_url"],
+    [workspace.branding?.logoUrl, "branding.logoUrl"],
+    [workspace.branding?.logo_url, "branding.logo_url"],
+    [workspace.resolvedLogoUrl, "resolvedLogoUrl"],
+    [workspace.resolved_logo_url, "resolved_logo_url"],
+    [workspace.brandLogoUrl, "brandLogoUrl"],
+    [workspace.brand_logo_url, "brand_logo_url"],
+    [workspace.logoUrl, "logoUrl"],
+    [workspace.logo_url, "logo_url"],
+  ];
+  const brandNameSources: Array<[string | null | undefined, string]> = [
+    [workspace.branding?.resolvedBrandName, "branding.resolvedBrandName"],
+    [workspace.branding?.resolved_brand_name, "branding.resolved_brand_name"],
+    [workspace.branding?.brandName, "branding.brandName"],
+    [workspace.branding?.brand_name, "branding.brand_name"],
+    [workspace.resolvedBrandName, "resolvedBrandName"],
+    [workspace.resolved_brand_name, "resolved_brand_name"],
+    [workspace.brandName, "brandName"],
+    [workspace.brand_name, "brand_name"],
+  ];
+  const resolvedLogo = logoSources.find(([value]) => typeof value === "string" && value.trim());
+  const resolvedBrandName = brandNameSources.find(
+    ([value]) => typeof value === "string" && value.trim()
+  );
 
   return {
-    logoUrl: undefined,
-    source: "empty",
+    logoUrl: resolvedLogo?.[0]?.trim() || undefined,
+    brandName: resolvedBrandName?.[0]?.trim() || undefined,
+    source: resolvedLogo?.[1] || "empty",
+    brandNameSource: resolvedBrandName?.[1] || "empty",
   };
 }
 
@@ -131,7 +150,9 @@ function normalizeWorkspace(workspace: BackendWorkspace, index: number): Workspa
     storageLimitBytes,
     branding: {
       logoUrl: branding.logoUrl,
+      brandName: branding.brandName,
       source: branding.source,
+      brandNameSource: branding.brandNameSource,
     },
   } satisfies Workspace;
 }

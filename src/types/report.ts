@@ -19,7 +19,9 @@ export type Report = {
   description?: ReportDescription | null;
   branding?: {
     logoUrl?: string;
+    brandName?: string;
     source?: string;
+    brandNameSource?: string;
   };
 };
 
@@ -71,7 +73,9 @@ export type ReportVersion = {
   locale: ReportLocale;
   branding?: {
     logoUrl?: string;
+    brandName?: string;
     source?: string;
+    brandNameSource?: string;
   };
   blocks: ReportBlock[];
   rawMetadata?: Record<string, unknown>;
@@ -81,7 +85,9 @@ export type ReportVersionView = {
   locale: ReportLocale;
   branding?: {
     logoUrl?: string;
+    brandName?: string;
     source?: string;
+    brandNameSource?: string;
   };
   description?: ReportDescription | null;
   blocks: ReportVersionBlock[];
@@ -94,7 +100,10 @@ export type ReportDetail = Report & {
   description?: ReportDescription | null;
   branding?: {
     logoUrl?: string;
+    brandName?: string;
     source?: string;
+    brandNameSource?: string;
   };
   logoUrl?: string;
+  brandName?: string;
 };

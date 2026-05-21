@@ -22,6 +22,7 @@ export type CoverSlideModel = {
   meta: string;
   branding: {
     logoUrl: string | null;
+    brandName: string;
   };
 };
 
@@ -32,6 +33,7 @@ export type ReachSlideCardModel = {
 };
 
 export type ReachSlideModel = {
+  metricKey?: string;
   metricEyebrow: string;
   metricTitle: string;
   sourceCaption: string;
@@ -110,5 +112,17 @@ export type ClosingSlideModel = {
   footerText: string;
   branding: {
     logoUrl: string | null;
+    brandName?: string;
   };
+};
+
+export type SummarySlideModel = {
+  title: string;
+  aiSummary: string;
+  recommendation: string;
+  metrics: Array<{
+    label: string;
+    value: string;
+    meta: string;
+  }>;
 };

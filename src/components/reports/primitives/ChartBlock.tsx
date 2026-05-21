@@ -9,7 +9,7 @@ type ChartBlockProps = {
 
 export function ChartBlock({
   children,
-  className = "grid min-h-0 grid-rows-[360px_1fr] gap-4",
+  className = "grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-4",
 }: ChartBlockProps) {
   return <div className={className}>{children}</div>;
 }

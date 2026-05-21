@@ -2,7 +2,6 @@
 
 import { getTemplateTone, isLightTemplate } from "@/components/reports/slides/template";
 import { SlideCanvas } from "@/components/reports/SlideCanvas";
-import { HeroBlock } from "@/components/reports/primitives/HeroBlock";
 import { CoverLogo } from "@/components/reports/slides/shared";
 import type { CoverSlideModel, SlideComponentProps } from "@/components/reports/slides/types";
 import { REPORT_SLIDE_THEME } from "@/lib/reports/theme";
@@ -121,18 +120,6 @@ function ModernCover({
             <div className="flex h-full flex-col justify-between pr-16 text-white">
               <div className="space-y-10">
                 <div className="flex items-center gap-4">
-                  <div className="flex h-10 w-10 items-center justify-center">
-                    {model.branding.logoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={model.branding.logoUrl}
-                        alt="Brand logo"
-                        className="h-10 w-10 object-contain"
-                      />
-                    ) : (
-                      <div className="h-7 w-7 rotate-45 border-2 border-white/80" />
-                    )}
-                  </div>
                   <p className="text-[1.35rem] font-medium tracking-[-0.03em] text-white/95">
                     Marketing report
                   </p>
@@ -149,6 +136,9 @@ function ModernCover({
                 <p className="text-[1.05rem] font-medium text-white/85">Report period</p>
                 <p className="mt-3 text-[1.1rem] font-medium tracking-[0.02em] text-white/95">
                   {model.meta}
+                </p>
+                <p className="mt-8 text-[1.05rem] font-medium tracking-[0.01em] text-white/92">
+                  {model.branding.brandName}
                 </p>
               </div>
             </div>
@@ -168,6 +158,8 @@ export function CoverSlide({
   templateId,
   model,
 }: SlideComponentProps<CoverSlideModel>) {
+  const tone = getTemplateTone(templateId);
+
   if (templateId === "modern") {
     return <ModernCover slideId={slideId} renderMode={renderMode} model={model} />;
   }
@@ -180,13 +172,39 @@ export function CoverSlide({
       renderMode={renderMode}
       templateId={templateId}
     >
-      <HeroBlock
-        title={model.reportTitle}
-        subtitle={model.subtitle}
-        meta={model.meta}
-        templateId={templateId}
-        rightSlot={<CoverLogo logoDataUrl={model.branding.logoUrl} dark={!isLightTemplate(templateId)} />}
-      />
+      <div className="relative h-full">
+        <div className="flex h-full max-w-[38rem] flex-col justify-center pr-10">
+          <h1
+            className={`max-w-none text-[4.6rem] font-semibold leading-[0.92] tracking-[-0.05em] ${tone.title}`}
+          >
+            {model.reportTitle}
+          </h1>
+          <div className={`mt-5 h-px w-28 ${tone.divider}`} />
+          {model.subtitle ? (
+            <p className={`mt-5 text-[1.4rem] ${tone.subtitle}`}>{model.subtitle}</p>
+          ) : null}
+          {model.meta ? (
+            <p className={`mt-4 text-[0.95rem] font-medium uppercase tracking-[0.18em] ${tone.accent}`}>
+              {model.meta}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="absolute bottom-0 left-0 max-w-[34rem]">
+          <p
+            className={`text-[1rem] font-medium tracking-[0.01em] ${
+              isLightTemplate(templateId) ? tone.body : "text-white/92"
+            }`}
+          >
+            {model.branding.brandName}
+          </p>
+        </div>
+
+        <CoverLogo
+          logoDataUrl={model.branding.logoUrl}
+          dark={!isLightTemplate(templateId)}
+        />
+      </div>
     </SlideCanvas>
   );
 }
