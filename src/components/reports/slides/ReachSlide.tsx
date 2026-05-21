@@ -56,7 +56,7 @@ export function ReachSlide({
               points={model.chartPoints}
               isAvailable={model.chartAvailable}
               metricLabel={model.chartMetricLabel}
-              dark={templateId !== "modern"}
+              dark={tone.dark}
             />
             <KPIGrid columns={2}>
               <KPICard

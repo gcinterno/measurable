@@ -38,6 +38,18 @@ export type DefaultTemplateContext = {
   impressionsDailyPoints: ExecutiveDarkSeriesPoint[];
 };
 
+function formatIntegrationDisplayName(value: string) {
+  return value
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getFallbackBrandName() {
+  return "Social Account";
+}
+
 function getCoverBrandName(title: string) {
   const storedPageName = getIntegrationReportContext()?.pageName?.trim();
 
@@ -54,7 +66,7 @@ function getCoverBrandName(title: string) {
     normalizedTitle === "Meta Pages Overview" ||
     normalizedTitle === "Report Meta"
   ) {
-    return "Facebook Page";
+    return getFallbackBrandName();
   }
 
   return normalizedTitle
@@ -125,21 +137,27 @@ function formatAnalyzedPeriod(report: ExecutiveDarkViewModel) {
 }
 
 function getCoverIntegrationLabel() {
-  const integration = getIntegrationReportContext()?.integration?.trim().toLowerCase();
+  const context = getIntegrationReportContext();
+  const source = context?.source?.trim().toLowerCase() || "";
+  const integration = context?.integration?.trim().toLowerCase() || "";
 
-  if (integration === "meta") {
-    return "Facebook Page";
+  if (source === "facebook_pages") {
+    return "Facebook Pages";
   }
 
-  if (!integration) {
-    return "Facebook Page";
+  if (source === "instagram_business") {
+    return "Instagram Business";
   }
 
-  return integration
-    .split(/[\s_-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+  if (integration === "meta" && source) {
+    return formatIntegrationDisplayName(source);
+  }
+
+  if (integration && integration !== "meta") {
+    return formatIntegrationDisplayName(integration);
+  }
+
+  return "Social Account";
 }
 
 function getReachInsight(report: ExecutiveDarkViewModel) {
@@ -209,6 +227,16 @@ function formatMetricValue(value: number) {
   return formatNumber(value, 0);
 }
 
+function buildSourceCaption(integrationLabel: string) {
+  const normalizedLabel = integrationLabel.trim();
+
+  if (!normalizedLabel || normalizedLabel === "Social Account") {
+    return "Based on synchronized social data";
+  }
+
+  return `Based on synchronized ${normalizedLabel.toLowerCase()} data`;
+}
+
 function buildReachCard(
   label: string,
   point: ExecutiveDarkSeriesPoint | null,
@@ -253,23 +281,16 @@ export function buildDefaultTemplateContext(
 ): DefaultTemplateContext {
   const reachDisplayLabel = "ALCANCE";
   const impressionsDisplayLabel = "IMPRESIONES";
-  const viewersTotal = parseMetricNumber(report.viewersTotalValue, 142300);
+  const viewersTotal = parseMetricNumber(report.viewersTotalValue, 0);
   const impressionsTotal = report.impressionsSlidePresent
     ? parseMetricNumber(report.impressionsTotalValue, 0)
-    : parseMetricNumber(report.impressionsTotalValue, 304620);
-  const impressionsDailyFallback: ExecutiveDarkSeriesPoint[] = [
-    { date: "2026-04-01", label: "Apr 1", value: 18420 },
-    { date: "2026-04-08", label: "Apr 8", value: 20110 },
-    { date: "2026-04-15", label: "Apr 15", value: 22640 },
-    { date: "2026-04-22", label: "Apr 22", value: 19870 },
-    { date: "2026-04-28", label: "Apr 28", value: 24180 },
-  ];
+    : parseMetricNumber(report.impressionsTotalValue, 0);
   const impressionsDailyPoints =
     report.impressionsSlidePresent
       ? report.impressionsDailyPoints
       : report.impressionsDailyAvailable && report.impressionsDailyPoints.length > 0
         ? report.impressionsDailyPoints
-        : impressionsDailyFallback;
+        : [];
 
   return {
     report,
@@ -282,11 +303,11 @@ export function buildDefaultTemplateContext(
     reachInsight: formatInsightTextDates(getReachInsight(report)),
     viewersTotal,
     impressionsTotal,
-    followersTotal: parseMetricNumber(report.followersTotalValue, 18450),
-    followersGrowth: parseMetricNumber(report.followersGrowthValue, 420),
-    interactionsTotal: parseMetricNumber(report.interactionsTotalValue, 9610),
-    linkClicks: parseMetricNumber(report.linkClicksValue, 2140),
-    pageVisits: parseMetricNumber(report.pageVisitsValue, 3870),
+    followersTotal: parseMetricNumber(report.followersTotalValue, 0),
+    followersGrowth: parseMetricNumber(report.followersGrowthValue, 0),
+    interactionsTotal: parseMetricNumber(report.interactionsTotalValue, 0),
+    linkClicks: parseMetricNumber(report.linkClicksValue, 0),
+    pageVisits: parseMetricNumber(report.pageVisitsValue, 0),
     frequency: viewersTotal > 0 ? impressionsTotal / viewersTotal : 0,
     impressionsDailyPoints,
   };
@@ -321,12 +342,14 @@ export function buildReachSlideModel(
   return {
     metricEyebrow: "Metric",
     metricTitle: context.reachDisplayLabel,
-    sourceCaption: "Basado en datos de Facebook Insights",
+    sourceCaption: buildSourceCaption(context.coverIntegrationLabel),
     totalLabel: `Total de ${context.reachDisplayLabel.toLowerCase()} del periodo`,
     totalValue: formatDisplayNumber(context.report.viewersTotalValue),
     insightText: context.reachInsight,
     chartPoints: context.report.viewersDailyPoints,
-    chartAvailable: context.report.viewersDailyAvailable,
+    chartAvailable:
+      context.report.viewersDailyAvailable ||
+      context.report.viewersDailyPoints.length > 0,
     chartMetricLabel: context.reachDisplayLabel,
     highestDayCard: buildReachCard(
       "Highest day",
@@ -375,9 +398,15 @@ export function buildImpressionsSlideModel(
     impressions_daily_count: context.report.impressionsDailyCount,
     title: context.impressionsDisplayLabel,
     impressions_slide_present: context.report.impressionsSlidePresent,
-    unavailable: context.report.impressionsUnavailable,
+    unavailable:
+      context.report.impressionsUnavailable &&
+      context.impressionsDailyPoints.length === 0 &&
+      context.impressionsTotal === 0,
     source_metric_name: context.report.impressionsLabel,
     timeframe_source: context.report.timeframeSource,
+    source_caption: buildSourceCaption(context.coverIntegrationLabel),
+    unavailable_message:
+      "Impressions data was not available with enough detail for this reporting period.",
   };
 }
 

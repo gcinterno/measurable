@@ -1,6 +1,7 @@
 "use client";
 
-import type { ReactElement } from "react";
+import type { CSSProperties, ReactElement, ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { FooterMeta } from "@/components/reports/primitives/FooterMeta";
 import { HeroBlock } from "@/components/reports/primitives/HeroBlock";
@@ -52,6 +53,172 @@ const MULTI_SERIES_BLOCKS = new Set([
   "audience_growth",
 ]);
 
+const FIXED_STAGE_WIDTH = 1920;
+const FIXED_STAGE_HEIGHT = 1080;
+
+function FixedReportSlideStage({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+
+    if (!wrapper || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+
+      if (!entry) {
+        return;
+      }
+
+      const nextScale = entry.contentRect.width / FIXED_STAGE_WIDTH;
+      setScale(nextScale || 1);
+    });
+
+    observer.observe(wrapper);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  return (
+    <div ref={wrapperRef} className="relative h-full w-full overflow-hidden">
+      <div
+        className="absolute left-0 top-0 overflow-hidden"
+        style={{
+          width: FIXED_STAGE_WIDTH,
+          height: FIXED_STAGE_HEIGHT,
+          transform: `scale(${scale})`,
+          transformOrigin: "top left",
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function PresentationStageSlideFrame({
+  slideId,
+  renderMode,
+  children,
+}: {
+  slideId: string;
+  renderMode: ReportRenderMode;
+  children: ReactNode;
+}) {
+  const slideClassName =
+    renderMode === "export" ? "report-pdf-slide" : "report-preview-slide";
+  const frameClassName =
+    renderMode === "export"
+      ? slideClassName
+      : `${slideClassName} ${REPORT_SLIDE_THEME.radius.outerFrame} border ${REPORT_SLIDE_THEME.colors.frameBorder} ${REPORT_SLIDE_THEME.colors.frameBackground} ${REPORT_SLIDE_THEME.spacing.outerPadding} ${REPORT_SLIDE_THEME.effects.outerShadow}`;
+  const shellWidth =
+    renderMode === "export"
+      ? REPORT_SLIDE_THEME.slide.width
+      : REPORT_SLIDE_THEME.slide.surfaceWidth;
+  const shellHeight =
+    renderMode === "export"
+      ? REPORT_SLIDE_THEME.slide.height
+      : REPORT_SLIDE_THEME.slide.surfaceHeight;
+
+  return (
+    <section
+      data-report-slide={slideId}
+      className={frameClassName}
+      style={{
+        width: REPORT_SLIDE_THEME.slide.width,
+        minWidth: REPORT_SLIDE_THEME.slide.width,
+        maxWidth: REPORT_SLIDE_THEME.slide.width,
+        height: REPORT_SLIDE_THEME.slide.height,
+        minHeight: REPORT_SLIDE_THEME.slide.height,
+        maxHeight: REPORT_SLIDE_THEME.slide.height,
+        fontFamily: "var(--font-sans)",
+        fontKerning: "normal",
+        fontSynthesis: "none",
+        textRendering: "geometricPrecision",
+      }}
+    >
+      <div
+        className={
+          renderMode === "export"
+            ? "overflow-hidden"
+            : "mx-auto max-w-none overflow-hidden rounded-[34px] border border-slate-200 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_18px_42px_rgba(148,163,184,0.14)]"
+        }
+        style={{
+          width: shellWidth,
+          height: shellHeight,
+          boxSizing: "border-box",
+          margin: renderMode === "export" ? 0 : "0 auto",
+          borderRadius: renderMode === "export" ? 0 : undefined,
+        }}
+      >
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function getMultiSourceStagePalette(templateId: ReportTemplateId) {
+  const useSimplePalette = templateId === "simple" || templateId === "modern";
+
+  return useSimplePalette
+    ? {
+        background: "#EEF2F6",
+        title: "#08122F",
+        subtitle: "#6B7C97",
+        progressActive: "#08122F",
+        progressInactive: "#C9D3E1",
+        progressPillBackground: "#EDF1F5",
+        progressPillText: "#4E607A",
+        progressPillBorder: "#DCE3EC",
+        panelBackground: "#FFFFFF",
+        panelBorder: "#DCE3EC",
+        panelShadow: "shadow-[0_18px_42px_rgba(8,18,47,0.08)]",
+        panelMuted: "#F6F8FB",
+        metricAccent: "#1570B8",
+        metricValue: "#08122F",
+        chartAccent: "#1570B8",
+        chartDark: false,
+        insightBackground: "#625C94",
+        insightBorder: "#DCE3EC",
+        insightShadow: "shadow-[0_24px_44px_rgba(92,90,142,0.18)]",
+        insightText: "#FFFFFF",
+        insightSubtle: "rgba(255,255,255,0.80)",
+      }
+    : {
+        background: "#07111F",
+        title: "#FFFFFF",
+        subtitle: "#CBD5E1",
+        progressActive: "#FFFFFF",
+        progressInactive: "rgba(255,255,255,0.25)",
+        progressPillBackground: "rgba(255,255,255,0.05)",
+        progressPillText: "#CBD5E1",
+        progressPillBorder: "rgba(255,255,255,0.10)",
+        panelBackground: "rgba(255,255,255,0.04)",
+        panelBorder: "rgba(255,255,255,0.10)",
+        panelShadow: "shadow-[0_18px_36px_rgba(2,6,23,0.18)]",
+        panelMuted: "rgba(255,255,255,0.05)",
+        metricAccent: "#7DD3FC",
+        metricValue: "#FFFFFF",
+        chartAccent: "#38BDF8",
+        chartDark: true,
+        insightBackground: "#2E1065",
+        insightBorder: "rgba(125,211,252,0.20)",
+        insightShadow: "shadow-[0_24px_44px_rgba(2,6,23,0.28)]",
+        insightText: "#FFFFFF",
+        insightSubtle: "rgba(226,232,240,0.88)",
+      };
+}
+
 function getBlockSemanticName(block: ReportVersionBlock) {
   const value =
     block.data.semantic_name ??
@@ -60,6 +227,14 @@ function getBlockSemanticName(block: ReportVersionBlock) {
     block.data.key;
 
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeSemanticName(value: string) {
+  return value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+function getNormalizedBlockSemanticName(block: ReportVersionBlock) {
+  return normalizeSemanticName(getBlockSemanticName(block));
 }
 
 function getBlockOrder(block: ReportVersionBlock, index: number) {
@@ -93,7 +268,8 @@ export function getReportBlockDiagnostics(blocks: ReportVersionBlock[]) {
 }
 
 export function shouldRenderBlocksAsSlides(blocks?: ReportVersionBlock[]) {
-  return Boolean(blocks?.length);
+  const templateSlideCount = getReportTemplate("default").slides.length;
+  return Boolean(blocks?.length && blocks.length > templateSlideCount);
 }
 
 function sortBlocksByOrder(blocks: ReportVersionBlock[]) {
@@ -168,7 +344,7 @@ function getNumericCandidateValue(value: unknown): number | null {
 }
 
 function isEngagementBlock(block: ReportVersionBlock) {
-  return getBlockSemanticName(block).toLowerCase() === "engagement_overview";
+  return getNormalizedBlockSemanticName(block) === "engagement_overview";
 }
 
 function getEngagementPrimaryMetricValue(block: ReportVersionBlock) {
@@ -647,6 +823,21 @@ type OverviewMetricCard = {
   source: string | null;
 };
 
+type MultiSourceSemanticName =
+  | "executive_summary"
+  | "reach_overview"
+  | "engagement_overview"
+  | "audience_growth"
+  | "top_performing_post"
+  | "insights"
+  | "recommendations";
+
+type MultiSourcePlatformSection = {
+  id: string;
+  label: string;
+  semanticBlocks: Partial<Record<MultiSourceSemanticName, ReportVersionBlock>>;
+};
+
 const OVERVIEW_METRIC_ORDER = ["reach", "impressions", "followers", "engagement"] as const;
 const OVERVIEW_FIVE_SLIDE_METRIC_ORDER = ["reach", "followers", "engagement"] as const;
 
@@ -776,6 +967,544 @@ function getOverviewMetricKey(value: string) {
   return "";
 }
 
+function toTitleCase(value: string) {
+  return value
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getArrayItemsFromUnknown(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (typeof item === "string") {
+        return item.trim();
+      }
+
+      if (!item || typeof item !== "object") {
+        return "";
+      }
+
+      const record = item as Record<string, unknown>;
+
+      return (
+        getStringValue(record.text) ||
+        getStringValue(record.label) ||
+        getStringValue(record.title) ||
+        getStringValue(record.insight) ||
+        getStringValue(record.summary) ||
+        getStringValue(record.description)
+      );
+    })
+    .filter(Boolean);
+}
+
+function humanizePlatformLabel(value: string) {
+  const normalized = value.trim().toLowerCase();
+
+  if (!normalized) {
+    return "";
+  }
+
+  if (
+    normalized.includes("facebook") ||
+    normalized.includes("fb") ||
+    normalized.includes("page")
+  ) {
+    return "Facebook";
+  }
+
+  if (normalized.includes("instagram") || normalized.includes("ig")) {
+    return "Instagram";
+  }
+
+  if (normalized === "facebook_pages") {
+    return "Facebook";
+  }
+
+  if (normalized === "instagram_business") {
+    return "Instagram";
+  }
+
+  return toTitleCase(value);
+}
+
+function getPlatformKey(value: string) {
+  const normalized = humanizePlatformLabel(value).toLowerCase();
+
+  if (normalized === "facebook") {
+    return "facebook";
+  }
+
+  if (normalized === "instagram") {
+    return "instagram";
+  }
+
+  return normalized.replace(/\s+/g, "-");
+}
+
+function getDefaultPlatformLabel(position: number) {
+  return position === 0 ? "Facebook" : "Instagram";
+}
+
+function getBlockMetricCandidateValue(block: ReportVersionBlock, aliases: string[]) {
+  const dataRecord = block.data as Record<string, unknown>;
+  const nestedRecords = [
+    getObjectRecord(dataRecord.metrics),
+    getObjectRecord(dataRecord.stats),
+    getObjectRecord(dataRecord.kpis),
+    getObjectRecord(dataRecord.normalized_report_metrics),
+    getObjectRecord(dataRecord.summary),
+    getObjectRecord(dataRecord.content),
+  ].filter(Boolean) as Record<string, unknown>[];
+
+  for (const alias of aliases) {
+    if (hasOwn(dataRecord, alias)) {
+      return dataRecord[alias];
+    }
+
+    const snakeAlias = alias.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`);
+    const camelAlias = alias.replace(/_([a-z])/g, (_, char: string) => char.toUpperCase());
+
+    for (const candidateKey of [snakeAlias, camelAlias]) {
+      if (hasOwn(dataRecord, candidateKey)) {
+        return dataRecord[candidateKey];
+      }
+    }
+
+    for (const record of nestedRecords) {
+      if (hasOwn(record, alias)) {
+        return record[alias];
+      }
+
+      if (hasOwn(record, snakeAlias)) {
+        return record[snakeAlias];
+      }
+
+      if (hasOwn(record, camelAlias)) {
+        return record[camelAlias];
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function formatMetricCandidateDisplay(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (typeof value === "number") {
+    return formatDisplayNumber(value);
+  }
+
+  const record = getObjectRecord(value);
+
+  if (!record) {
+    return "";
+  }
+
+  const primitiveCandidate = [
+    record.value,
+    record.total,
+    record.count,
+    record.metric_value,
+    record.metricValue,
+    record.current_value,
+    record.currentValue,
+  ].find((candidate) => candidate !== null && candidate !== undefined && candidate !== "");
+
+  if (typeof primitiveCandidate === "string") {
+    return primitiveCandidate.trim();
+  }
+
+  if (typeof primitiveCandidate === "number") {
+    return formatDisplayNumber(primitiveCandidate);
+  }
+
+  return "";
+}
+
+function getMetricDisplay(block: ReportVersionBlock, aliases: string[], fallback = "—") {
+  const value = getBlockMetricCandidateValue(block, aliases);
+  const formatted = formatMetricCandidateDisplay(value);
+
+  return formatted || fallback;
+}
+
+function getMetricNumber(block: ReportVersionBlock, aliases: string[]) {
+  const value = getBlockMetricCandidateValue(block, aliases);
+
+  if (value === undefined) {
+    return null;
+  }
+
+  return getNumericCandidateValue(value);
+}
+
+function getBlockInsightText(block: ReportVersionBlock, fallback?: string) {
+  return (
+    getStringValue(block.data.ai_analysis) ||
+    getStringValue(block.data.aiAnalysis) ||
+    getStringValue(block.data.analysis) ||
+    getStringValue(block.data.insight) ||
+    getStringValue(block.data.summary) ||
+    getStringValue(block.data.description) ||
+    getTextContent(block) ||
+    fallback ||
+    ""
+  );
+}
+
+function getBlockInsightItems(block: ReportVersionBlock, preferredKeys?: string[]) {
+  const keys = preferredKeys || [
+    "key_insights",
+    "keyInsights",
+    "comparative_insights",
+    "comparativeInsights",
+    "platform_strengths",
+    "platformStrengths",
+    "ecosystem_observations",
+    "ecosystemObservations",
+    "engagement_differences",
+    "engagementDifferences",
+    "reach_differences",
+    "reachDifferences",
+    "quick_wins",
+    "quickWins",
+    "strategic_recommendations",
+    "strategicRecommendations",
+    "recommendations",
+  ];
+
+  for (const key of keys) {
+    const items = getArrayItemsFromUnknown((block.data as Record<string, unknown>)[key]);
+
+    if (items.length > 0) {
+      return items;
+    }
+  }
+
+  const listItems = getListItems(block);
+
+  if (listItems.length > 0) {
+    return listItems;
+  }
+
+  const text = getBlockInsightText(block);
+
+  if (!text) {
+    return [];
+  }
+
+  return text
+    .split(/\n+|(?<=\.)\s+(?=[A-Z])/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
+function getBlockTrendDirection(
+  block: ReportVersionBlock,
+  chartPoints: BlockChartPoint[]
+) {
+  const explicit =
+    getStringValue(block.data.trend_direction) ||
+    getStringValue(block.data.trendDirection) ||
+    getStringValue(block.data.trend);
+
+  if (explicit) {
+    const normalized = explicit.toLowerCase();
+
+    if (normalized.includes("up") || normalized.includes("grow") || normalized.includes("positive")) {
+      return "Upward";
+    }
+
+    if (normalized.includes("down") || normalized.includes("declin") || normalized.includes("negative")) {
+      return "Downward";
+    }
+
+    if (normalized.includes("flat") || normalized.includes("stable")) {
+      return "Stable";
+    }
+  }
+
+  if (chartPoints.length >= 2) {
+    const first = chartPoints[0]?.value ?? 0;
+    const last = chartPoints[chartPoints.length - 1]?.value ?? 0;
+
+    if (last > first) {
+      return "Upward";
+    }
+
+    if (last < first) {
+      return "Downward";
+    }
+  }
+
+  return "Stable";
+}
+
+function getStrongestDay(block: ReportVersionBlock, chartPoints: BlockChartPoint[]) {
+  const explicit =
+    getStringValue(block.data.strongest_day) ||
+    getStringValue(block.data.strongestDay) ||
+    getStringValue(block.data.best_day) ||
+    getStringValue(block.data.bestDay);
+
+  if (explicit) {
+    return explicit;
+  }
+
+  if (chartPoints.length === 0) {
+    return "Not available";
+  }
+
+  const strongestPoint = [...chartPoints].sort((left, right) => right.value - left.value)[0];
+
+  return strongestPoint ? strongestPoint.label || strongestPoint.date : "Not available";
+}
+
+function getBlockPlatformLabel(
+  block: ReportVersionBlock,
+  blocks: ReportVersionBlock[],
+  semanticName: string
+) {
+  const directCandidates = [
+    getStringValue(block.data.source_type),
+    getStringValue(block.data.sourceType),
+    getStringValue(block.data.platform),
+    getStringValue(block.data.provider),
+    getStringValue(block.data.source),
+    getStringValue(block.data.channel),
+    getStringValue(block.data.title),
+    getStringValue(block.data.heading),
+    getStringValue(block.data.label),
+  ];
+
+  for (const candidate of directCandidates) {
+    const platform = humanizePlatformLabel(candidate);
+
+    if (platform === "Facebook" || platform === "Instagram") {
+      return platform;
+    }
+  }
+
+  const chartSeries = getBlockChartSeries(block);
+
+  for (const series of chartSeries) {
+    const platform = humanizePlatformLabel(series.sourceType || series.label);
+
+    if (platform === "Facebook" || platform === "Instagram") {
+      return platform;
+    }
+  }
+
+  const semanticPeers = blocks.filter(
+    (item) => getNormalizedBlockSemanticName(item) === semanticName
+  );
+  const position = Math.max(0, semanticPeers.findIndex((item) => item === block));
+
+  return getDefaultPlatformLabel(position);
+}
+
+function getBlockAccountLabel(block: ReportVersionBlock, fallback: string) {
+  const directCandidates = [
+    getStringValue(block.data.account_name),
+    getStringValue(block.data.accountName),
+    getStringValue(block.data.page_name),
+    getStringValue(block.data.pageName),
+    getStringValue(block.data.source_label),
+    getStringValue(block.data.sourceLabel),
+    getStringValue(block.data.entity_name),
+    getStringValue(block.data.entityName),
+    getStringValue(block.data.name),
+  ];
+
+  for (const candidate of directCandidates) {
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  const sourceRecord = getObjectRecord((block.data as Record<string, unknown>).source);
+
+  if (sourceRecord) {
+    const nestedCandidate =
+      getStringValue(sourceRecord.account_name) ||
+      getStringValue(sourceRecord.accountName) ||
+      getStringValue(sourceRecord.page_name) ||
+      getStringValue(sourceRecord.pageName) ||
+      getStringValue(sourceRecord.label) ||
+      getStringValue(sourceRecord.name);
+
+    if (nestedCandidate) {
+      return nestedCandidate;
+    }
+  }
+
+  return `${fallback} account`;
+}
+
+function isMultiSourceTenSlideReport(blocks: ReportVersionBlock[]) {
+  if (blocks.length < 9) {
+    return false;
+  }
+
+  const semanticNames = blocks.map((block) => getNormalizedBlockSemanticName(block));
+
+  return (
+    semanticNames.includes("executive_summary") &&
+    semanticNames.filter((name) => name === "reach_overview").length >= 2 &&
+    semanticNames.filter((name) => name === "engagement_overview").length >= 2 &&
+    semanticNames.filter((name) => name === "audience_growth").length >= 2 &&
+    (
+      semanticNames.includes("insights") ||
+      semanticNames.includes("recommendations") ||
+      semanticNames.includes("top_performing_post")
+    )
+  );
+}
+
+function hasMultiSourcePlatformSemantics(blocks: ReportVersionBlock[]) {
+  const semanticNames = blocks.map((block) => getNormalizedBlockSemanticName(block));
+
+  return (
+    semanticNames.filter((name) => name === "reach_overview").length >= 2 &&
+    semanticNames.filter((name) => name === "engagement_overview").length >= 2 &&
+    semanticNames.filter((name) => name === "audience_growth").length >= 2
+  );
+}
+
+function shouldRenderMultiSourceExecutiveOverview(
+  block: ReportVersionBlock,
+  index: number,
+  totalSlides: number
+) {
+  if (index !== 1) {
+    return false;
+  }
+
+  const semanticName = getNormalizedBlockSemanticName(block);
+
+  if (
+    semanticName !== "executive_summary" &&
+    semanticName !== "cross_platform_overview"
+  ) {
+    return false;
+  }
+
+  if (totalSlides < 9) {
+    return false;
+  }
+
+  return true;
+}
+
+function collectMultiSourcePlatformSections(blocks: ReportVersionBlock[]) {
+  const semanticNames: MultiSourceSemanticName[] = [
+    "reach_overview",
+    "engagement_overview",
+    "audience_growth",
+    "top_performing_post",
+  ];
+  const sections = new Map<string, MultiSourcePlatformSection>();
+
+  semanticNames.forEach((semanticName) => {
+    const semanticBlocks = blocks.filter(
+      (block) => getNormalizedBlockSemanticName(block) === semanticName
+    );
+
+    semanticBlocks.forEach((block, index) => {
+      const label = getBlockPlatformLabel(block, blocks, semanticName);
+      const id = getPlatformKey(label) || `platform-${index + 1}`;
+      const existing = sections.get(id);
+
+      if (existing) {
+        existing.semanticBlocks[semanticName] = block;
+        return;
+      }
+
+      sections.set(id, {
+        id,
+        label,
+        semanticBlocks: {
+          [semanticName]: block,
+        },
+      });
+    });
+  });
+
+  return Array.from(sections.values()).sort((left, right) => {
+    const order = ["facebook", "instagram"];
+    const leftIndex = order.indexOf(left.id);
+    const rightIndex = order.indexOf(right.id);
+
+    if (leftIndex === -1 && rightIndex === -1) {
+      return left.label.localeCompare(right.label);
+    }
+
+    if (leftIndex === -1) {
+      return 1;
+    }
+
+    if (rightIndex === -1) {
+      return -1;
+    }
+
+    return leftIndex - rightIndex;
+  });
+}
+
+function splitItemsInHalf(items: string[]) {
+  const midpoint = Math.ceil(items.length / 2);
+
+  return [items.slice(0, midpoint), items.slice(midpoint)] as const;
+}
+
+function renderEmptyChartState(tone: ReturnType<typeof getTemplateTone>) {
+  return (
+    <div className={`flex h-full flex-col items-center justify-center rounded-[30px] border px-6 text-center ${tone.card}`}>
+      <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.accent}`}>
+        Daily chart
+      </p>
+      <p className={`mt-3 max-w-xs text-sm leading-6 ${tone.subtle}`}>
+        No daily trend was available for this section.
+      </p>
+    </div>
+  );
+}
+
+function renderMetricStatCard(input: {
+  label: string;
+  value: string;
+  tone: ReturnType<typeof getTemplateTone>;
+  strong?: boolean;
+}) {
+  const { label, value, tone, strong = false } = input;
+
+  return (
+    <article className={`rounded-[24px] border p-4 ${strong ? tone.cardStrong : tone.card}`}>
+      <p className={`text-[10px] font-semibold uppercase tracking-[0.2em] ${strong ? tone.cardStrongAccent : tone.accent}`}>
+        {label}
+      </p>
+      <p className={`mt-3 text-[1.8rem] font-semibold leading-none tracking-[-0.05em] ${strong ? tone.cardStrongTitle : tone.title}`}>
+        {value || "—"}
+      </p>
+    </article>
+  );
+}
+
 function getOverviewMetricLabel(metricKey: string) {
   switch (metricKey) {
     case "reach":
@@ -806,7 +1535,7 @@ function getPreferredRecordValue(record: Record<string, unknown>, keys: string[]
 }
 
 function isOverviewBlock(block: ReportVersionBlock) {
-  const semanticName = getBlockSemanticName(block).toLowerCase();
+  const semanticName = getNormalizedBlockSemanticName(block);
   const title = getStringValue(block.data.title).toLowerCase();
   const label = getStringValue(block.data.label).toLowerCase();
 
@@ -1849,6 +2578,1293 @@ function ExecutiveSummarySlide({
   );
 }
 
+function MultiSourceExecutiveOverviewSlide({
+  block,
+  blocks,
+  index,
+  totalSlides,
+  renderMode,
+  templateId,
+  locale,
+}: {
+  block: ReportVersionBlock;
+  blocks: ReportVersionBlock[];
+  index: number;
+  totalSlides: number;
+  renderMode: ReportRenderMode;
+  templateId: ReportTemplateId;
+  locale?: string;
+}) {
+  const slideId = String(index + 1).padStart(2, "0");
+  const timeframeLabel =
+    getBlockTimeframeLabel(block, locale) || "Date range unavailable";
+  const title = "Overview";
+  const stagePalette = getMultiSourceStagePalette(templateId);
+  const platformSectionsById = new Map(
+    collectMultiSourcePlatformSections(blocks).map((section) => [section.id, section])
+  );
+  const platformSections = [
+    {
+      id: "facebook",
+      label: "Facebook",
+      semanticBlocks: platformSectionsById.get("facebook")?.semanticBlocks || {},
+      cardClass: stagePalette.facebookCard,
+      labelClass: stagePalette.facebookAccent,
+      trendClass: stagePalette.facebookAccent,
+    },
+    {
+      id: "instagram",
+      label: "Instagram",
+      semanticBlocks: platformSectionsById.get("instagram")?.semanticBlocks || {},
+      cardClass: stagePalette.instagramCard,
+      labelClass: stagePalette.instagramAccent,
+      trendClass: stagePalette.instagramAccent,
+    },
+  ] as const;
+  const insightText =
+    getStringValue(block.data.ai_analysis) ||
+    getStringValue(block.data.aiAnalysis) ||
+    getStringValue(block.data.analysis) ||
+    getStringValue(block.data.summary) ||
+    getStringValue(block.data.description) ||
+    getStringValue(block.data.text) ||
+    "Cross-platform performance shows a differentiated split between distribution strength and interaction quality, giving leadership teams a clear baseline before deeper section-by-section analysis.";
+  const conciseInsightText =
+    insightText.split(/(?<=[.!?])\s+/)[0]?.trim() ||
+    "Interpretation this period summary.";
+  const progressStyle: CSSProperties = {
+    left: 1357,
+    top: 100,
+    width: 460,
+    height: 73,
+  };
+
+  function getMetricTrendText(
+    targetBlock: ReportVersionBlock | undefined,
+    aliases: string[]
+  ) {
+    if (!targetBlock) {
+      return "\u2191 5%";
+    }
+
+    const trendCandidate = getBlockMetricCandidateValue(targetBlock, [
+      ...aliases.flatMap((alias) => [
+        `${alias}_change_percentage`,
+        `${alias}ChangePercentage`,
+        `${alias}_growth_percentage`,
+        `${alias}GrowthPercentage`,
+      ]),
+      "change_percentage",
+      "changePercentage",
+      "growth_percentage",
+      "growthPercentage",
+    ]);
+    const numericTrend = getNumberValue(trendCandidate);
+
+    if (numericTrend === null) {
+      return "\u2191 5%";
+    }
+
+    const rounded = Math.round(Math.abs(numericTrend) * 10) / 10;
+    const prefix = numericTrend < 0 ? "\u2193" : "\u2191";
+
+    return `${prefix} ${rounded}%`;
+  }
+
+  function renderMetricCard(input: {
+    key: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    label: string;
+    value: string;
+    trend: string;
+    platform: string;
+    cardClass: string;
+    labelClass: string;
+    trendClass: string;
+  }) {
+    return (
+      <article
+        key={input.key}
+        className={`absolute overflow-hidden rounded-[30px] border ${stagePalette.cardShadow} ${input.cardClass}`}
+        style={{
+          left: input.x,
+          top: input.y,
+          width: input.width,
+          height: input.height,
+        }}
+      >
+        <div className="relative h-full w-full">
+          <p
+            className={`absolute font-medium leading-none ${input.labelClass}`}
+            style={{
+              left: 55,
+              top: 42,
+              fontSize: 28,
+            }}
+          >
+            {input.label}
+          </p>
+          <p
+            className="absolute font-bold leading-none"
+            style={{
+              left: 55,
+              top: 88,
+              fontSize: 68,
+              letterSpacing: "-0.06em",
+              color: stagePalette.metricValue,
+            }}
+          >
+            {input.value}
+          </p>
+          <p
+            className={`absolute font-medium leading-none ${input.trendClass}`}
+            style={{
+              left: 55,
+              top: 160,
+              fontSize: 22,
+            }}
+          >
+            {input.trend}
+          </p>
+          <p
+            className="absolute font-bold leading-none"
+            style={{
+              right: 36,
+              bottom: 28,
+              fontSize: 28,
+              color: stagePalette.platformText,
+            }}
+          >
+            {input.platform}
+          </p>
+        </div>
+      </article>
+    );
+  }
+
+  return (
+    <PresentationStageSlideFrame slideId={slideId} renderMode={renderMode}>
+      <FixedReportSlideStage>
+        <div
+          className="relative h-full w-full overflow-hidden"
+          style={{ background: stagePalette.background }}
+        >
+          <h2
+            className="absolute font-extrabold leading-none"
+            style={{
+              left: 115,
+              top: 110,
+              fontSize: 82,
+              letterSpacing: "-0.07em",
+              color: stagePalette.title,
+            }}
+          >
+            {title}
+          </h2>
+          <p
+            className="absolute font-medium"
+            style={{
+              left: 115,
+              top: 220,
+              fontSize: 31,
+              lineHeight: 1.2,
+              color: stagePalette.subtitle,
+            }}
+          >
+            {`Data Resume period: "${timeframeLabel}".`}
+          </p>
+
+          <div
+            className="absolute flex items-center justify-end gap-4"
+            style={progressStyle}
+          >
+            <div className="flex items-center gap-3">
+              {Array.from({ length: totalSlides }, (_, dotIndex) => dotIndex + 1).map((dot) => (
+                <span
+                  key={dot}
+                  className={`h-4 rounded-full ${String(dot).padStart(2, "0") === slideId ? "w-14" : "w-4"}`}
+                  style={{
+                    background:
+                      String(dot).padStart(2, "0") === slideId
+                        ? stagePalette.progressActive
+                        : stagePalette.progressInactive,
+                  }}
+                />
+              ))}
+            </div>
+            <span
+              className="rounded-full border px-5 py-3 text-[24px] font-semibold leading-none"
+              style={{
+                borderColor: stagePalette.progressPillBorder,
+                background: stagePalette.progressPillBackground,
+                color: stagePalette.progressPillText,
+              }}
+            >
+              {slideId}/{String(totalSlides).padStart(2, "0")}
+            </span>
+          </div>
+
+          {platformSections.flatMap((section, sectionIndex) => {
+            const reachBlock = section.semanticBlocks.reach_overview;
+            const engagementBlock = section.semanticBlocks.engagement_overview;
+            const baseBlock = reachBlock || engagementBlock || block;
+            const cardX = sectionIndex === 0 ? 115 : 741;
+            const metrics = [
+              {
+                key: `${section.id}-reach`,
+                label: "Reach",
+                value: getMetricDisplay(
+                  reachBlock || baseBlock,
+                  ["reach", "total_reach"],
+                  "Not available"
+                ),
+                trend: getMetricTrendText(
+                  reachBlock || baseBlock,
+                  ["reach", "total_reach"]
+                ),
+                y: 307,
+                height: 219,
+              },
+              {
+                key: `${section.id}-impressions`,
+                label: "Impressions",
+                value: getMetricDisplay(
+                  reachBlock || baseBlock,
+                  ["impressions", "total_impressions"],
+                  "Not available"
+                ),
+                trend: getMetricTrendText(
+                  reachBlock || baseBlock,
+                  ["impressions", "total_impressions"]
+                ),
+                y: 551,
+                height: 219,
+              },
+              {
+                key: `${section.id}-engagement`,
+                label: "Engagement",
+                value: getMetricDisplay(
+                  engagementBlock || baseBlock,
+                  ["engagement", "total_engagement", "interactions_total"],
+                  "Not available"
+                ),
+                trend: getMetricTrendText(
+                  engagementBlock || baseBlock,
+                  ["engagement", "total_engagement", "interactions_total"]
+                ),
+                y: 794,
+                height: sectionIndex === 0 ? 218 : 218,
+              },
+            ];
+
+            return metrics.map((metric) =>
+              renderMetricCard({
+                key: metric.key,
+                x: cardX,
+                y: metric.y,
+                width: sectionIndex === 0 ? 538 : 539,
+                height: metric.height,
+                label: metric.label,
+                value: metric.value,
+                trend: metric.trend,
+                platform: section.label,
+                cardClass: section.cardClass,
+                labelClass: section.labelClass,
+                trendClass: section.trendClass,
+              })
+            );
+          })}
+
+          <section
+            className={`absolute overflow-hidden rounded-[30px] border ${stagePalette.aiShadow}`}
+            style={{
+              left: 1318,
+              top: 307,
+              width: 538,
+              height: 704,
+              paddingLeft: 52,
+              paddingTop: 54,
+              paddingRight: 52,
+              paddingBottom: 52,
+              borderColor: stagePalette.aiPanelBorder,
+              background: stagePalette.aiPanelBackground,
+            }}
+          >
+            <p
+              className="font-extrabold leading-[1.1] text-white"
+              style={{ fontSize: 40 }}
+            >
+              AI Insight:
+            </p>
+            <p
+              className="text-white"
+              style={{
+                marginTop: 48,
+                fontSize: 46,
+                lineHeight: 1.22,
+                fontWeight: 700,
+                display: "-webkit-box",
+                WebkitLineClamp: 6,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {conciseInsightText || "Interpretation this period summary."}
+            </p>
+          </section>
+        </div>
+      </FixedReportSlideStage>
+    </PresentationStageSlideFrame>
+  );
+}
+
+function MultiSourceMetricSlide({
+  block,
+  blocks,
+  index,
+  totalSlides,
+  renderMode,
+  templateId,
+  locale,
+  variant,
+}: {
+  block: ReportVersionBlock;
+  blocks: ReportVersionBlock[];
+  index: number;
+  totalSlides: number;
+  renderMode: ReportRenderMode;
+  templateId: ReportTemplateId;
+  locale?: string;
+  variant: "reach" | "engagement" | "audience";
+}) {
+  const tone = getTemplateTone(templateId);
+  const semanticName = getBlockSemanticName(block).toLowerCase();
+  const slideId = String(index + 1).padStart(2, "0");
+  const platformLabel = getBlockPlatformLabel(block, blocks, semanticName);
+  const timeframeLabel = getBlockTimeframeLabel(block, locale);
+  const chartPoints = getBlockChartPoints(block);
+  const chartSeries = getBlockChartSeries(block);
+  const hasMultiSeriesChart = chartSeries.length >= 2;
+  const hasChart = hasMultiSeriesChart
+    ? chartSeries.some((series) => series.points.length > 0)
+    : chartPoints.length > 0;
+  const insightText = getBlockInsightText(block);
+  const insightItems = getBlockInsightItems(block);
+  const strongestDay = getStrongestDay(block, chartPoints);
+  const trendDirection = getBlockTrendDirection(block, chartPoints);
+
+  if (variant === "reach") {
+    return (
+      <SlideCanvas
+        index={slideId}
+        totalSlides={totalSlides}
+        eyebrow=""
+        title=""
+        renderMode={renderMode}
+        templateId={templateId}
+      >
+        <div className="grid h-full min-h-0 grid-cols-[1.22fr_0.78fr] gap-6">
+          <section className={`flex min-h-0 flex-col rounded-[32px] border p-5 ${tone.card}`}>
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <p className={`text-[11px] font-semibold uppercase tracking-[0.25em] ${tone.accent}`}>
+                  Reach / Visibility
+                </p>
+                <h2 className={`mt-3 text-[2.3rem] font-semibold tracking-[-0.06em] ${tone.title}`}>
+                  {platformLabel}
+                </h2>
+              </div>
+              {timeframeLabel ? (
+                <div className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${tone.chip}`}>
+                  {timeframeLabel}
+                </div>
+              ) : null}
+            </div>
+            <div className="mt-5 min-h-0 flex-1">
+              {hasChart ? (
+                <MetricDailyChart
+                  points={chartPoints}
+                  series={
+                    hasMultiSeriesChart
+                      ? chartSeries.map((series) => ({
+                          label: series.label,
+                          sourceType: series.sourceType,
+                          points: series.points,
+                        }))
+                      : undefined
+                  }
+                  isAvailable={hasChart}
+                  metricLabel={getStringValue(block.data.metric) || "Reach"}
+                  dark={tone.dark}
+                />
+              ) : (
+                renderEmptyChartState(tone)
+              )}
+            </div>
+          </section>
+
+          <section className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-4">
+            <div className="grid grid-cols-2 gap-3">
+              {renderMetricStatCard({
+                label: "Reach",
+                value: getMetricDisplay(block, ["reach", "total_reach"], "—"),
+                tone,
+                strong: true,
+              })}
+              {renderMetricStatCard({
+                label: "Impressions",
+                value: getMetricDisplay(block, ["impressions", "total_impressions"], "—"),
+                tone,
+              })}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {renderMetricStatCard({
+                label: "Strongest day",
+                value: strongestDay,
+                tone,
+              })}
+              {renderMetricStatCard({
+                label: "Trend direction",
+                value: trendDirection,
+                tone,
+              })}
+            </div>
+            <article className={`min-h-0 rounded-[30px] border p-5 ${tone.insight}`}>
+              <p className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${templateId === "modern" ? tone.insightTitle : tone.accentSoft}`}>
+                AI Insight
+              </p>
+              <p className={`mt-3 text-[0.93rem] leading-7 ${templateId === "modern" ? tone.insightBody : tone.subtitle}`}>
+                {insightText || "Visibility trends indicate how efficiently this platform converted activity into sustained awareness."}
+              </p>
+              {insightItems.length > 0 ? (
+                <div className="mt-4 space-y-2">
+                  {insightItems.slice(0, 3).map((item, itemIndex) => (
+                    <div key={`${item}-${itemIndex}`} className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                      <p className={`text-[0.8rem] leading-5 ${templateId === "modern" ? tone.insightBody : tone.subtitle}`}>
+                        {item}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          </section>
+        </div>
+      </SlideCanvas>
+    );
+  }
+
+  if (variant === "engagement") {
+    return (
+      <SlideCanvas
+        index={slideId}
+        totalSlides={totalSlides}
+        eyebrow=""
+        title=""
+        renderMode={renderMode}
+        templateId={templateId}
+      >
+        <div className="flex h-full min-h-0 flex-col gap-5">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className={`text-[11px] font-semibold uppercase tracking-[0.25em] ${tone.accent}`}>
+                Engagement Analysis
+              </p>
+              <h2 className={`mt-3 text-[2.4rem] font-semibold tracking-[-0.06em] ${tone.title}`}>
+                {platformLabel}
+              </h2>
+            </div>
+            {timeframeLabel ? (
+              <div className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${tone.chip}`}>
+                {timeframeLabel}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="grid grid-cols-4 gap-3">
+            {renderMetricStatCard({
+              label: "Engagement",
+              value: getMetricDisplay(block, ["engagement", "total_engagement", "interactions_total"], "—"),
+              tone,
+              strong: true,
+            })}
+            {renderMetricStatCard({
+              label: "Engagement rate",
+              value: getMetricDisplay(block, ["engagement_rate", "average_engagement_rate"], "—"),
+              tone,
+            })}
+            {renderMetricStatCard({
+              label: "Interaction spikes",
+              value: strongestDay,
+              tone,
+            })}
+            {renderMetricStatCard({
+              label: "Trend",
+              value: trendDirection,
+              tone,
+            })}
+          </div>
+
+          <div className="grid min-h-0 flex-1 grid-cols-[1.08fr_0.92fr] gap-5">
+            <section className={`min-h-0 rounded-[32px] border p-5 ${tone.card}`}>
+              {hasChart ? (
+                <MetricDailyChart
+                  points={chartPoints}
+                  series={
+                    hasMultiSeriesChart
+                      ? chartSeries.map((series) => ({
+                          label: series.label,
+                          sourceType: series.sourceType,
+                          points: series.points,
+                        }))
+                      : undefined
+                  }
+                  isAvailable={hasChart}
+                  metricLabel={getStringValue(block.data.metric) || "Engagement"}
+                  dark={tone.dark}
+                />
+              ) : (
+                renderEmptyChartState(tone)
+              )}
+            </section>
+            <section className={`min-h-0 rounded-[32px] border p-5 ${tone.insight}`}>
+              <p className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${templateId === "modern" ? tone.insightTitle : tone.accentSoft}`}>
+                Editorial interpretation
+              </p>
+              <p className={`mt-3 text-[0.98rem] leading-7 ${templateId === "modern" ? tone.insightBody : tone.subtitle}`}>
+                {insightText || "Engagement quality reflects where audience attention concentrated, how interactions clustered, and whether the channel sustained momentum beyond isolated spikes."}
+              </p>
+              {insightItems.length > 0 ? (
+                <div className="mt-4 grid gap-2">
+                  {insightItems.slice(0, 4).map((item, itemIndex) => (
+                    <div key={`${item}-${itemIndex}`} className="rounded-[20px] border border-white/10 bg-white/5 px-3 py-2.5">
+                      <p className={`text-[0.82rem] leading-5 ${templateId === "modern" ? tone.insightBody : tone.subtitle}`}>
+                        {item}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          </div>
+        </div>
+      </SlideCanvas>
+    );
+  }
+
+  return (
+    <SlideCanvas
+      index={slideId}
+      totalSlides={totalSlides}
+      eyebrow=""
+      title=""
+      renderMode={renderMode}
+      templateId={templateId}
+    >
+      <div className="flex h-full min-h-0 flex-col gap-5">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.25em] ${tone.accent}`}>
+              Audience Growth & Retention
+            </p>
+            <h2 className={`mt-3 text-[2.35rem] font-semibold tracking-[-0.06em] ${tone.title}`}>
+              {platformLabel}
+            </h2>
+          </div>
+          {timeframeLabel ? (
+            <div className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${tone.chip}`}>
+              {timeframeLabel}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="grid min-h-0 flex-1 grid-cols-[0.88fr_1.12fr] gap-6">
+          <section className="grid gap-4">
+            <article className={`rounded-[30px] border p-5 ${tone.cardStrong}`}>
+              <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.cardStrongAccent}`}>
+                Followers
+              </p>
+              <p className={`mt-4 text-[2.6rem] font-semibold leading-none tracking-[-0.06em] ${tone.cardStrongTitle}`}>
+                {getMetricDisplay(block, ["followers", "followers_total", "audience"], "—")}
+              </p>
+            </article>
+            <div className="grid grid-cols-2 gap-3">
+              {renderMetricStatCard({
+                label: "Growth",
+                value: getMetricDisplay(block, ["followers_growth", "follower_growth", "audience_growth"], "—"),
+                tone,
+              })}
+              {renderMetricStatCard({
+                label: "Retention narrative",
+                value: trendDirection,
+                tone,
+              })}
+            </div>
+            <article className={`rounded-[30px] border p-5 ${tone.card}`}>
+              <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.subtle}`}>
+                Growth insight
+              </p>
+              <p className={`mt-3 text-[0.92rem] leading-6 ${tone.subtitle}`}>
+                {insightText || "Audience momentum here should be read as a retention story, not only a volume story: consistency matters more than isolated acquisition surges."}
+              </p>
+            </article>
+          </section>
+
+          <section className={`min-h-0 rounded-[32px] border p-5 ${tone.card}`}>
+            {hasChart ? (
+              <MetricDailyChart
+                points={chartPoints}
+                series={
+                  hasMultiSeriesChart
+                    ? chartSeries.map((series) => ({
+                        label: series.label,
+                        sourceType: series.sourceType,
+                        points: series.points,
+                      }))
+                    : undefined
+                }
+                isAvailable={hasChart}
+                metricLabel={getStringValue(block.data.metric) || "Audience growth"}
+                dark={tone.dark}
+              />
+            ) : (
+              renderEmptyChartState(tone)
+            )}
+          </section>
+        </div>
+      </div>
+    </SlideCanvas>
+  );
+}
+
+function MultiSourceTopPerformingPostSlide({
+  block,
+  blocks,
+  index,
+  totalSlides,
+  renderMode,
+  templateId,
+}: {
+  block: ReportVersionBlock;
+  blocks: ReportVersionBlock[];
+  index: number;
+  totalSlides: number;
+  renderMode: ReportRenderMode;
+  templateId: ReportTemplateId;
+}) {
+  const tone = getTemplateTone(templateId);
+  const slideId = String(index + 1).padStart(2, "0");
+  const platformLabel = getBlockPlatformLabel(block, blocks, "top_performing_post");
+  const metricItems = getMetricItems(block).slice(0, 3);
+  const insightItems = getBlockInsightItems(block);
+  const text = getBlockInsightText(block);
+
+  return (
+    <SlideCanvas
+      index={slideId}
+      totalSlides={totalSlides}
+      eyebrow=""
+      title=""
+      renderMode={renderMode}
+      templateId={templateId}
+    >
+      <div className="grid h-full min-h-0 grid-cols-[1.04fr_0.96fr] gap-6">
+        <section className={`rounded-[32px] border p-6 ${tone.cardStrong}`}>
+          <p className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${tone.cardStrongAccent}`}>
+            Top Performing Post
+          </p>
+          <h2 className={`mt-4 text-[2.35rem] font-semibold tracking-[-0.06em] ${tone.cardStrongTitle}`}>
+            {platformLabel}
+          </h2>
+          <p className={`mt-4 text-[1rem] leading-7 ${tone.cardStrongSubtitle}`}>
+            {text || "This standout content moment concentrated the strongest audience response and offers the clearest signal for future editorial replication."}
+          </p>
+        </section>
+        <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4">
+          <div className="grid grid-cols-3 gap-3">
+            {(metricItems.length > 0 ? metricItems : [
+              { label: "Reach", value: getMetricDisplay(block, ["reach", "total_reach"], "—") },
+              { label: "Engagement", value: getMetricDisplay(block, ["engagement", "total_engagement"], "—") },
+              { label: "Rate", value: getMetricDisplay(block, ["engagement_rate"], "—") },
+            ]).map((metric, metricIndex) => (
+              <article key={`${metric.label}-${metricIndex}`} className={`rounded-[24px] border p-4 ${tone.card}`}>
+                <p className={`text-[10px] font-semibold uppercase tracking-[0.2em] ${tone.accent}`}>
+                  {metric.label}
+                </p>
+                <p className={`mt-3 text-[1.55rem] font-semibold tracking-[-0.05em] ${tone.title}`}>
+                  {metric.value}
+                </p>
+              </article>
+            ))}
+          </div>
+          <article className={`min-h-0 rounded-[32px] border p-5 ${tone.insight}`}>
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${templateId === "modern" ? tone.insightTitle : tone.accentSoft}`}>
+              Strategic takeaway
+            </p>
+            <div className="mt-4 grid gap-2">
+              {(insightItems.length > 0 ? insightItems : [text]).slice(0, 4).map((item, itemIndex) => (
+                <div key={`${item}-${itemIndex}`} className="rounded-[20px] border border-white/10 bg-white/5 px-3 py-2.5">
+                  <p className={`text-[0.82rem] leading-5 ${templateId === "modern" ? tone.insightBody : tone.subtitle}`}>
+                    {item}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </article>
+        </section>
+      </div>
+    </SlideCanvas>
+  );
+}
+
+function MultiSourcePlatformMetricSlide({
+  block,
+  blocks,
+  index,
+  totalSlides,
+  renderMode,
+  templateId,
+  locale,
+  platformIndex,
+  metric,
+}: {
+  block: ReportVersionBlock;
+  blocks: ReportVersionBlock[];
+  index: number;
+  totalSlides: number;
+  renderMode: ReportRenderMode;
+  templateId: ReportTemplateId;
+  locale?: string;
+  platformIndex: number;
+  metric: "reach";
+}) {
+  const slideId = String(index + 1).padStart(2, "0");
+  const stagePalette = getMultiSourceStagePalette(templateId);
+  const platformLabel = getBlockPlatformLabel(block, blocks, "reach_overview");
+  const metricLabel = metric === "reach" ? "Reach" : "Metric";
+  const title = `${platformLabel} ${metricLabel}`;
+  const timeframeLabel =
+    getBlockTimeframeLabel(block, locale) || "Date range unavailable";
+  const totalMetricValue = getMetricDisplay(
+    block,
+    ["reach", "total_reach"],
+    "Not available"
+  );
+  const chartPoints = getBlockChartPoints(block);
+  const strongestDay = getStrongestDay(block, chartPoints);
+  const trendDirection = getBlockTrendDirection(block, chartPoints);
+  const hasDailySeries = chartPoints.length > 0;
+  const accountLabel = getBlockAccountLabel(block, platformLabel);
+  const insightText = getBlockInsightText(
+    block,
+    `${platformLabel} reach performance remained ${trendDirection.toLowerCase()} during the selected period, with the strongest day on ${strongestDay}.`
+  );
+  const recommendation =
+    getBlockInsightItems(block)[0] ||
+    (trendDirection === "Upward"
+      ? `Double down on the content pattern that drove the strongest result on ${strongestDay}.`
+      : trendDirection === "Downward"
+        ? `Review the content cadence and distribution around ${strongestDay} to recover reach momentum.`
+        : `Maintain a consistent publishing rhythm and test one high-distribution format to unlock additional reach.`);
+
+  return (
+    <PresentationStageSlideFrame slideId={slideId} renderMode={renderMode}>
+      <FixedReportSlideStage>
+        <div
+          className="relative h-full w-full overflow-hidden"
+          style={{ background: stagePalette.background }}
+        >
+          <p
+            className="absolute font-semibold uppercase tracking-[0.18em]"
+            style={{
+              left: 115,
+              top: 110,
+              fontSize: 24,
+              color: stagePalette.metricAccent,
+            }}
+          >
+            PLATFORM {platformIndex + 1}
+          </p>
+          <h2
+            className="absolute font-extrabold leading-none"
+            style={{
+              left: 115,
+              top: 148,
+              fontSize: 76,
+              letterSpacing: "-0.065em",
+              color: stagePalette.title,
+            }}
+          >
+            {title}
+          </h2>
+          <p
+            className="absolute font-medium"
+            style={{
+              left: 115,
+              top: 234,
+              fontSize: 30,
+              lineHeight: 1.2,
+              color: stagePalette.subtitle,
+            }}
+          >
+            {timeframeLabel}
+          </p>
+
+          <div
+            className="absolute flex items-center justify-end gap-4"
+            style={{ left: 1357, top: 100, width: 460, height: 73 }}
+          >
+            <div className="flex items-center gap-3">
+              {Array.from({ length: totalSlides }, (_, dotIndex) => dotIndex + 1).map((dot) => (
+                <span
+                  key={dot}
+                  className={`h-4 rounded-full ${String(dot).padStart(2, "0") === slideId ? "w-14" : "w-4"}`}
+                  style={{
+                    background:
+                      String(dot).padStart(2, "0") === slideId
+                        ? stagePalette.progressActive
+                        : stagePalette.progressInactive,
+                  }}
+                />
+              ))}
+            </div>
+            <span
+              className="rounded-full border px-5 py-3 text-[24px] font-semibold leading-none"
+              style={{
+                borderColor: stagePalette.progressPillBorder,
+                background: stagePalette.progressPillBackground,
+                color: stagePalette.progressPillText,
+              }}
+            >
+              {slideId}/{String(totalSlides).padStart(2, "0")}
+            </span>
+          </div>
+
+          <section
+            className={`absolute overflow-hidden rounded-[32px] border ${stagePalette.panelShadow}`}
+            style={{
+              left: 115,
+              top: 320,
+              width: 380,
+              height: 690,
+              borderColor: stagePalette.panelBorder,
+              background: stagePalette.panelBackground,
+            }}
+          >
+            <div className="flex h-full flex-col px-[42px] py-[42px]">
+              <p
+                className="font-semibold uppercase tracking-[0.18em]"
+                style={{ fontSize: 24, color: stagePalette.metricAccent }}
+              >
+                Total Reach
+              </p>
+              <p
+                className="mt-8 font-bold leading-none"
+                style={{
+                  fontSize: 86,
+                  letterSpacing: "-0.07em",
+                  color: stagePalette.metricValue,
+                }}
+              >
+                {totalMetricValue}
+              </p>
+              <p
+                className="mt-5 font-medium"
+                style={{ fontSize: 22, lineHeight: 1.35, color: stagePalette.subtitle }}
+              >
+                During selected reporting period
+              </p>
+
+              <div
+                className="mt-10 rounded-[24px] border px-6 py-5"
+                style={{
+                  borderColor: stagePalette.panelBorder,
+                  background: stagePalette.panelMuted,
+                }}
+              >
+                <p className="text-[16px] font-semibold uppercase tracking-[0.16em]" style={{ color: stagePalette.metricAccent }}>
+                  Source
+                </p>
+                <p className="mt-3 text-[30px] font-semibold leading-none" style={{ color: stagePalette.title }}>
+                  {accountLabel}
+                </p>
+              </div>
+
+              <div className="mt-auto grid gap-4">
+                <div
+                  className="rounded-[24px] border px-6 py-5"
+                  style={{
+                    borderColor: stagePalette.panelBorder,
+                    background: stagePalette.panelMuted,
+                  }}
+                >
+                  <p className="text-[16px] font-semibold uppercase tracking-[0.16em]" style={{ color: stagePalette.metricAccent }}>
+                    Strongest day
+                  </p>
+                  <p className="mt-3 text-[28px] font-semibold leading-none" style={{ color: stagePalette.title }}>
+                    {strongestDay}
+                  </p>
+                </div>
+                <div
+                  className="rounded-[24px] border px-6 py-5"
+                  style={{
+                    borderColor: stagePalette.panelBorder,
+                    background: stagePalette.panelMuted,
+                  }}
+                >
+                  <p className="text-[16px] font-semibold uppercase tracking-[0.16em]" style={{ color: stagePalette.metricAccent }}>
+                    Trend direction
+                  </p>
+                  <p className="mt-3 text-[28px] font-semibold leading-none" style={{ color: stagePalette.title }}>
+                    {trendDirection}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section
+            className={`absolute overflow-hidden rounded-[32px] border ${stagePalette.panelShadow}`}
+            style={{
+              left: 535,
+              top: 320,
+              width: 1320,
+              height: 430,
+              borderColor: stagePalette.panelBorder,
+              background: stagePalette.panelBackground,
+            }}
+          >
+            <div className="flex h-full flex-col px-[44px] py-[34px]">
+              <div className="flex items-start justify-between gap-6">
+                <div>
+                  <p className="text-[20px] font-semibold uppercase tracking-[0.16em]" style={{ color: stagePalette.metricAccent }}>
+                    Daily Reach
+                  </p>
+                  <p className="mt-3 text-[30px] font-semibold leading-none" style={{ color: stagePalette.title }}>
+                    {platformLabel}
+                  </p>
+                </div>
+                <div
+                  className="rounded-full border px-4 py-2.5"
+                  style={{
+                    borderColor: stagePalette.panelBorder,
+                    background: stagePalette.panelMuted,
+                    color: stagePalette.progressPillText,
+                  }}
+                >
+                  <p className="text-[18px] font-semibold leading-none">
+                    Strongest day: {strongestDay}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 min-h-0 flex-1">
+                {hasDailySeries ? (
+                  <MetricDailyChart
+                    points={chartPoints}
+                    isAvailable={hasDailySeries}
+                    metricLabel="Reach"
+                    dark={stagePalette.chartDark}
+                  />
+                ) : (
+                  <div
+                    className="flex h-full flex-col items-center justify-center rounded-[28px] border px-8 text-center"
+                    style={{
+                      borderColor: stagePalette.panelBorder,
+                      background: stagePalette.panelMuted,
+                    }}
+                  >
+                    <p className="text-[20px] font-semibold uppercase tracking-[0.16em]" style={{ color: stagePalette.metricAccent }}>
+                      Daily Reach
+                    </p>
+                    <p className="mt-5 max-w-[34rem] text-[28px] leading-[1.35]" style={{ color: stagePalette.subtitle }}>
+                      No daily reach data available for this period.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section
+            className={`absolute overflow-hidden rounded-[30px] border ${stagePalette.insightShadow}`}
+            style={{
+              left: 535,
+              top: 780,
+              width: 1320,
+              height: 230,
+              borderColor: stagePalette.insightBorder,
+              background: stagePalette.insightBackground,
+            }}
+          >
+            <div className="grid h-full grid-cols-[0.68fr_0.32fr] gap-8 px-[42px] py-[34px]">
+              <div className="min-w-0">
+                <p className="text-[24px] font-extrabold uppercase tracking-[0.14em]" style={{ color: stagePalette.insightText }}>
+                  AI Insight
+                </p>
+                <p
+                  className="mt-5"
+                  style={{
+                    fontSize: 28,
+                    lineHeight: 1.3,
+                    color: stagePalette.insightText,
+                    display: "-webkit-box",
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                  }}
+                >
+                  {insightText}
+                </p>
+              </div>
+              <div className="min-w-0">
+                <p className="text-[18px] font-semibold uppercase tracking-[0.14em]" style={{ color: stagePalette.insightSubtle }}>
+                  Tactical recommendation
+                </p>
+                <p
+                  className="mt-4"
+                  style={{
+                    fontSize: 22,
+                    lineHeight: 1.32,
+                    color: stagePalette.insightText,
+                    display: "-webkit-box",
+                    WebkitLineClamp: 4,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                  }}
+                >
+                  {recommendation}
+                </p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </FixedReportSlideStage>
+    </PresentationStageSlideFrame>
+  );
+}
+
+function MultiSourceInsightsSlide({
+  block,
+  blocks,
+  index,
+  totalSlides,
+  renderMode,
+  templateId,
+}: {
+  block: ReportVersionBlock;
+  blocks: ReportVersionBlock[];
+  index: number;
+  totalSlides: number;
+  renderMode: ReportRenderMode;
+  templateId: ReportTemplateId;
+}) {
+  const tone = getTemplateTone(templateId);
+  const slideId = String(index + 1).padStart(2, "0");
+  const platformSections = collectMultiSourcePlatformSections(blocks);
+  const strongestSource =
+    humanizePlatformLabel(
+      getStringValue(block.data.strongest_source) ||
+        getStringValue(block.data.strongestSource)
+    ) ||
+    platformSections[0]?.label ||
+    "Not available";
+  const keyInsights = getBlockInsightItems(block, [
+    "key_insights",
+    "keyInsights",
+    "comparative_insights",
+    "comparativeInsights",
+    "platform_strengths",
+    "platformStrengths",
+    "ecosystem_observations",
+    "ecosystemObservations",
+    "engagement_differences",
+    "engagementDifferences",
+    "reach_differences",
+    "reachDifferences",
+  ]);
+  const text = getBlockInsightText(
+    block,
+    "This cross-platform comparison should be read as a system: one channel expands distribution efficiently, while the other deepens interaction quality and community response."
+  );
+
+  return (
+    <SlideCanvas
+      index={slideId}
+      totalSlides={totalSlides}
+      eyebrow=""
+      title=""
+      renderMode={renderMode}
+      templateId={templateId}
+    >
+      <div className="flex h-full min-h-0 flex-col gap-5">
+        <section className={`rounded-[32px] border p-5 ${tone.insight}`}>
+          <p className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${templateId === "modern" ? tone.insightTitle : tone.accentSoft}`}>
+            AI Strategy Consultant
+          </p>
+          <div className="mt-3 flex items-end justify-between gap-4">
+            <div>
+              <h2 className={`text-[2.35rem] font-semibold tracking-[-0.06em] ${templateId === "modern" ? tone.cardStrongTitle : tone.title}`}>
+                Cross-Platform Strategic Insights
+              </h2>
+              <p className={`mt-3 max-w-3xl text-[0.95rem] leading-7 ${templateId === "modern" ? tone.insightBody : tone.subtitle}`}>
+                {text}
+              </p>
+            </div>
+            <div className={`rounded-[24px] border border-white/10 bg-white/5 px-4 py-3`}>
+              <p className={`text-[10px] font-semibold uppercase tracking-[0.2em] ${templateId === "modern" ? tone.insightTitle : tone.accentSoft}`}>
+                Strongest source
+              </p>
+              <p className={`mt-2 text-[1.2rem] font-semibold ${templateId === "modern" ? tone.cardStrongTitle : tone.title}`}>
+                {strongestSource}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <div className="grid min-h-0 flex-1 grid-cols-[0.95fr_1.05fr] gap-5">
+          <section className="grid gap-3">
+            {platformSections.slice(0, 2).map((section) => {
+              const reachBlock = section.semanticBlocks.reach_overview;
+              const engagementBlock = section.semanticBlocks.engagement_overview;
+
+              return (
+                <article key={section.id} className={`rounded-[28px] border p-4 ${tone.card}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className={`text-[1.1rem] font-semibold ${tone.title}`}>{section.label}</h3>
+                    <div className={`rounded-full border px-3 py-1 text-[0.7rem] font-semibold ${tone.chip}`}>
+                      {section.label === strongestSource ? "Primary advantage" : "Secondary advantage"}
+                    </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    {renderMetricStatCard({
+                      label: "Reach",
+                      value: getMetricDisplay(reachBlock || block, ["reach", "total_reach"], "—"),
+                      tone,
+                    })}
+                    {renderMetricStatCard({
+                      label: "Engagement",
+                      value: getMetricDisplay(
+                        engagementBlock || block,
+                        ["engagement", "total_engagement", "interactions_total"],
+                        "—"
+                      ),
+                      tone,
+                    })}
+                  </div>
+                  <p className={`mt-4 text-[0.84rem] leading-6 ${tone.subtitle}`}>
+                    {getBlockInsightText(
+                      engagementBlock || reachBlock || block,
+                      "The platform plays a distinct role inside the overall ecosystem."
+                    )}
+                  </p>
+                </article>
+              );
+            })}
+          </section>
+
+          <section className="grid min-h-0 grid-cols-2 gap-3">
+            {keyInsights.slice(0, 6).map((insight, insightIndex) => (
+              <article key={`${insight}-${insightIndex}`} className={`rounded-[26px] border p-4 ${tone.card}`}>
+                <div className={`inline-flex rounded-full border px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.18em] ${tone.chip}`}>
+                  Observation {String(insightIndex + 1).padStart(2, "0")}
+                </div>
+                <p className={`mt-4 text-[0.9rem] leading-6 ${tone.subtitle}`}>
+                  {insight}
+                </p>
+              </article>
+            ))}
+          </section>
+        </div>
+      </div>
+    </SlideCanvas>
+  );
+}
+
+function MultiSourceRecommendationsSlide({
+  block,
+  index,
+  totalSlides,
+  renderMode,
+  templateId,
+}: {
+  block: ReportVersionBlock;
+  index: number;
+  totalSlides: number;
+  renderMode: ReportRenderMode;
+  templateId: ReportTemplateId;
+}) {
+  const tone = getTemplateTone(templateId);
+  const slideId = String(index + 1).padStart(2, "0");
+  const quickWins = getBlockInsightItems(block, ["quick_wins", "quickWins"]);
+  const strategicRecommendations = getBlockInsightItems(block, [
+    "strategic_recommendations",
+    "strategicRecommendations",
+    "recommendations",
+  ]);
+  const [leftFallback, rightFallback] = splitItemsInHalf(strategicRecommendations);
+  const quickWinItems = quickWins.length > 0 ? quickWins : leftFallback;
+  const strategicItems =
+    quickWins.length > 0 ? strategicRecommendations : rightFallback;
+
+  return (
+    <SlideCanvas
+      index={slideId}
+      totalSlides={totalSlides}
+      eyebrow=""
+      title=""
+      renderMode={renderMode}
+      templateId={templateId}
+    >
+      <div className="flex h-full min-h-0 flex-col gap-5">
+        <div>
+          <p className={`text-[11px] font-semibold uppercase tracking-[0.25em] ${tone.accent}`}>
+            Recommendations & Next Steps
+          </p>
+          <h2 className={`mt-3 text-[2.35rem] font-semibold tracking-[-0.06em] ${tone.title}`}>
+            Premium, actionable next moves
+          </h2>
+        </div>
+
+        <div className="grid min-h-0 flex-1 grid-cols-2 gap-5">
+          <section className={`rounded-[32px] border p-5 ${tone.cardStrong}`}>
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${tone.cardStrongAccent}`}>
+              Quick Wins
+            </p>
+            <div className="mt-4 space-y-3">
+              {quickWinItems.slice(0, 4).map((item, itemIndex) => (
+                <div key={`${item}-${itemIndex}`} className="rounded-[22px] border border-white/10 bg-white/5 px-4 py-3">
+                  <p className={`text-[0.88rem] leading-6 ${tone.cardStrongSubtitle}`}>
+                    {item}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className={`rounded-[32px] border p-5 ${tone.card}`}>
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${tone.accent}`}>
+              Strategic Recommendations
+            </p>
+            <div className="mt-4 space-y-3">
+              {strategicItems.slice(0, 4).map((item, itemIndex) => (
+                <div key={`${item}-${itemIndex}`} className="rounded-[22px] border border-white/10 bg-white/5 px-4 py-3">
+                  <p className={`text-[0.88rem] leading-6 ${tone.subtitle}`}>
+                    {item}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+    </SlideCanvas>
+  );
+}
+
 function ReportBlockSlide({
   block,
   blocks,
@@ -1874,6 +3890,7 @@ function ReportBlockSlide({
 }) {
   const tone = getTemplateTone(templateId);
   const semanticName = getBlockSemanticName(block);
+  const normalizedSemanticName = getNormalizedBlockSemanticName(block);
   const isFiveSlideClosingCover = totalSlides === 5 && index === totalSlides - 1;
   const slideId = String(index + 1).padStart(2, "0");
   const title = getSlideTitle(block, index);
@@ -1883,13 +3900,14 @@ function ReportBlockSlide({
   const chartSource = getBlockChartSource(block);
   const chartPoints = getBlockChartPoints(block);
   const chartSeries = getBlockChartSeries(block);
-  const supportsMultiSeries = MULTI_SERIES_BLOCKS.has(semanticName.toLowerCase());
+  const supportsMultiSeries = MULTI_SERIES_BLOCKS.has(normalizedSemanticName);
   const hasMultiSeriesChart =
     supportsMultiSeries &&
     chartSeries.length >= 2;
   const hasChart = hasMultiSeriesChart
     ? chartSeries.some((series) => series.points.length > 0)
     : chartPoints.length > 0;
+  const isMultiSourceTenSlide = isMultiSourceTenSlideReport(blocks);
   const isEngagementOverview = isEngagementOverviewBlock(block);
   const renderModeName = hasChart ? "rich-data-slide" : "fallback";
   const chartMetricLabel =
@@ -1949,6 +3967,23 @@ function ReportBlockSlide({
     allSemanticNames: blocks.map((item) => getBlockSemanticName(item)),
     overviewCandidate: isOverviewCandidate(blocks),
   });
+  if (
+    index === 1 &&
+    (normalizedSemanticName === "executive_summary" ||
+      normalizedSemanticName === "cross_platform_overview")
+  ) {
+    console.log("[MULTISOURCE_SLIDE2_AUDIT]", {
+      index,
+      semanticName: normalizedSemanticName,
+      title,
+      isMultiSource: totalSlides >= 9,
+      rendererBranch: shouldRenderMultiSourceExecutiveOverview(block, index, totalSlides)
+        ? "MultiSourceExecutiveOverviewSlide"
+        : "ExecutiveSummarySlide",
+      blockKeys: Object.keys(block.data || {}),
+      blocksLength: blocks.length,
+    });
+  }
 
   if (isFiveSlideClosingCover) {
     const coverBlock =
@@ -1978,7 +4013,7 @@ function ReportBlockSlide({
     );
   }
 
-  if (semanticName === "cover" || (index === 0 && block.type === "title")) {
+  if (normalizedSemanticName === "cover" || (index === 0 && block.type === "title")) {
     const meta = getBlockTimeframeLabel(block, locale);
 
     return (
@@ -2000,11 +4035,127 @@ function ReportBlockSlide({
     );
   }
 
-  if (semanticName === "executive_summary") {
+  if (
+    normalizedSemanticName === "executive_summary" ||
+    normalizedSemanticName === "cross_platform_overview"
+  ) {
+    if (shouldRenderMultiSourceExecutiveOverview(block, index, totalSlides)) {
+      return (
+        <MultiSourceExecutiveOverviewSlide
+          block={block}
+          blocks={blocks}
+          index={index}
+          totalSlides={totalSlides}
+          renderMode={renderMode}
+          templateId={templateId}
+          locale={locale}
+        />
+      );
+    }
+
     return (
       <ExecutiveSummarySlide
         block={block}
         blocks={blocks}
+        index={index}
+        totalSlides={totalSlides}
+        renderMode={renderMode}
+        templateId={templateId}
+      />
+    );
+  }
+
+  if (isMultiSourceTenSlide && index === 2 && normalizedSemanticName === "reach_overview") {
+    return (
+      <MultiSourcePlatformMetricSlide
+        block={block}
+        blocks={blocks}
+        index={index}
+        totalSlides={totalSlides}
+        renderMode={renderMode}
+        templateId={templateId}
+        locale={locale}
+        platformIndex={0}
+        metric="reach"
+      />
+    );
+  }
+
+  if (isMultiSourceTenSlide && normalizedSemanticName === "reach_overview") {
+    return (
+      <MultiSourceMetricSlide
+        block={block}
+        blocks={blocks}
+        index={index}
+        totalSlides={totalSlides}
+        renderMode={renderMode}
+        templateId={templateId}
+        locale={locale}
+        variant="reach"
+      />
+    );
+  }
+
+  if (isMultiSourceTenSlide && normalizedSemanticName === "engagement_overview") {
+    return (
+      <MultiSourceMetricSlide
+        block={block}
+        blocks={blocks}
+        index={index}
+        totalSlides={totalSlides}
+        renderMode={renderMode}
+        templateId={templateId}
+        locale={locale}
+        variant="engagement"
+      />
+    );
+  }
+
+  if (isMultiSourceTenSlide && normalizedSemanticName === "audience_growth") {
+    return (
+      <MultiSourceMetricSlide
+        block={block}
+        blocks={blocks}
+        index={index}
+        totalSlides={totalSlides}
+        renderMode={renderMode}
+        templateId={templateId}
+        locale={locale}
+        variant="audience"
+      />
+    );
+  }
+
+  if (isMultiSourceTenSlide && normalizedSemanticName === "top_performing_post") {
+    return (
+      <MultiSourceTopPerformingPostSlide
+        block={block}
+        blocks={blocks}
+        index={index}
+        totalSlides={totalSlides}
+        renderMode={renderMode}
+        templateId={templateId}
+      />
+    );
+  }
+
+  if (isMultiSourceTenSlide && normalizedSemanticName === "insights") {
+    return (
+      <MultiSourceInsightsSlide
+        block={block}
+        blocks={blocks}
+        index={index}
+        totalSlides={totalSlides}
+        renderMode={renderMode}
+        templateId={templateId}
+      />
+    );
+  }
+
+  if (isMultiSourceTenSlide && normalizedSemanticName === "recommendations") {
+    return (
+      <MultiSourceRecommendationsSlide
+        block={block}
         index={index}
         totalSlides={totalSlides}
         renderMode={renderMode}
@@ -2055,7 +4206,7 @@ function ReportBlockSlide({
           meta={getBlockTimeframeLabel(block, locale)}
           footer={<FooterMeta text="Reporte generado con Measurable." />}
           templateId={templateId}
-          rightSlot={<CoverLogo logoDataUrl={logoUrl} dark={templateId !== "modern"} />}
+          rightSlot={<CoverLogo logoDataUrl={logoUrl} dark={tone.dark} />}
         />
       </SlideCanvas>
     );
@@ -2125,7 +4276,7 @@ function ReportBlockSlide({
               }
               isAvailable={hasChart}
               metricLabel={chartMetricLabel}
-              dark={templateId !== "modern"}
+              dark={tone.dark}
             />
           ) : (
             <div className={`flex h-full flex-col items-center justify-center rounded-[30px] border px-6 text-center ${tone.card}`}>

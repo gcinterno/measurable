@@ -199,7 +199,7 @@ export function SlideCanvas({
     : `${slideClassName} ${REPORT_SLIDE_THEME.radius.outerFrame} border ${REPORT_SLIDE_THEME.colors.frameBorder} ${REPORT_SLIDE_THEME.colors.frameBackground} ${REPORT_SLIDE_THEME.spacing.outerPadding} ${REPORT_SLIDE_THEME.effects.outerShadow}`;
   const shellClassName = isExportMode
     ? `overflow-hidden ${tone.shellBase}`
-    : `mx-auto max-w-none overflow-hidden border ${templateId === "modern" ? "border-slate-200" : REPORT_SLIDE_THEME.colors.shellBorder} ${REPORT_SLIDE_THEME.radius.innerFrame} ${tone.shellBase} ${REPORT_SLIDE_THEME.effects.innerShadow}`;
+    : `mx-auto max-w-none overflow-hidden border ${tone.dark ? REPORT_SLIDE_THEME.colors.shellBorder : "border-slate-200"} ${REPORT_SLIDE_THEME.radius.innerFrame} ${tone.shellBase} ${REPORT_SLIDE_THEME.effects.innerShadow}`;
   const shellWidth = isExportMode
     ? REPORT_SLIDE_THEME.slide.width
     : REPORT_SLIDE_THEME.slide.surfaceWidth;

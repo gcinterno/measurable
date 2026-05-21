@@ -32,6 +32,8 @@ type ImpressionsSlideProps = {
   unavailable?: boolean;
   source_metric_name?: string;
   timeframe_source?: string;
+  source_caption?: string;
+  unavailable_message?: string;
   templateId?: ReportTemplateId;
 };
 
@@ -571,6 +573,8 @@ export function ImpressionsSlide({
   title,
   unavailable = false,
   timeframe_source,
+  source_caption = "Based on synchronized social data",
+  unavailable_message = "Impressions data was not available with enough detail for this reporting period.",
   templateId = "executive",
 }: ImpressionsSlideProps) {
   const tone = getTemplateTone(templateId);
@@ -631,7 +635,7 @@ export function ImpressionsSlide({
             {title || metric_label}
           </h2>
           <p className={`mt-2 text-xs ${tone.subtle}`}>
-            Basado en datos de Facebook Insights
+            {source_caption}
           </p>
           <p className={`mt-8 text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.subtle}`}>
             Total de {metric_label.toLowerCase()} del periodo
@@ -650,7 +654,7 @@ export function ImpressionsSlide({
           <InsightBox
             text={
               unavailable
-                ? "La métrica de impresiones no estuvo disponible con suficiente detalle en la fuente actual de Facebook Insights."
+                ? unavailable_message
                 : insight
             }
             className="mt-8 h-full min-h-0"
@@ -661,25 +665,25 @@ export function ImpressionsSlide({
         <ChartBlock>
           {unavailable ? (
             <div className={`relative h-[360px] overflow-visible rounded-[30px] border p-6 ${tone.card}`}>
-              <div className={`pointer-events-none absolute inset-0 ${templateId !== "modern" ? "bg-[linear-gradient(180deg,rgba(56,189,248,0.07)_0%,transparent_100%)]" : "bg-[linear-gradient(180deg,rgba(14,165,233,0.06)_0%,transparent_100%)]"}`} />
+              <div className={`pointer-events-none absolute inset-0 ${tone.dark ? "bg-[linear-gradient(180deg,rgba(56,189,248,0.07)_0%,transparent_100%)]" : "bg-[linear-gradient(180deg,rgba(14,165,233,0.06)_0%,transparent_100%)]"}`} />
               <div className="relative">
                 <div className="grid h-[280px] grid-rows-4 gap-0">
                   {[0, 1, 2, 3].map((row) => (
-                    <div key={row} className={templateId !== "modern" ? "border-b border-white/10" : "border-b border-slate-200"} />
+                    <div key={row} className={tone.dark ? "border-b border-white/10" : "border-b border-slate-200"} />
                   ))}
                 </div>
                 <p className={`mt-5 text-sm leading-6 ${tone.subtle}`}>
-                  No hay suficientes datos de impresiones disponibles para este periodo.
+                  {unavailable_message}
                 </p>
               </div>
             </div>
           ) : (
             <>
-              <ImpressionsChart
-                points={continuousPoints}
-                metricLabel={metric_label}
-                dark={templateId !== "modern"}
-              />
+                <ImpressionsChart
+                  points={continuousPoints}
+                  metricLabel={metric_label}
+                  dark={tone.dark}
+                />
               <KPIGrid columns={3}>
                 <KPICard
                   label="Highest day"

@@ -103,6 +103,23 @@ type MetaSelectOrSyncResponse = {
   };
 };
 
+type MetaSyncAllSourceResult = {
+  success: boolean;
+  message: string;
+  detail: string;
+  integrationId: string;
+  datasetId: string;
+  raw: unknown;
+};
+
+type MetaSyncAllResult = {
+  ok: boolean;
+  status: number;
+  message: string;
+  raw: unknown;
+  sources: Record<"facebook_pages" | "instagram_business", MetaSyncAllSourceResult | null>;
+};
+
 type IntegrationsStatusResult = {
   metaConnected: boolean;
   integrationId: string;
@@ -296,6 +313,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function parseJsonText(text: string) {
+  if (!text.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
 function getRecordString(record: Record<string, unknown>) {
   return Object.entries(record)
     .flatMap(([key, value]) => {
@@ -338,6 +367,93 @@ function getRecordIntegrationId(record: Record<string, unknown>) {
     record.id;
 
   return integrationId ? String(integrationId) : "";
+}
+
+function getRecordMessage(record: Record<string, unknown>) {
+  if (typeof record.message === "string") {
+    return record.message;
+  }
+
+  if (typeof record.detail === "string") {
+    return record.detail;
+  }
+
+  return "";
+}
+
+function getNestedSourcePayload(
+  payload: unknown,
+  aliases: string[]
+): unknown {
+  if (!isRecord(payload)) {
+    return null;
+  }
+
+  const containers = [
+    payload,
+    isRecord(payload.data) ? payload.data : null,
+    isRecord(payload.results) ? payload.results : null,
+    isRecord(payload.sources) ? payload.sources : null,
+  ].filter((value): value is Record<string, unknown> => Boolean(value));
+
+  for (const container of containers) {
+    for (const alias of aliases) {
+      if (alias in container) {
+        return container[alias];
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractSyncAllSourceResult(
+  payload: unknown
+): MetaSyncAllSourceResult | null {
+  if (!payload) {
+    return null;
+  }
+
+  const record = isRecord(payload) ? payload : {};
+  const nestedData = isRecord(record.data) ? record.data : null;
+  const datasetId = extractDatasetId(record as MetaSelectOrSyncResponse);
+  const integrationId = extractIntegrationId(record as MetaSelectOrSyncResponse);
+  const statusValue =
+    getRecordStatus(record) || (nestedData ? getRecordStatus(nestedData) : "");
+  const status =
+    typeof statusValue === "string" ? statusValue.toLowerCase() : "";
+  const explicitSuccess =
+    record.success === true ||
+    record.synced === true ||
+    (nestedData?.success === true) ||
+    (nestedData?.synced === true);
+  const explicitFailure =
+    record.success === false ||
+    record.synced === false ||
+    (nestedData?.success === false) ||
+    (nestedData?.synced === false) ||
+    status === "failed" ||
+    status === "error";
+  const success =
+    explicitSuccess ||
+    (!explicitFailure &&
+      (Boolean(datasetId) ||
+        status === "synced" ||
+        status === "success" ||
+        status === "completed"));
+  const detail =
+    getRecordMessage(record) ||
+    (nestedData ? getRecordMessage(nestedData) : "") ||
+    (success ? "Successfully synced" : "Failed to sync");
+
+  return {
+    success,
+    message: detail,
+    detail,
+    integrationId,
+    datasetId,
+    raw: payload,
+  };
 }
 
 function extractMetaConnectionStatus(payload: unknown): IntegrationsStatusResult {
@@ -692,4 +808,69 @@ export async function syncMetaInstagramAccount(input: {
       extractIntegrationId(parsedPayload) || input.integrationId,
     datasetId,
   };
+}
+
+export async function syncAllMetaDataSources(input: {
+  facebookPageId?: string;
+  instagramBusinessAccountId?: string;
+  timeframe: string;
+}) {
+  const endpoint = "/integrations/meta/sync-all";
+  const finalUrl = apiUrl(endpoint);
+  const payload = {
+    facebook_page_id: input.facebookPageId || undefined,
+    instagram_business_account_id: input.instagramBusinessAccountId || undefined,
+    timeframe: input.timeframe,
+  };
+  const headers = {
+    "Content-Type": "application/json",
+    ...(getAuthHeaders() || {}),
+  };
+  const body = JSON.stringify(payload);
+
+  console.info("[MetaSyncAll][request.payload]", payload);
+
+  const res = await fetch(finalUrl, {
+    method: "POST",
+    headers,
+    body,
+  });
+
+  const text = await res.text();
+  const parsedPayload = parseJsonText(text);
+
+  console.info("[MetaSyncAll][response.status]", res.status);
+  console.info("[MetaSyncAll][response.body]", parsedPayload ?? text);
+
+  const topLevelRecord = isRecord(parsedPayload) ? parsedPayload : null;
+  const topLevelMessage =
+    (topLevelRecord ? getRecordMessage(topLevelRecord) : "") ||
+    (res.ok ? "Sync completed." : "We could not sync the selected data sources.");
+
+  return {
+    ok: res.ok,
+    status: res.status,
+    message: topLevelMessage,
+    raw: parsedPayload ?? text,
+    sources: {
+      facebook_pages: extractSyncAllSourceResult(
+        getNestedSourcePayload(parsedPayload, [
+          "facebook_pages",
+          "facebook_page",
+          "facebookPages",
+          "facebookPage",
+          "facebook",
+        ])
+      ),
+      instagram_business: extractSyncAllSourceResult(
+        getNestedSourcePayload(parsedPayload, [
+          "instagram_business",
+          "instagram_business_account",
+          "instagramBusiness",
+          "instagramBusinessAccount",
+          "instagram",
+        ])
+      ),
+    },
+  } satisfies MetaSyncAllResult;
 }

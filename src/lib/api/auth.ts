@@ -5,6 +5,12 @@ type RegisterInput = {
   email: string;
   password: string;
   fullName: string;
+  referral_code?: string;
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_term?: string;
+  utm_content?: string;
 };
 
 type LoginInput = {
@@ -229,6 +235,12 @@ export async function registerUser(input: RegisterInput) {
       email: input.email,
       password: input.password,
       full_name: input.fullName,
+      referral_code: input.referral_code || undefined,
+      utm_source: input.utm_source || undefined,
+      utm_medium: input.utm_medium || undefined,
+      utm_campaign: input.utm_campaign || undefined,
+      utm_term: input.utm_term || undefined,
+      utm_content: input.utm_content || undefined,
     }),
   });
 

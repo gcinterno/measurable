@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
@@ -9,20 +10,22 @@ import { DesktopFlowSteps } from "@/components/reports/flow/DesktopFlowSteps";
 import { MobileFlowHeader } from "@/components/reports/flow/MobileFlowHeader";
 import { IntegrationLibrary } from "@/components/reports/IntegrationLibrary";
 import { integrationCatalog, isMetaFrontendIntegrationKey } from "@/lib/integrations/catalog";
-import { getIntegrationReportContext } from "@/lib/integrations/session";
+import {
+  createEmptySelectedAccountsBySource,
+  getIntegrationReportContext,
+  setIntegrationReportContext,
+} from "@/lib/integrations/session";
 
 function NewReportFlowPageContent() {
   const { messages } = useI18n();
   const searchParams = useSearchParams();
-  const sourceParam = searchParams.get("source");
-  const integrationParam = searchParams.get("integration");
+  const shouldResumeSelection = searchParams.get("resume") === "1";
   const storedIntegrationContext = getIntegrationReportContext();
-  const selectedIntegrationKeys =
-    storedIntegrationContext?.selectedSources?.length
+  const selectedIntegrationKeys = shouldResumeSelection
+    ? storedIntegrationContext?.selectedSources?.length
       ? storedIntegrationContext.selectedSources
-      : sourceParam || integrationParam || storedIntegrationContext?.source
-        ? [String(sourceParam || integrationParam || storedIntegrationContext?.source)]
-        : [];
+      : []
+    : [];
   const connectedIntegrationKey =
     storedIntegrationContext?.integrationId &&
       isMetaFrontendIntegrationKey(storedIntegrationContext?.source)
@@ -52,16 +55,34 @@ function NewReportFlowPageContent() {
     },
   ] as const;
 
+  useEffect(() => {
+    if (shouldResumeSelection || !storedIntegrationContext) {
+      return;
+    }
+
+    setIntegrationReportContext({
+      ...storedIntegrationContext,
+      source: "",
+      pageId: undefined,
+      pageName: undefined,
+      datasetId: undefined,
+      synced: false,
+      selectedSources: [],
+      selectedAccountsBySource: createEmptySelectedAccountsBySource(),
+      reportKind: "single_source",
+    });
+  }, [shouldResumeSelection, storedIntegrationContext]);
+
   return (
     <AppShell>
-      <div className="space-y-5 sm:space-y-6">
+      <div className="-mx-4 -mt-4 space-y-5 bg-white px-4 pt-4 pb-6 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6 sm:pb-8">
         <MobileFlowHeader
           currentStep={currentStep}
           totalSteps={flowSteps.length}
           title={messages.reports.chooseSource}
           description={messages.reports.chooseSourceDescription}
         />
-        <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+        <section className="p-5 sm:p-8">
           <div className="hidden max-w-3xl md:block">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
               {messages.review.guidedFlow}
@@ -98,12 +119,14 @@ export default function NewReportFlowPage() {
     <Suspense
       fallback={
         <AppShell>
-          <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
-            <div className="space-y-3">
-              <div className="h-6 w-48 animate-pulse rounded-full bg-slate-200" />
-              <div className="h-24 animate-pulse rounded-[24px] bg-slate-100" />
-            </div>
-          </section>
+          <div className="-mx-4 -mt-4 bg-white px-4 pt-4 pb-6 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6 sm:pb-8">
+            <section className="p-5 sm:p-8">
+              <div className="space-y-3">
+                <div className="h-6 w-48 animate-pulse rounded-full bg-slate-200" />
+                <div className="h-24 animate-pulse rounded-[24px] bg-slate-100" />
+              </div>
+            </section>
+          </div>
         </AppShell>
       }
     >

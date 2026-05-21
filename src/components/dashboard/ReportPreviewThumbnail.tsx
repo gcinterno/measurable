@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/components/providers/LanguageProvider";
 import { CoverSlide } from "@/components/reports/slides/CoverSlide";
-import { fetchReportDetail } from "@/lib/api/reports";
 import { getCoverThumbnailMeta, getCoverThumbnailSubtitle } from "@/lib/reports/cover-thumbnail";
 import { getReportBrandingSnapshot } from "@/lib/reports/branding-snapshots";
 import {
@@ -24,70 +23,34 @@ const THUMBNAIL_HEIGHT = REPORT_SLIDE_THEME.slide.height;
 export function ReportPreviewThumbnail({ report }: ReportPreviewThumbnailProps) {
   const { language } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [detailLogoUrl, setDetailLogoUrl] = useState<string | null>(null);
-  const [detailTimeframe, setDetailTimeframe] =
-    useState<ReportDescriptionTimeframe | null>(null);
   const [templateId, setTemplateId] = useState<ReportTemplateId>("executive");
   const [containerWidth, setContainerWidth] = useState(0);
+  const reportTimeframe: ReportDescriptionTimeframe | null =
+    report.description?.timeframe || null;
 
   const resolvedLogoUrl = useMemo(
     () =>
       report.branding?.logoUrl?.trim() ||
-      detailLogoUrl?.trim() ||
       getReportBrandingSnapshot(report.id)?.logoUrl?.trim() ||
       "",
-    [detailLogoUrl, report.branding?.logoUrl, report.id]
+    [report.branding?.logoUrl, report.id]
   );
   const slideModel = useMemo(
     () => ({
       reportTitle: report.title,
       subtitle: getCoverThumbnailSubtitle(language),
-      meta: getCoverThumbnailMeta(language, detailTimeframe),
+      meta: getCoverThumbnailMeta(language, reportTimeframe),
       branding: {
         logoUrl: resolvedLogoUrl || null,
       },
     }),
-    [detailTimeframe, language, report.title, resolvedLogoUrl]
+    [language, report.title, reportTimeframe, resolvedLogoUrl]
   );
   const slideScale = containerWidth > 0 ? containerWidth / THUMBNAIL_WIDTH : 0;
 
   useEffect(() => {
     setTemplateId(getStoredReportTemplateSelection(report.id));
   }, [report.id]);
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadReportBranding() {
-      if (report.branding?.logoUrl?.trim() && detailTimeframe) {
-        return;
-      }
-
-      try {
-        const detail = await fetchReportDetail(report.id);
-
-        if (!active) {
-          return;
-        }
-
-        setDetailLogoUrl(detail?.branding?.logoUrl?.trim() || null);
-        setDetailTimeframe(detail?.description?.timeframe || null);
-      } catch {
-        if (!active) {
-          return;
-        }
-
-        setDetailLogoUrl(null);
-        setDetailTimeframe(null);
-      }
-    }
-
-    void loadReportBranding();
-
-    return () => {
-      active = false;
-    };
-  }, [detailTimeframe, report.branding?.logoUrl, report.id]);
 
   useEffect(() => {
     if (!containerRef.current || typeof ResizeObserver === "undefined") {

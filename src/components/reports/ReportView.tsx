@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/components/providers/LanguageProvider";
 import { ReportExportSurface } from "@/components/reports/ReportExportSurface";
@@ -215,6 +215,7 @@ export default function ReportView({
   const [resolvedVersionId, setResolvedVersionId] = useState("");
   const exportSurfaceRef = useRef<HTMLDivElement | null>(null);
   const slideDeckRef = useRef<HTMLDivElement | null>(null);
+  const latestLoadRequestRef = useRef(0);
   const { workspace } = useActiveWorkspace();
   const planCapabilities = getPlanCapabilities(workspace);
 
@@ -223,48 +224,44 @@ export default function ReportView({
     setFolderId(loadStoredAssignments()[reportId] || "");
   }, [reportId]);
 
-  useEffect(() => {
-    let active = true;
+  const loadReport = useCallback(async () => {
+    const requestId = latestLoadRequestRef.current + 1;
+    latestLoadRequestRef.current = requestId;
 
-    async function loadReport() {
-      try {
-        setLoading(true);
-        setError("");
+    setLoading(true);
+    setError("");
 
-        const renderData = await fetchLatestReportRenderData(reportId, {
-          source: "report-detail",
-        });
+    try {
+      const renderData = await fetchLatestReportRenderData(reportId, {
+        source: "report-detail",
+      });
 
-        if (!active) {
-          return;
-        }
+      if (latestLoadRequestRef.current !== requestId) {
+        return;
+      }
 
-        setBlocks(renderData.reportVersion.blocks);
-        setReportVersionDescription(renderData.reportVersion.description || null);
-        setReportVersionBranding(renderData.reportVersion.branding || null);
-        setReportDetail(renderData.detail);
-        setResolvedVersionId(renderData.resolvedVersionId);
-      } catch (err: unknown) {
-        console.error("report version view error:", err);
+      setBlocks(renderData.reportVersion.blocks);
+      setReportVersionDescription(renderData.reportVersion.description || null);
+      setReportVersionBranding(renderData.reportVersion.branding || null);
+      setReportDetail(renderData.detail);
+      setResolvedVersionId(renderData.resolvedVersionId);
+    } catch (err: unknown) {
+      if (latestLoadRequestRef.current !== requestId) {
+        return;
+      }
 
-        if (!active) {
-          return;
-        }
-
-        setError(messages.reports.loadReportDescription);
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
+      console.error("report version view error:", err);
+      setError(messages.reports.loadReportDescription);
+    } finally {
+      if (latestLoadRequestRef.current === requestId) {
+        setLoading(false);
       }
     }
-
-    void loadReport();
-
-    return () => {
-      active = false;
-    };
   }, [messages.reports.loadReportDescription, reportId]);
+
+  useEffect(() => {
+    void loadReport().catch(() => undefined);
+  }, [loadReport]);
 
   const title = useMemo(
     () => getReportTitle(blocks, reportDetail?.title),
@@ -331,7 +328,12 @@ export default function ReportView({
       resolveReportBranding(
         reportVersionBranding,
         reportDetail?.branding,
-        getReportBrandingSnapshot(reportId),
+        workspace?.branding?.logoUrl
+          ? {
+              logoUrl: workspace.branding.logoUrl,
+              source: workspace.branding.source || "workspace.branding.logoUrl",
+            }
+          : getReportBrandingSnapshot(reportId),
         {
           overrideBranding: getMeasurableBrandingOverride(workspace),
         }
@@ -687,7 +689,9 @@ export default function ReportView({
         title={messages.reports.loadReportError}
         description={error}
         actionLabel={messages.reports.tryAgain}
-        onAction={() => window.location.reload()}
+        onAction={() => {
+          void loadReport();
+        }}
       />
     );
   }

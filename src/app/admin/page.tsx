@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { AdminPageShell } from "@/components/admin/AdminPageShell";
 import {
   fetchAdminMetrics,
+  type AdminDistributionItem,
   type AdminMetricGrowthKey,
   type AdminOverviewInsight,
   type AdminMetricsSeriesPoint,
@@ -62,6 +63,17 @@ const chartCards: Array<{
   },
 ];
 
+type AdminLifecycleMetricCard = {
+  id: string;
+  label: string;
+  reason: string;
+  value: number | null;
+  format?: "integer" | "decimal" | "duration";
+  accent: string;
+  note: string;
+  distribution?: AdminDistributionItem[];
+};
+
 function formatMetric(value: number, format?: "currency" | "percent") {
   if (format === "currency") {
     return new Intl.NumberFormat("en-US", {
@@ -76,6 +88,35 @@ function formatMetric(value: number, format?: "currency" | "percent") {
   }
 
   return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatMetricValue(
+  value: number | null,
+  format: AdminLifecycleMetricCard["format"] = "integer"
+) {
+  if (value === null || value === undefined) {
+    return "—";
+  }
+
+  if (format === "decimal") {
+    return new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 2,
+    }).format(value);
+  }
+
+  if (format === "duration") {
+    if (value < 1) {
+      return `${Math.max(1, Math.round(value * 60))} min`;
+    }
+
+    return `${new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: value < 10 ? 1 : 0,
+      maximumFractionDigits: value < 10 ? 1 : 0,
+    }).format(value)} h`;
+  }
+
+  return formatMetric(value);
 }
 
 function getTodayDateString() {
@@ -508,6 +549,94 @@ function insightStyles(severity: AdminOverviewInsight["severity"]) {
   }
 }
 
+function buildLifecycleMetricCards(metrics: AdminMetrics): AdminLifecycleMetricCard[] {
+  return [
+    {
+      id: "new-users",
+      label: "New users",
+      reason: "Acquisition",
+      value: metrics.usersInPeriod,
+      accent: "bg-sky-500",
+      note: "Top-of-funnel demand entering the product.",
+    },
+    {
+      id: "facebook-connected",
+      label: "Users who connected Facebook",
+      reason: "Activation",
+      value: metrics.facebookConnectedUsers,
+      accent: "bg-indigo-500",
+      note: "Confirms users reach the first integration milestone.",
+    },
+    {
+      id: "reports-created",
+      label: "Reports created",
+      reason: "Real usage",
+      value: metrics.reportsInPeriod || metrics.reportsGenerated,
+      accent: "bg-cyan-500",
+      note: "Measures whether accounts are using the core workflow.",
+    },
+    {
+      id: "two-plus-reports",
+      label: "Users with 2+ reports",
+      reason: "Early retention",
+      value: metrics.usersWithTwoPlusReports,
+      accent: "bg-emerald-500",
+      note: "A stronger signal than one-time report creation.",
+    },
+    {
+      id: "time-to-first-report",
+      label: "Time to first report",
+      reason: "Onboarding quality",
+      value: metrics.timeToFirstReportHours,
+      format: "duration",
+      accent: "bg-amber-500",
+      note: "Shorter time usually means less friction to first value.",
+    },
+    {
+      id: "connection-errors",
+      label: "Connection errors",
+      reason: "Technical friction",
+      value: metrics.connectionErrors,
+      accent: "bg-rose-500",
+      note: "Tracks failures during setup or sync moments.",
+    },
+    {
+      id: "pdf-exports",
+      label: "PDF exports",
+      reason: "Perceived value",
+      value: metrics.pdfExports,
+      accent: "bg-violet-500",
+      note: "Shows how often users take output outside the platform.",
+    },
+    {
+      id: "upgrade-clicks",
+      label: "Upgrade clicks",
+      reason: "Payment intent",
+      value: metrics.upgradeClicks,
+      accent: "bg-fuchsia-500",
+      note: "A useful leading indicator before actual conversion.",
+    },
+    {
+      id: "users-by-plan",
+      label: "Users by plan",
+      reason: "Monetization",
+      value: metrics.usersByPlan.reduce((sum, item) => sum + item.value, 0),
+      accent: "bg-slate-700",
+      note: "Helps evaluate free-to-paid mix across the base.",
+      distribution: metrics.usersByPlan,
+    },
+    {
+      id: "avg-reports-per-user",
+      label: "Avg reports per user",
+      reason: "Usage intensity",
+      value: metrics.averageReportsPerUser,
+      format: "decimal",
+      accent: "bg-teal-500",
+      note: "Higher depth often correlates with retention and account health.",
+    },
+  ];
+}
+
 export default function AdminOverviewPage() {
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
   const [loading, setLoading] = useState(true);
@@ -571,6 +700,7 @@ export default function AdminOverviewPage() {
     !customInputs.startDate ||
     !customInputs.endDate ||
     customInputs.startDate > customInputs.endDate;
+  const lifecycleMetricCards = metrics ? buildLifecycleMetricCards(metrics) : [];
 
   const timeframeControls = (
     <section className="rounded-[20px] border border-[var(--border-soft)] bg-[var(--surface-soft)] p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)]">
@@ -715,6 +845,64 @@ export default function AdminOverviewPage() {
           ))}
         </section>
       )}
+
+      {!loading && !error && metrics ? (
+        <section className="mt-6 rounded-[24px] border border-[var(--border-soft)] bg-[var(--surface)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)] sm:p-6">
+          <div className="flex flex-col gap-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--measurable-blue)]">
+              Lifecycle metrics
+            </p>
+            <h2 className="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
+              Acquisition, activation, retention, and monetization in one view
+            </h2>
+            <p className="text-sm text-[var(--text-secondary)]">
+              These are the operating metrics that matter most for the admin dashboard.
+            </p>
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+            {lifecycleMetricCards.map((card) => (
+              <article
+                key={card.id}
+                className="overflow-hidden rounded-[22px] border border-[var(--border-soft)] bg-[var(--surface-soft)] p-5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-secondary)]">
+                      {card.reason}
+                    </p>
+                    <h3 className="mt-2 text-lg font-semibold tracking-tight text-[var(--text-primary)]">
+                      {card.label}
+                    </h3>
+                  </div>
+                  <span className={`mt-1 h-2.5 w-2.5 rounded-full ${card.accent}`} />
+                </div>
+
+                <p className="mt-8 text-[2.3rem] font-semibold leading-none tracking-tight text-[var(--text-primary)]">
+                  {formatMetricValue(card.value, card.format)}
+                </p>
+
+                {card.distribution?.length ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {card.distribution.map((item) => (
+                      <span
+                        key={`${card.id}-${item.label}`}
+                        className="inline-flex rounded-full border border-[var(--border-soft)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--text-secondary)]"
+                      >
+                        {item.label}: {formatMetric(item.value)}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+
+                <p className="mt-4 text-sm leading-6 text-[var(--text-secondary)]">
+                  {card.note}
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {loading ? (
         <section className="mt-6 grid gap-4 xl:grid-cols-3">

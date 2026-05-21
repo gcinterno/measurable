@@ -319,18 +319,120 @@ function buildContinuousDailyPoints(
   return result;
 }
 
+function matchesMetricAlias(value: string, aliases: string[]) {
+  const normalizedValue = value.toLowerCase();
+
+  return aliases.some((alias) => {
+    const normalizedAlias = alias.toLowerCase();
+    return (
+      normalizedValue === normalizedAlias ||
+      normalizedValue.includes(normalizedAlias)
+    );
+  });
+}
+
+function coerceSeriesPoint(value: unknown): ExecutiveDarkSeriesPoint | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const point = value as {
+    date?: unknown;
+    day?: unknown;
+    label?: unknown;
+    name?: unknown;
+    value?: unknown;
+    total?: unknown;
+    count?: unknown;
+  };
+  const rawDate =
+    getTrimmedText(String(point.date ?? point.day ?? point.label ?? point.name ?? ""));
+  const rawValue = point.value ?? point.total ?? point.count;
+  const numericValue =
+    typeof rawValue === "number"
+      ? rawValue
+      : Number(String(rawValue ?? "").trim());
+
+  if (!rawDate || Number.isNaN(numericValue)) {
+    return null;
+  }
+
+  return {
+    date: rawDate,
+    label: formatShortDayLabel(rawDate),
+    value: numericValue,
+  };
+}
+
+function collectSeriesPoints(value: unknown): ExecutiveDarkSeriesPoint[] {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => {
+      const directPoint = coerceSeriesPoint(entry);
+
+      if (directPoint) {
+        return [directPoint];
+      }
+
+      if (entry && typeof entry === "object") {
+        const record = entry as Record<string, unknown>;
+
+        return [
+          ...collectSeriesPoints(record.points),
+          ...collectSeriesPoints(record.data),
+          ...collectSeriesPoints(record.values),
+        ];
+      }
+
+      return [];
+    });
+  }
+
+  if (typeof value !== "object") {
+    return [];
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return [
+    ...collectSeriesPoints(record.points),
+    ...collectSeriesPoints(record.series),
+    ...collectSeriesPoints(record.datasets),
+    ...collectSeriesPoints(record.chart),
+    ...collectSeriesPoints(record.chart_data),
+    ...collectSeriesPoints(record.daily),
+    ...collectSeriesPoints(record.reach_daily),
+    ...collectSeriesPoints(record.impressions_daily),
+    ...collectSeriesPoints(record.engagement_daily),
+  ];
+}
+
 function getMetricChartData(blocks: ReportVersionBlock[], metricAliases: string[]) {
   const chartBlock = blocks.find((block) => {
-    if (block.type !== "chart") {
+    if (
+      block.type !== "chart" &&
+      !block.type.toLowerCase().includes("chart") &&
+      !block.type.toLowerCase().includes("graph")
+    ) {
       return false;
     }
 
-    const metric = getTrimmedText(String(block.data.metric ?? "")).toLowerCase();
-    const label = getTrimmedText(block.data.label).toLowerCase();
+    const haystack = [
+      getTrimmedText(String(block.data.metric ?? "")),
+      getTrimmedText(String(block.data.label ?? "")),
+      getTrimmedText(String(block.data.title ?? "")),
+      getTrimmedText(String(block.data.source_label ?? "")),
+      getTrimmedText(String(block.data.semantic_name ?? "")),
+      getTrimmedText(String(block.data.y_axis_label ?? "")),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
 
-    return metricAliases.some(
-      (alias) => metric === alias || label.includes(alias)
-    );
+    return matchesMetricAlias(haystack, metricAliases);
   });
 
   if (!chartBlock) {
@@ -343,13 +445,12 @@ function getMetricChartData(blocks: ReportVersionBlock[], metricAliases: string[
     };
   }
 
-  const rawPoints = Array.isArray(chartBlock.data.points)
-    ? chartBlock.data.points
-    : [];
+  const rawPoints = collectSeriesPoints(chartBlock.data);
   const startDate = getTrimmedText(
     String(
       chartBlock.data.timeframe_since ??
         chartBlock.data.since ??
+        chartBlock.data.start ??
         chartBlock.data.start_date ??
         ""
     )
@@ -358,49 +459,29 @@ function getMetricChartData(blocks: ReportVersionBlock[], metricAliases: string[
     String(
       chartBlock.data.timeframe_until ??
         chartBlock.data.until ??
+        chartBlock.data.end ??
         chartBlock.data.end_date ??
         ""
     )
   );
   const sourceLabel = getTrimmedText(
-    String(chartBlock.data.source_label ?? chartBlock.data.label ?? "")
+    String(
+      chartBlock.data.source_label ??
+        chartBlock.data.label ??
+        chartBlock.data.title ??
+        ""
+    )
   );
 
   const points = buildContinuousDailyPoints(
-    rawPoints
-    .map((point) => {
-      if (!point || typeof point !== "object") {
-        return null;
-      }
-
-      const date = getTrimmedText(String((point as { date?: unknown }).date ?? ""));
-      const rawValue = (point as { value?: unknown }).value;
-      const value =
-        typeof rawValue === "number"
-          ? rawValue
-          : Number(String(rawValue ?? "").trim());
-
-      if (!date || Number.isNaN(value)) {
-        return null;
-      }
-
-      return {
-        date,
-        label: formatShortDayLabel(date),
-        value,
-      } satisfies ExecutiveDarkSeriesPoint;
-    })
-    .filter((point): point is ExecutiveDarkSeriesPoint => point !== null)
-    .sort(
-      (a, b) =>
-        new Date(a.date).getTime() - new Date(b.date).getTime()
+    rawPoints.sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
     ),
     startDate,
     endDate
   );
 
-  const isAvailable =
-    Boolean(chartBlock.data.is_available) && points.length > 0;
+  const isAvailable = points.length > 0;
 
   return {
     points,
@@ -468,8 +549,6 @@ function getImpressionsSlideData(blocks: ReportVersionBlock[]) {
     : [];
   const timeframeSince = getTrimmedText(String(block.data.timeframe_since ?? ""));
   const timeframeUntil = getTrimmedText(String(block.data.timeframe_until ?? ""));
-  const consistencyValid = block.data.consistency_valid !== false;
-  const chartable = block.data.chartable !== false;
   const rawImpressionsTotal = block.data.impressions_total;
   const impressionsTotal =
     rawImpressionsTotal === null || rawImpressionsTotal === undefined
@@ -509,11 +588,19 @@ function getImpressionsSlideData(blocks: ReportVersionBlock[]) {
   const lowestRaw = block.data.lowest_day;
   const impressionsDailyCount =
     Number(String(block.data.impressions_daily_count ?? points.length).trim()) || 0;
-  const unavailable =
-    !consistencyValid ||
-    !chartable ||
-    !impressionsTotal ||
-    impressionsDailyCount === 0;
+  const averageDaily = getTrimmedText(String(block.data.average_daily ?? ""));
+  const frequency = getTrimmedText(String(block.data.frequency ?? ""));
+  const insightText = getTrimmedText(String(block.data.insight_text ?? ""));
+  const hasDailyData = points.length > 0;
+  const hasSummaryData =
+    Boolean(impressionsTotal) ||
+    Boolean(averageDaily) ||
+    Boolean(frequency) ||
+    Boolean(insightText) ||
+    Boolean(highestRaw) ||
+    Boolean(lowestRaw) ||
+    impressionsDailyCount > 0;
+  const unavailable = !hasDailyData && !hasSummaryData;
 
   return {
     title: getTrimmedText(String(block.data.title ?? "")),
@@ -521,27 +608,27 @@ function getImpressionsSlideData(blocks: ReportVersionBlock[]) {
     timeframeSince,
     timeframeUntil,
     impressionsTotal,
-    points: unavailable ? [] : points,
+    points,
     impressionsDailyCount,
-    averageDaily: getTrimmedText(String(block.data.average_daily ?? "")),
+    averageDaily,
     highestDay:
-      !unavailable && highestRaw && typeof highestRaw === "object"
+      highestRaw && typeof highestRaw === "object"
         ? {
             date: getTrimmedText(String((highestRaw as { date?: unknown }).date ?? "")),
             value: Number(String((highestRaw as { value?: unknown }).value ?? "").trim()) || 0,
           }
         : null,
     lowestDay:
-      !unavailable && lowestRaw && typeof lowestRaw === "object"
+      lowestRaw && typeof lowestRaw === "object"
         ? {
             date: getTrimmedText(String((lowestRaw as { date?: unknown }).date ?? "")),
             value: Number(String((lowestRaw as { value?: unknown }).value ?? "").trim()) || 0,
           }
         : null,
-    frequency: unavailable ? "" : getTrimmedText(String(block.data.frequency ?? "")),
-    insightText: unavailable
-      ? "La métrica de impresiones no estuvo disponible con suficiente detalle en la fuente actual de Facebook Insights."
-      : getTrimmedText(String(block.data.insight_text ?? "")),
+    frequency,
+    insightText:
+      insightText ||
+      "Impressions insights will appear here once the source includes enough contextual detail.",
     unavailable,
   };
 }

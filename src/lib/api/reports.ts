@@ -137,6 +137,7 @@ function normalizeReport(report: BackendReport, index: number): Report {
     thumbnailUrl: normalizedThumbnailUrl,
     sourceSummary: formatReportSourceSummary(reportSources),
     reportSources,
+    description: normalizeReportDescription(report.description),
     branding: {
       logoUrl: branding.logoUrl,
       source: branding.source,

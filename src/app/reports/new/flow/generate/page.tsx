@@ -47,6 +47,12 @@ const templateOptions: {
     previewSrc: "/templates/template-executive.svg",
   },
   {
+    id: "simple",
+    name: "Report Simple",
+    description: "Clean light report style for simple executive summaries",
+    previewSrc: "/templates/template-modern.svg",
+  },
+  {
     id: "modern",
     name: "Moderno",
     description: "Fondo blanco, limpio y visualmente ligero.",
@@ -152,8 +158,8 @@ function NewReportFlowGeneratePageContent() {
   const currentStep = 3;
   const stepHrefMap: Record<number, string> = {
     1: primarySource
-      ? `/reports/new/flow?integration=${primarySource}`
-      : "/reports/new/flow",
+      ? `/reports/new/flow?resume=1&integration=${primarySource}`
+      : "/reports/new/flow?resume=1",
     2: primarySource
       ? `/reports/new/flow/sync?integration=${primarySource}`
       : "/reports/new/flow/sync",
@@ -548,7 +554,7 @@ function NewReportFlowGeneratePageContent() {
 
   return (
     <AppShell>
-      <div className="space-y-5 sm:space-y-6">
+      <div className="-mx-4 -mt-4 space-y-5 bg-white px-4 pt-4 pb-6 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6 sm:pb-8">
         <MobileFlowHeader
           currentStep={currentStep}
           totalSteps={flowSteps.length}
@@ -556,7 +562,7 @@ function NewReportFlowGeneratePageContent() {
           description={messages.reports.generateReportDescription}
           backHref={stepHrefMap[2]}
         />
-        <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+        <section className="p-5 sm:p-8">
           <div className="hidden max-w-3xl md:block">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
               {messages.review.guidedFlow}
@@ -1096,12 +1102,14 @@ export default function NewReportFlowGeneratePage() {
     <Suspense
       fallback={
         <AppShell>
-          <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
-            <div className="space-y-3">
-              <div className="h-6 w-48 animate-pulse rounded-full bg-slate-200" />
-              <div className="h-24 animate-pulse rounded-[24px] bg-slate-100" />
-            </div>
-          </section>
+          <div className="-mx-4 -mt-4 bg-white px-4 pt-4 pb-6 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6 sm:pb-8">
+            <section className="p-5 sm:p-8">
+              <div className="space-y-3">
+                <div className="h-6 w-48 animate-pulse rounded-full bg-slate-200" />
+                <div className="h-24 animate-pulse rounded-[24px] bg-slate-100" />
+              </div>
+            </section>
+          </div>
         </AppShell>
       }
     >

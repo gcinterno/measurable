@@ -66,6 +66,8 @@ export type ImpressionsSlideModel = {
   unavailable?: boolean;
   source_metric_name?: string;
   timeframe_source?: string;
+  source_caption?: string;
+  unavailable_message?: string;
 };
 
 export type GeneralInsightsMetricState = {

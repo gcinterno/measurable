@@ -342,7 +342,7 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <section className="brand-card p-5 sm:p-6">
+        <section className="p-5 sm:p-6">
           <h3 className="text-lg font-semibold text-[var(--text-primary)]">{messages.dashboard.quickActions}</h3>
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             {quickActions.map((action) => (

@@ -1,6 +1,6 @@
 "use client";
 
-import { getTemplateTone } from "@/components/reports/slides/template";
+import { getTemplateTone, isLightTemplate } from "@/components/reports/slides/template";
 import { SlideCanvas } from "@/components/reports/SlideCanvas";
 import { HeroBlock } from "@/components/reports/primitives/HeroBlock";
 import { CoverLogo } from "@/components/reports/slides/shared";
@@ -185,7 +185,7 @@ export function CoverSlide({
         subtitle={model.subtitle}
         meta={model.meta}
         templateId={templateId}
-        rightSlot={<CoverLogo logoDataUrl={model.branding.logoUrl} dark={templateId !== "modern"} />}
+        rightSlot={<CoverLogo logoDataUrl={model.branding.logoUrl} dark={!isLightTemplate(templateId)} />}
       />
     </SlideCanvas>
   );

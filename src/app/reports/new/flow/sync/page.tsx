@@ -15,6 +15,7 @@ import {
   fetchMetaInstagramAccounts,
   fetchMetaPages,
   selectMetaPage,
+  syncAllMetaDataSources,
   syncMetaInstagramAccount,
   syncMetaPages,
 } from "@/lib/api/integrations";
@@ -116,6 +117,23 @@ function SuccessBadge() {
   );
 }
 
+function FailedBadge() {
+  return (
+    <div className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-red-700">
+        <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5" aria-hidden="true">
+          <path
+            fillRule="evenodd"
+            d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm-2.97-10.97a.75.75 0 0 1 1.06 0L10 8.94l1.91-1.9a.75.75 0 1 1 1.06 1.06L11.06 10l1.9 1.91a.75.75 0 0 1-1.06 1.06L10 11.06l-1.91 1.9a.75.75 0 0 1-1.06-1.06L8.94 10l-1.9-1.91a.75.75 0 0 1 0-1.06Z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </span>
+      Failed to sync
+    </div>
+  );
+}
+
 function NewReportFlowSyncPageContent() {
   const { messages } = useI18n();
   const router = useRouter();
@@ -146,7 +164,7 @@ function NewReportFlowSyncPageContent() {
   const integrationId = storedIntegrationContext?.integrationId || "";
   const workspaceId = storedIntegrationContext?.workspaceId || "";
   const currentStep = 2;
-  const previousStepHref = "/reports/new/flow";
+  const previousStepHref = "/reports/new/flow?resume=1";
 
   const [selectedAccountsBySource, setSelectedAccountsBySource] = useState(
     storedIntegrationContext?.selectedAccountsBySource || createEmptySelectedAccountsBySource()
@@ -169,6 +187,7 @@ function NewReportFlowSyncPageContent() {
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [syncingSource, setSyncingSource] = useState<SourceKey | null>(null);
+  const [syncingAllSources, setSyncingAllSources] = useState(false);
   const [error, setError] = useState("");
   const hasLoadedRef = useRef(false);
   const flowSteps = [
@@ -539,6 +558,135 @@ function NewReportFlowSyncPageContent() {
     }
   }
 
+  async function handleSyncAllSources() {
+    if (!hasSelectedSources) {
+      setError("Select at least one source before syncing.");
+      return;
+    }
+
+    const hasMissingAccount = selectedSources.some(
+      (sourceKey) => !selectedAccountsBySource[sourceKey].accountId
+    );
+
+    if (hasMissingAccount) {
+      setError("Select an account for each source before syncing all data sources.");
+      return;
+    }
+
+    const timeframeError = validateMetaTimeframe({
+      timeframe: selectedTimeframe,
+      startDate,
+      endDate,
+    });
+
+    if (timeframeError) {
+      setError(timeframeError);
+      return;
+    }
+
+    const normalizedSelection = normalizeCurrentTimeframe();
+    const nextSyncingState = { ...selectedAccountsBySource };
+
+    selectedSources.forEach((sourceKey) => {
+      nextSyncingState[sourceKey] = {
+        ...nextSyncingState[sourceKey],
+        syncStatus: "syncing",
+        error: undefined,
+      };
+    });
+
+    setSelectedAccountsBySource(nextSyncingState);
+    setSyncingAllSources(true);
+    setError("");
+
+    try {
+      const response = await syncAllMetaDataSources({
+        facebookPageId: selectedAccountsBySource.facebook_pages.accountId || undefined,
+        instagramBusinessAccountId:
+          selectedAccountsBySource.instagram_business.accountId || undefined,
+        timeframe: normalizedSelection.key,
+      });
+
+      const nextAccountsBySource = { ...nextSyncingState };
+      let syncedCount = 0;
+      let failedCount = 0;
+
+      selectedSources.forEach((sourceKey) => {
+        const selectedAccount = selectedAccountsBySource[sourceKey];
+        const sourceResult = response.sources[sourceKey];
+
+        if (sourceResult?.success && sourceResult.datasetId) {
+          syncedCount += 1;
+          nextAccountsBySource[sourceKey] = {
+            ...selectedAccount,
+            integrationId: sourceResult.integrationId || selectedAccount.integrationId || integrationId,
+            integrationAccountId: selectedAccount.accountId,
+            datasetId: sourceResult.datasetId,
+            syncStatus: "synced",
+            error: undefined,
+          };
+          return;
+        }
+
+        failedCount += 1;
+        nextAccountsBySource[sourceKey] = {
+          ...selectedAccount,
+          datasetId: undefined,
+          syncStatus: "error",
+          error:
+            sourceResult?.detail ||
+            sourceResult?.message ||
+            "Failed to sync this data source.",
+        };
+      });
+
+      setSelectedAccountsBySource(nextAccountsBySource);
+      setIntegrationReportContext(buildNextContext(nextAccountsBySource));
+
+      if (failedCount === 0) {
+        return;
+      }
+
+      if (syncedCount > 0) {
+        setError("Some data sources synced successfully, but others failed. Review the cards and retry the failed source.");
+        return;
+      }
+
+      setError(response.message || "We could not sync the selected data sources.");
+    } catch (err: unknown) {
+      console.error("flow meta sync all error:", err);
+      setSelectedAccountsBySource((current) => {
+        const nextAccountsBySource = { ...current };
+
+        selectedSources.forEach((sourceKey) => {
+          nextAccountsBySource[sourceKey] = {
+            ...nextAccountsBySource[sourceKey],
+            datasetId: undefined,
+            syncStatus: "error",
+            error:
+              isLimitError(err)
+                ? err.message || messages.reports.syncPageDataError
+                : err instanceof ApiError && err.message
+                  ? err.message
+                  : "Failed to sync this data source.",
+          };
+        });
+
+        return nextAccountsBySource;
+      });
+
+      if (isLimitError(err)) {
+        setError(err.message || messages.reports.syncPageDataError);
+      } else if (err instanceof ApiError && err.message) {
+        setError(err.message);
+      } else {
+        setError("We could not sync the selected data sources.");
+      }
+    } finally {
+      setSyncingAllSources(false);
+    }
+  }
+
   function handleContinueToGenerate() {
     const hasMissingAccount = selectedSources.some(
       (sourceKey) => !selectedAccountsBySource[sourceKey].accountId
@@ -577,16 +725,30 @@ function NewReportFlowSyncPageContent() {
         selectedAccountsBySource[sourceKey].syncStatus === "synced" &&
         Boolean(selectedAccountsBySource[sourceKey].datasetId)
     );
+  const hasMissingSelection = selectedSources.some(
+    (sourceKey) => !selectedAccountsBySource[sourceKey].accountId
+  );
+  const syncingInFlight = syncingAllSources || Boolean(syncingSource);
+  const canSyncAllSources =
+    hasSelectedSources &&
+    !hasMissingSelection &&
+    !loading &&
+    !syncingInFlight;
 
   return (
     <AppShell>
-      {syncingSource ? (
+      {syncingAllSources ? (
+        <FlowLoadingOverlay
+          title="Syncing all data sources..."
+          description="We are syncing your selected Meta data sources. This can take a moment."
+        />
+      ) : syncingSource ? (
         <FlowLoadingOverlay
           title={messages.reports.syncing}
           description="We are syncing your Meta data. This can take a moment."
         />
       ) : null}
-      <div className="space-y-5 sm:space-y-6">
+      <div className="-mx-4 -mt-4 space-y-5 bg-white px-4 pt-4 pb-6 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6 sm:pb-8">
         <MobileFlowHeader
           currentStep={currentStep}
           totalSteps={flowSteps.length}
@@ -594,7 +756,7 @@ function NewReportFlowSyncPageContent() {
           description={messages.reports.completeSelectionDescription}
           backHref={previousStepHref}
         />
-        <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+        <section className="p-5 sm:p-8">
           <div className="hidden max-w-3xl md:block">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
               {messages.review.guidedFlow}
@@ -721,13 +883,45 @@ function NewReportFlowSyncPageContent() {
                   ) : null}
                 </section>
 
+                <section className="rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#f8fbff_0%,#eef6ff_100%)] p-4 sm:p-5">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
+                        Global sync
+                      </p>
+                      <h3 className="mt-2 text-xl font-semibold text-slate-950">
+                        Sync all data sources
+                      </h3>
+                      <p className="mt-2 text-sm leading-6 text-slate-500">
+                        Run one sync for all selected Meta data sources and keep the flow moving in a single step.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleSyncAllSources()}
+                      disabled={!canSyncAllSources}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {syncingAllSources ? (
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                      ) : null}
+                      Sync all data sources
+                    </button>
+                  </div>
+                  {hasMissingSelection ? (
+                    <p className="mt-3 text-sm text-slate-500">
+                      Select an account for each source to enable the global sync action.
+                    </p>
+                  ) : null}
+                </section>
+
                 <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
                   {selectedSources.map((sourceKey) => {
                     const config = getSourceConfig(sourceKey);
                     const sourceSelectorState = sourceState[sourceKey];
                     const selectedAccount = selectedAccountsBySource[sourceKey];
                     const isSourceLoading = sourceSelectorState.loading || loading;
-                    const isSourceSyncing = syncingSource === sourceKey;
+                    const isSourceSyncing = syncingAllSources || syncingSource === sourceKey;
 
                     return (
                       <div key={sourceKey}>
@@ -804,6 +998,7 @@ function NewReportFlowSyncPageContent() {
                                         : `${messages.reports.syncData} ${config.displayName}`}
                                   </button>
                                   {selectedAccount.syncStatus === "synced" ? <SuccessBadge /> : null}
+                                  {selectedAccount.syncStatus === "error" ? <FailedBadge /> : null}
                                 </div>
                                 {selectedAccount.error ? (
                                   <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -859,12 +1054,14 @@ export default function NewReportFlowSyncPage() {
     <Suspense
       fallback={
         <AppShell>
-          <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
-            <div className="space-y-3">
-              <div className="h-6 w-48 animate-pulse rounded-full bg-slate-200" />
-              <div className="h-24 animate-pulse rounded-[24px] bg-slate-100" />
-            </div>
-          </section>
+          <div className="-mx-4 -mt-4 bg-white px-4 pt-4 pb-6 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6 sm:pb-8">
+            <section className="p-5 sm:p-8">
+              <div className="space-y-3">
+                <div className="h-6 w-48 animate-pulse rounded-full bg-slate-200" />
+                <div className="h-24 animate-pulse rounded-[24px] bg-slate-100" />
+              </div>
+            </section>
+          </div>
         </AppShell>
       }
     >

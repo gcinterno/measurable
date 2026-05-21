@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/components/providers/LanguageProvider";
 import {
   connectMetaIntegration,
+  fetchIntegrationsConnectionStatus,
   fetchMetaInstagramAccounts,
   fetchMetaPages,
   validateMetaAuthUrl,
@@ -67,17 +68,50 @@ function getMetaDescriptionSuffix(
 }
 
 function getBadgeClasses(
-  status: IntegrationCatalogItem["status"]
+  status: IntegrationCatalogItem["status"] | "Checking"
 ) {
   switch (status) {
     case "Connected":
       return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
+    case "Checking":
+      return "bg-slate-100 text-slate-600 ring-1 ring-slate-200";
     case "Available":
       return "bg-sky-50 text-sky-700 ring-1 ring-sky-100";
     case "Coming soon":
     default:
       return "bg-slate-100 text-slate-600 ring-1 ring-slate-200";
   }
+}
+
+function SelectionIndicator({
+  selected,
+  disabled = false,
+}: {
+  selected: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <span
+      className={`inline-flex h-6 w-6 items-center justify-center rounded-full border transition ${
+        disabled
+          ? "border-slate-200 bg-slate-100"
+          : selected
+            ? "border-sky-600 bg-sky-600 text-white shadow-[0_0_0_4px_rgba(14,165,233,0.12)]"
+            : "border-slate-300 bg-white text-transparent"
+      }`}
+      aria-hidden="true"
+    >
+      {selected ? (
+        <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+          <path
+            fillRule="evenodd"
+            d="M16.704 5.29a1 1 0 0 1 .006 1.414l-7.2 7.257a1 1 0 0 1-1.42 0L4.79 10.66a1 1 0 1 1 1.414-1.414l2.596 2.595 6.493-6.545a1 1 0 0 1 1.411-.006Z"
+            clipRule="evenodd"
+          />
+        </svg>
+      ) : null}
+    </span>
+  );
 }
 
 function buildNextSelectedContext(input: {
@@ -147,7 +181,9 @@ export function IntegrationLibrary({
   const { workspace, loading: workspaceLoading } = useActiveWorkspace();
   const [connectingIntegrationKey, setConnectingIntegrationKey] = useState<string | null>(null);
   const [connectError, setConnectError] = useState("");
-  const [metaFlowState, setMetaFlowState] = useState<MetaFlowState>("not_connected");
+  const [metaFlowState, setMetaFlowState] = useState<MetaFlowState>(
+    embedded && mode === "report-flow" ? "checking" : "not_connected"
+  );
   const [metaCounts, setMetaCounts] = useState<Record<MetaFrontendIntegrationKey, number>>({
     facebook_pages: 0,
     instagram_business: 0,
@@ -211,33 +247,42 @@ export function IntegrationLibrary({
         return;
       }
 
-      if (!metaIntegrationId) {
-        if (active) {
-          setMetaCounts({
-            facebook_pages: 0,
-            instagram_business: 0,
-          });
-          setMetaFlowState("not_connected");
-        }
-        return;
-      }
-
       try {
         setMetaFlowState("checking");
-        const [pages, instagramAccounts] = await Promise.all([
-          fetchMetaPages(metaIntegrationId, activeWorkspaceId),
-          fetchMetaInstagramAccounts(metaIntegrationId, activeWorkspaceId),
-        ]);
+        let resolvedIntegrationId = metaIntegrationId;
 
-        if (!active) {
-          return;
+        if (!resolvedIntegrationId) {
+          const connectionStatus = await fetchIntegrationsConnectionStatus();
+
+          if (!active) {
+            return;
+          }
+
+          if (connectionStatus.metaConnected && connectionStatus.integrationId) {
+            resolvedIntegrationId = connectionStatus.integrationId;
+            setMetaIntegrationId(connectionStatus.integrationId);
+          } else {
+            setMetaCounts({
+              facebook_pages: 0,
+              instagram_business: 0,
+            });
+            setMetaFlowState("not_connected");
+            return;
+          }
         }
 
-        setMetaCounts({
-          facebook_pages: pages.length,
-          instagram_business: instagramAccounts.length,
-        });
-        setMetaFlowState("connected");
+        const [pages, instagramAccounts] = await Promise.all([
+          fetchMetaPages(resolvedIntegrationId, activeWorkspaceId),
+          fetchMetaInstagramAccounts(resolvedIntegrationId, activeWorkspaceId),
+        ]);
+
+        if (active) {
+          setMetaCounts({
+            facebook_pages: pages.length,
+            instagram_business: instagramAccounts.length,
+          });
+          setMetaFlowState("connected");
+        }
       } catch (error) {
         if (!active) {
           return;
@@ -248,7 +293,7 @@ export function IntegrationLibrary({
           facebook_pages: 0,
           instagram_business: 0,
         });
-        setMetaFlowState("connected");
+        setMetaFlowState("not_connected");
       }
     }
 
@@ -267,7 +312,7 @@ export function IntegrationLibrary({
         };
       case "checking":
         return {
-          badge: "Available" as const,
+          badge: "Checking" as const,
         };
       case "not_connected":
       default:
@@ -494,6 +539,18 @@ export function IntegrationLibrary({
         );
       }
 
+      if (isMeta && metaFlowState === "checking") {
+        return (
+          <button
+            type="button"
+            disabled
+            className="inline-flex cursor-wait items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-500"
+          >
+            Checking connection...
+          </button>
+        );
+      }
+
       if (isMeta && isMetaConnected) {
         return (
           <button
@@ -584,17 +641,17 @@ export function IntegrationLibrary({
       );
     }
 
-    if (isMeta && embedded && metaFlowState === "checking") {
-      return (
-        <button
-          type="button"
-          disabled
-          className="inline-flex cursor-not-allowed items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-400"
-        >
-          {messages.integrationsPage.connecting}
-        </button>
-      );
-    }
+      if (isMeta && embedded && metaFlowState === "checking") {
+        return (
+          <button
+            type="button"
+            disabled
+            className="inline-flex cursor-wait items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-500"
+          >
+          Checking connection...
+          </button>
+        );
+      }
 
     if (!isMeta && isConnected && embedded) {
       return (
@@ -731,12 +788,18 @@ export function IntegrationLibrary({
                   metaCounts
                 )
               : "";
+          const canToggleSelection =
+            isReportFlowMode &&
+            isMeta &&
+            embedded &&
+            metaConnected &&
+            !blockedComingSoon;
 
           return (
             <article
               key={integration.integrationKey}
               onClick={
-                isReportFlowMode && isMeta && embedded && metaConnected
+                canToggleSelection
                   ? () =>
                       handleMetaSelect(
                         integration.integrationKey as MetaFrontendIntegrationKey
@@ -747,7 +810,7 @@ export function IntegrationLibrary({
                 selected
                   ? "border-sky-300 bg-sky-50/60 shadow-[0_0_0_1px_rgba(125,211,252,0.45)]"
                   : "border-slate-200 bg-slate-50/60 hover:border-slate-300 hover:bg-white"
-              } ${isReportFlowMode && isMeta && embedded && metaConnected ? "cursor-pointer" : ""}`}
+              } ${canToggleSelection ? "cursor-pointer" : ""}`}
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200">
@@ -789,12 +852,32 @@ export function IntegrationLibrary({
                 })}
               </div>
 
+              <div className="mt-4 flex justify-end">
+                {canToggleSelection ? (
+                  <button
+                    type="button"
+                    aria-label={selected ? `Unselect ${integration.name}` : `Select ${integration.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleMetaSelect(
+                        integration.integrationKey as MetaFrontendIntegrationKey
+                      );
+                    }}
+                    className="rounded-full"
+                  >
+                    <SelectionIndicator selected={selected} />
+                  </button>
+                ) : isMeta && embedded ? (
+                  <SelectionIndicator selected={false} disabled />
+                ) : null}
+              </div>
+
             </article>
           );
         })}
       </div>
 
-            {embedded && metaFlowState === "connected" ? (
+            {embedded && isReportFlowMode ? (
         <div className="mt-6 flex flex-col gap-3 rounded-[24px] border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-slate-950">

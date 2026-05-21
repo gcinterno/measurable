@@ -24,12 +24,32 @@ export function getCoverThumbnailTitle(title: string, language: AppLanguage) {
 }
 
 export function getCoverThumbnailSubtitle(language: AppLanguage) {
-  const integration = getIntegrationReportContext()?.integration?.trim().toLowerCase();
+  const context = getIntegrationReportContext();
+  const source = context?.source?.trim().toLowerCase() || "";
+  const integration = context?.integration?.trim().toLowerCase() || "";
 
-  if (integration === "meta" || !integration) {
+  if (source === "facebook_pages") {
     return language === "es"
-      ? "Reporte de pagina de Facebook - Resumen e insights"
-      : "Facebook Page Report - Summary & Insights";
+      ? "Reporte de Facebook Pages - Resumen e insights"
+      : "Facebook Pages Report - Summary & Insights";
+  }
+
+  if (source === "instagram_business") {
+    return language === "es"
+      ? "Reporte de Instagram Business - Resumen e insights"
+      : "Instagram Business Report - Summary & Insights";
+  }
+
+  if (integration === "meta") {
+    return language === "es"
+      ? "Reporte social - Resumen e insights"
+      : "Social Report - Summary & Insights";
+  }
+
+  if (!integration) {
+    return language === "es"
+      ? "Reporte social - Resumen e insights"
+      : "Social Report - Summary & Insights";
   }
 
   const label = integration

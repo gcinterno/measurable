@@ -1,11 +1,15 @@
 "use client";
 
-export type ReportTemplateId = "executive" | "modern";
+export type ReportTemplateId = "executive" | "modern" | "simple";
 
 const REPORT_TEMPLATE_SELECTIONS_KEY = "reportTemplateSelections";
 
 function normalizeTemplateId(value: string | null | undefined): ReportTemplateId {
-  return value === "modern" ? "modern" : "executive";
+  if (value === "modern" || value === "simple") {
+    return value;
+  }
+
+  return "executive";
 }
 
 function readSelections() {
@@ -45,7 +49,15 @@ function writeSelections(selections: Record<string, ReportTemplateId>) {
 }
 
 export function getReportTemplateLabel(templateId: ReportTemplateId) {
-  return templateId === "modern" ? "Moderno" : "Ejecutivo";
+  if (templateId === "modern") {
+    return "Moderno";
+  }
+
+  if (templateId === "simple") {
+    return "Report Simple";
+  }
+
+  return "Ejecutivo";
 }
 
 export function getStoredReportTemplateSelection(reportId: string) {

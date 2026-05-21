@@ -183,8 +183,8 @@ function NewReportFlowReviewPageContent() {
   const currentStep = 4;
   const stepHrefMap: Record<number, string> = {
     1: integrationSource
-      ? `/reports/new/flow?integration=${integrationSource}`
-      : "/reports/new/flow",
+      ? `/reports/new/flow?resume=1&integration=${integrationSource}`
+      : "/reports/new/flow?resume=1",
     2: integrationSource
       ? `/reports/new/flow/sync?integration=${integrationSource}`
       : "/reports/new/flow/sync",
@@ -857,7 +857,7 @@ function NewReportFlowReviewPageContent() {
 
   return (
     <AppShell>
-      <div className="space-y-5 sm:space-y-6">
+      <div className="-mx-4 -mt-4 space-y-5 bg-white px-4 pt-4 pb-6 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6 sm:pb-8">
         <MobileFlowHeader
           currentStep={currentStep}
           totalSteps={flowSteps.length}
@@ -875,7 +875,7 @@ function NewReportFlowReviewPageContent() {
           />
         ) : null}
 
-        <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+        <section className="p-5 sm:p-8">
           <div className="hidden max-w-3xl md:block">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
               {messages.review.guidedFlow}
@@ -896,40 +896,34 @@ function NewReportFlowReviewPageContent() {
           />
 
           <div className="mt-8">
-            <section className="rounded-[24px] border-0 bg-transparent p-0 shadow-none md:border md:border-slate-200 md:bg-white md:p-5 md:shadow-sm">
+            <section className="p-0">
               {!introComplete ? (
                 <div className="space-y-4">
-                  <div className="rounded-[20px] border-0 bg-transparent px-0 py-0 md:border md:border-slate-200 md:bg-slate-50 md:px-4 md:py-4">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
-                        Preview
-                      </p>
-                      <h2 className="mt-2 truncate text-2xl font-semibold text-slate-950">
-                        {messages.reports.generateReport}
-                      </h2>
-                      <p className="mt-2 text-sm text-slate-500">
-                        Generando tu reporte...
-                      </p>
-                    </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
+                      Preview
+                    </p>
+                    <h2 className="mt-2 truncate text-2xl font-semibold text-slate-950">
+                      {messages.reports.generateReport}
+                    </h2>
+                    <p className="mt-2 text-sm text-slate-500">
+                      Generando tu reporte...
+                    </p>
                   </div>
 
-                  <div className="max-h-[720px] overflow-auto rounded-[20px] border-0 bg-transparent p-0 md:border md:border-slate-200 md:bg-slate-50 md:p-3 md:sm:p-4">
-                    <div className="pr-0 md:pr-1">
-                      <div className="rounded-[32px] bg-[#eef3f8] px-2 py-3 md:rounded-[44px] md:px-4 md:py-5">
-                        <div className="w-full overflow-hidden">
-                          <div className="flex min-h-[400px] w-full flex-col items-center justify-center rounded-[28px] border border-slate-800/80 bg-[#07111f] px-6 text-center shadow-[0_18px_40px_rgba(15,23,42,0.12)] md:aspect-[16/9] md:min-h-0 md:rounded-[34px]">
-                            <span className="h-12 w-12 animate-spin rounded-full border-[3px] border-white/15 border-t-sky-300" />
-                            <p className="mt-5 text-base font-semibold text-white">
-                              Generando tu reporte...
-                            </p>
-                            <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">
-                              &ldquo;{loadingQuotes[loadingIndex]?.quote}&rdquo;
-                            </p>
-                            <p className="mt-2 text-xs font-semibold uppercase tracking-[0.22em] text-sky-300/80">
-                              {loadingQuotes[loadingIndex]?.author}
-                            </p>
-                          </div>
-                        </div>
+                  <div className="max-h-[720px] overflow-auto rounded-[28px] border border-slate-200 bg-white p-2 shadow-sm md:p-3">
+                    <div className="w-full overflow-hidden">
+                      <div className="flex min-h-[400px] w-full flex-col items-center justify-center rounded-[24px] border border-slate-800/80 bg-[#07111f] px-6 text-center md:aspect-[16/9] md:min-h-0 md:rounded-[28px]">
+                        <span className="h-12 w-12 animate-spin rounded-full border-[3px] border-white/15 border-t-sky-300" />
+                        <p className="mt-5 text-base font-semibold text-white">
+                          Generando tu reporte...
+                        </p>
+                        <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">
+                          &ldquo;{loadingQuotes[loadingIndex]?.quote}&rdquo;
+                        </p>
+                        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.22em] text-sky-300/80">
+                          {loadingQuotes[loadingIndex]?.author}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -968,64 +962,57 @@ function NewReportFlowReviewPageContent() {
                 </div>
               ) : reviewStatus === "loading" ? (
                 <div className="space-y-4">
-                  <div className="rounded-[20px] border-0 bg-transparent px-0 py-0 md:border md:border-slate-200 md:bg-slate-50 md:px-4 md:py-4">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
-                        Preview
-                      </p>
-                      <h2 className="mt-2 truncate text-2xl font-semibold text-slate-950">
-                        {messages.reports.generateReport}
-                      </h2>
-                      <p className="mt-2 text-sm text-slate-500">
-                        Generando tu reporte...
-                      </p>
-                    </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
+                      Preview
+                    </p>
+                    <h2 className="mt-2 truncate text-2xl font-semibold text-slate-950">
+                      {messages.reports.generateReport}
+                    </h2>
+                    <p className="mt-2 text-sm text-slate-500">
+                      Generando tu reporte...
+                    </p>
                   </div>
 
-                  <div className="max-h-[720px] overflow-auto rounded-[20px] border-0 bg-transparent p-0 md:border md:border-slate-200 md:bg-slate-50 md:p-3 md:sm:p-4">
-                    <div className="pr-0 md:pr-1">
-                      <div className="rounded-[32px] bg-[#eef3f8] px-2 py-3 md:rounded-[44px] md:px-4 md:py-5">
-                        <div className="w-full overflow-hidden">
-                          <div className="flex min-h-[400px] w-full flex-col items-center justify-center rounded-[28px] border border-slate-800/80 bg-[#07111f] px-6 text-center shadow-[0_18px_40px_rgba(15,23,42,0.12)] md:aspect-[16/9] md:min-h-0 md:rounded-[34px]">
-                            <span className="h-12 w-12 animate-spin rounded-full border-[3px] border-white/15 border-t-sky-300" />
-                            <p className="mt-5 text-base font-semibold text-white">
-                              Generando tu reporte...
-                            </p>
-                            <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">
-                              &ldquo;{loadingQuotes[loadingIndex]?.quote}&rdquo;
-                            </p>
-                            <p className="mt-2 text-xs font-semibold uppercase tracking-[0.22em] text-sky-300/80">
-                              {loadingQuotes[loadingIndex]?.author}
-                            </p>
-                          </div>
-                        </div>
+                  <div className="max-h-[720px] overflow-auto rounded-[28px] border border-slate-200 bg-white p-2 shadow-sm md:p-3">
+                    <div className="w-full overflow-hidden">
+                      <div className="flex min-h-[400px] w-full flex-col items-center justify-center rounded-[24px] border border-slate-800/80 bg-[#07111f] px-6 text-center md:aspect-[16/9] md:min-h-0 md:rounded-[28px]">
+                        <span className="h-12 w-12 animate-spin rounded-full border-[3px] border-white/15 border-t-sky-300" />
+                        <p className="mt-5 text-base font-semibold text-white">
+                          Generando tu reporte...
+                        </p>
+                        <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">
+                          &ldquo;{loadingQuotes[loadingIndex]?.quote}&rdquo;
+                        </p>
+                        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.22em] text-sky-300/80">
+                          {loadingQuotes[loadingIndex]?.author}
+                        </p>
                       </div>
                     </div>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="rounded-[20px] border-0 bg-transparent px-0 py-0 md:border md:border-slate-200 md:bg-slate-50 md:px-4 md:py-4">
-                    <div className="flex w-full items-start justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
-                          Preview
+                  <div className="flex w-full items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
+                        Preview
+                      </p>
+                      <h2 className="mt-2 truncate text-2xl font-semibold text-slate-950">
+                        {reportTitle}
+                      </h2>
+                      <p className="mt-2 text-sm text-slate-500">
+                        Period: {timeframeLabel}
+                      </p>
+                      {FEATURES.ENABLE_AI_AGENTS_MODE && aiModeMetadata.aiMode ? (
+                        <p className="mt-1 text-xs font-medium text-slate-500">
+                          AI mode:{" "}
+                          {aiModeMetadata.aiMode === "agents" ? "Agents" : "Standard"}
+                          {aiModeMetadata.fallbackUsed ? " · Se usó fallback estándar" : ""}
                         </p>
-                        <h2 className="mt-2 truncate text-2xl font-semibold text-slate-950">
-                          {reportTitle}
-                        </h2>
-                        <p className="mt-2 text-sm text-slate-500">
-                          Period: {timeframeLabel}
-                        </p>
-                        {FEATURES.ENABLE_AI_AGENTS_MODE && aiModeMetadata.aiMode ? (
-                          <p className="mt-1 text-xs font-medium text-slate-500">
-                            AI mode:{" "}
-                            {aiModeMetadata.aiMode === "agents" ? "Agents" : "Standard"}
-                            {aiModeMetadata.fallbackUsed ? " · Se usó fallback estándar" : ""}
-                          </p>
-                        ) : null}
-                      </div>
-                      {!FEATURES.ENABLE_APP_REVIEW_MODE && showReviewActions ? (
+                      ) : null}
+                    </div>
+                    {!FEATURES.ENABLE_APP_REVIEW_MODE && showReviewActions ? (
                       <div className="flex shrink-0 items-center justify-end">
                         <div className="flex flex-wrap items-center justify-end gap-3">
                           <button
@@ -1078,9 +1065,8 @@ function NewReportFlowReviewPageContent() {
                             </p>
                           </div>
                         </div>
-                      </div>
-                      ) : null}
                     </div>
+                    ) : null}
                   </div>
                   {FEATURES.ENABLE_PPTX_EXPORT && pptxFeedback ? (
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -1096,19 +1082,15 @@ function NewReportFlowReviewPageContent() {
                     </div>
                   ) : null}
 
-                  <div className="max-h-[720px] overflow-auto rounded-[20px] border-0 bg-transparent p-0 md:border md:border-slate-200 md:bg-slate-50 md:p-3 md:sm:p-4">
-                    <div className="pr-0 md:pr-1">
-                      <div className="rounded-[32px] bg-[#eef3f8] px-2 py-3 md:rounded-[44px] md:px-4 md:py-5">
-                        <div className="w-full overflow-hidden">
-                          <SlideRenderer
-                            model={viewModel}
-                            blocks={blocks}
-                            locale={language}
-                            branding={resolvedBranding}
-                            templateId={selectedTemplate}
-                          />
-                        </div>
-                      </div>
+                  <div className="max-h-[720px] overflow-auto rounded-[28px] border border-slate-200 bg-white p-2 shadow-sm md:p-3">
+                    <div className="w-full overflow-hidden">
+                      <SlideRenderer
+                        model={viewModel}
+                        blocks={blocks}
+                        locale={language}
+                        branding={resolvedBranding}
+                        templateId={selectedTemplate}
+                      />
                     </div>
                   </div>
                 </div>
@@ -1246,12 +1228,14 @@ export default function NewReportFlowReviewPage() {
     <Suspense
       fallback={
         <AppShell>
-          <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
-            <div className="space-y-3">
-              <div className="h-6 w-48 animate-pulse rounded-full bg-slate-200" />
-              <div className="h-24 animate-pulse rounded-[24px] bg-slate-100" />
-            </div>
-          </section>
+          <div className="-mx-4 -mt-4 bg-white px-4 pt-4 pb-6 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6 sm:pb-8">
+            <section className="p-5 sm:p-8">
+              <div className="space-y-3">
+                <div className="h-6 w-48 animate-pulse rounded-full bg-slate-200" />
+                <div className="h-24 animate-pulse rounded-[24px] bg-slate-100" />
+              </div>
+            </section>
+          </div>
         </AppShell>
       }
     >

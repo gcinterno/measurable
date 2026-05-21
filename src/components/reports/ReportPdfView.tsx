@@ -298,7 +298,12 @@ export function ReportPdfView({ reportId, exportAuthToken }: ReportPdfViewProps)
       resolveReportBranding(
         reportVersionBranding,
         reportDetail?.branding,
-        getReportBrandingSnapshot(reportId),
+        workspace?.branding?.logoUrl
+          ? {
+              logoUrl: workspace.branding.logoUrl,
+              source: workspace.branding.source || "workspace.branding.logoUrl",
+            }
+          : getReportBrandingSnapshot(reportId),
         {
           overrideBranding: getMeasurableBrandingOverride(workspace),
         }

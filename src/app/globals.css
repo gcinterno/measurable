@@ -35,7 +35,9 @@
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-surface: var(--surface);
-  --font-sans: "Inter", "SF Pro Text", "Segoe UI", sans-serif;
+  --font-sans: var(--font-roboto);
+  --font-heading: var(--font-poppins);
+  --font-report-sans: "Inter", "SF Pro Text", "Segoe UI", sans-serif;
   --font-mono: "SFMono-Regular", "SF Mono", Consolas, monospace;
 }
 
@@ -54,6 +56,12 @@ body {
   font-family: var(--font-sans);
 }
 
+h1,
+h2,
+h3 {
+  font-family: var(--font-heading);
+}
+
 button,
 a,
 input,
@@ -69,6 +77,30 @@ a {
 
 .brand-wordmark {
   color: var(--measurable-blue);
+  font-family: var(--font-heading);
+}
+
+.report-font-scope,
+.report-pdf-mode,
+[data-report-slide],
+[data-report-export-surface] {
+  --font-sans: var(--font-report-sans);
+  font-family: var(--font-report-sans);
+}
+
+.report-font-scope h1,
+.report-font-scope h2,
+.report-font-scope h3,
+.report-pdf-mode h1,
+.report-pdf-mode h2,
+.report-pdf-mode h3,
+[data-report-slide] h1,
+[data-report-slide] h2,
+[data-report-slide] h3,
+[data-report-export-surface] h1,
+[data-report-export-surface] h2,
+[data-report-export-surface] h3 {
+  font-family: inherit;
 }
 
 .brand-card {

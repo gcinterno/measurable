@@ -11,6 +11,14 @@ export type AdminMetrics = {
   freeUsers: number;
   paidUsers: number;
   mrr: number;
+  facebookConnectedUsers: number | null;
+  usersWithTwoPlusReports: number | null;
+  timeToFirstReportHours: number | null;
+  connectionErrors: number | null;
+  pdfExports: number | null;
+  upgradeClicks: number | null;
+  usersByPlan: AdminDistributionItem[];
+  averageReportsPerUser: number | null;
   dailyUsers: AdminMetricsSeriesPoint[];
   dailyReports: AdminMetricsSeriesPoint[];
   cumulativeUsers: AdminMetricsSeriesPoint[];
@@ -29,6 +37,11 @@ type FetchAdminMetricsInput = {
 };
 
 export type AdminMetricsSeriesPoint = {
+  label: string;
+  value: number;
+};
+
+export type AdminDistributionItem = {
   label: string;
   value: number;
 };
@@ -121,6 +134,26 @@ export type AdminInsights = {
       createdAt: string;
     }>;
   };
+};
+
+export type AdminReferralSummaryRow = {
+  referralCode: string;
+  partner: string;
+  clicks: number;
+  signups: number;
+  firstReports: number;
+  paidConversions: number;
+  revenue: number;
+  estimatedCommission: number;
+};
+
+export type AdminReferralPartnerInput = {
+  name: string;
+  code: string;
+  type: string;
+  commission_type: string;
+  commission_value: number;
+  status: string;
 };
 
 function getNumber(value: unknown) {
@@ -261,40 +294,123 @@ export async function fetchAdminMetrics(input: FetchAdminMetricsInput = {}) {
     (payload.data as Record<string, unknown> | undefined) || payload;
   const growthSource =
     (source.growth as Record<string, unknown> | undefined) || source;
+  const totalUsers = getNumber(source.total_users || source.totalUsers);
+  const usersInPeriod = getNumber(
+    source.users_in_period ||
+      source.new_users_in_period ||
+      source.new_users ||
+      source.new_users_last_7_days ||
+      source.newUsersInPeriod ||
+      source.newUsersLast7Days
+  );
+  const activeUsersInPeriod = getNumber(
+    source.active_users_in_period ||
+      source.active_users ||
+      source.active_users_last_7_days ||
+      source.activeUsersInPeriod ||
+      source.activeUsersLast7Days
+  );
+  const reportsGenerated = getNumber(source.reports_generated || source.reportsGenerated);
+  const reportsInPeriod = getNumber(
+    source.reports_in_period ||
+      source.reports_last_7_days ||
+      source.reportsInPeriod ||
+      source.reportsLast7Days
+  );
+  const freeUsers = getNumber(source.free_users || source.freeUsers);
+  const paidUsers = getNumber(source.paid_users || source.paidUsers);
+  const usersByPlan = normalizeDistribution(
+    source.users_by_plan || source.plan_distribution || source.planBreakdown || source.usersByPlan
+  );
+  const averageReportsPerUser =
+    getOptionalNumber(
+      source.average_reports_per_user ||
+        source.avg_reports_per_user ||
+        source.reports_per_user ||
+        source.averageReportsPerUser
+    ) ?? (totalUsers > 0 ? Number((reportsGenerated / totalUsers).toFixed(2)) : null);
 
   return {
-    totalUsers: getNumber(source.total_users || source.totalUsers),
-    usersInPeriod: getNumber(
-      source.users_in_period ||
-        source.new_users_in_period ||
-        source.new_users ||
-        source.new_users_last_7_days ||
-        source.newUsersInPeriod ||
-        source.newUsersLast7Days
-    ),
-    activeUsersInPeriod: getNumber(
-      source.active_users_in_period ||
-        source.active_users ||
-        source.active_users_last_7_days ||
-        source.activeUsersInPeriod ||
-        source.activeUsersLast7Days
-    ),
-    reportsGenerated: getNumber(source.reports_generated || source.reportsGenerated),
-    reportsInPeriod: getNumber(
-      source.reports_in_period ||
-        source.reports_last_7_days ||
-        source.reportsInPeriod ||
-        source.reportsLast7Days
-    ),
+    totalUsers,
+    usersInPeriod,
+    activeUsersInPeriod,
+    reportsGenerated,
+    reportsInPeriod,
     onboardingCompletedInPeriod: getNumber(
       source.onboarding_completed_in_period ||
         source.onboarding_completed ||
         source.onboardingCompletedInPeriod
     ),
     onboardingCompletionRate: getNumber(source.onboarding_completion_rate || source.onboardingCompletionRate),
-    freeUsers: getNumber(source.free_users || source.freeUsers),
-    paidUsers: getNumber(source.paid_users || source.paidUsers),
+    freeUsers,
+    paidUsers,
     mrr: getNumber(source.mrr || source.monthly_recurring_revenue),
+    facebookConnectedUsers: getOptionalNumber(
+      source.facebook_connected_users ||
+        source.facebook_connections ||
+        source.users_connected_facebook ||
+        source.usersConnectedFacebook ||
+        source.connectedFacebookUsers
+    ),
+    usersWithTwoPlusReports: getOptionalNumber(
+      source.users_with_2_plus_reports ||
+        source.users_with_two_plus_reports ||
+        source.users_with_2_reports ||
+        source.usersWithTwoPlusReports
+    ),
+    timeToFirstReportHours: (() => {
+      const hours = getOptionalNumber(
+        source.time_to_first_report_hours ||
+          source.avg_time_to_first_report_hours ||
+          source.timeToFirstReportHours
+      );
+      if (hours !== null) {
+        return hours;
+      }
+
+      const minutes = getOptionalNumber(
+        source.time_to_first_report_minutes ||
+          source.avg_time_to_first_report_minutes ||
+          source.timeToFirstReportMinutes
+      );
+      if (minutes !== null) {
+        return Number((minutes / 60).toFixed(2));
+      }
+
+      const seconds = getOptionalNumber(
+        source.time_to_first_report_seconds ||
+          source.avg_time_to_first_report_seconds ||
+          source.timeToFirstReportSeconds
+      );
+      if (seconds !== null) {
+        return Number((seconds / 3600).toFixed(2));
+      }
+
+      return null;
+    })(),
+    connectionErrors: getOptionalNumber(
+      source.connection_errors ||
+        source.integration_connection_errors ||
+        source.connectionErrors
+    ),
+    pdfExports: getOptionalNumber(
+      source.pdf_exports ||
+        source.exports_pdf ||
+        source.pdfExports
+    ),
+    upgradeClicks: getOptionalNumber(
+      source.upgrade_clicks ||
+        source.plan_upgrade_clicks ||
+        source.upgradeClicks
+    ),
+    usersByPlan:
+      usersByPlan.length > 0
+        ? usersByPlan
+        : [
+            { label: "Free", value: freeUsers },
+            { label: "Paid", value: paidUsers },
+          ].filter((item) => item.value > 0),
+    averageReportsPerUser,
     dailyUsers: normalizeSeries(source.daily_users || source.dailyUsers),
     dailyReports: normalizeSeries(source.daily_reports || source.dailyReports),
     cumulativeUsers: normalizeSeries(
@@ -452,4 +568,54 @@ export async function fetchAdminInsights() {
       })),
     },
   } satisfies AdminInsights;
+}
+
+export async function fetchAdminReferralSummary() {
+  const payload = await apiFetch<
+    Record<string, unknown> | Array<Record<string, unknown>>
+  >("/admin/referrals/summary");
+  const list = Array.isArray(payload)
+    ? payload
+    : getArray<Record<string, unknown>>(
+        payload.data || payload.summary || payload.items || payload.results
+      );
+
+  return list.map((item, index) => ({
+    referralCode: getString(
+      item.referral_code || item.referralCode || item.code,
+      `partner-${index + 1}`
+    ),
+    partner: getString(item.partner || item.name, "Unknown"),
+    clicks: getNumber(item.clicks || item.total_clicks),
+    signups: getNumber(item.signups || item.total_signups),
+    firstReports: getNumber(
+      item.first_reports || item.firstReports || item.first_report_conversions
+    ),
+    paidConversions: getNumber(
+      item.paid_conversions || item.paidConversions || item.paid_users
+    ),
+    revenue: getNumber(item.revenue || item.total_revenue),
+    estimatedCommission: getNumber(
+      item.estimated_commission ||
+        item.estimatedCommission ||
+        item.commission ||
+        item.commission_due
+    ),
+  })) satisfies AdminReferralSummaryRow[];
+}
+
+export async function createAdminReferralPartner(
+  input: AdminReferralPartnerInput
+) {
+  return apiFetch<Record<string, unknown>>("/admin/referrals/partners", {
+    method: "POST",
+    body: JSON.stringify({
+      name: input.name,
+      code: input.code,
+      type: input.type,
+      commission_type: input.commission_type,
+      commission_value: input.commission_value,
+      status: input.status,
+    }),
+  });
 }

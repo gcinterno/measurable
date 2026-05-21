@@ -11,6 +11,7 @@ import {
   registerUser,
   RegisterApiError,
 } from "@/lib/api/auth";
+import { getSignupAttributionFields } from "@/lib/attribution";
 import {
   setPendingRegistrationCredentials,
   setPendingVerificationEmail,
@@ -71,10 +72,13 @@ export default function RegisterPage() {
     setError("");
 
     try {
+      const attribution = getSignupAttributionFields();
+
       await registerUser({
         email: email.trim(),
         password,
         fullName: fullName.trim(),
+        ...attribution,
       });
 
       setPendingVerificationEmail(email.trim());

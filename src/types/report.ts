@@ -16,6 +16,7 @@ export type Report = {
   thumbnailUrl?: string;
   sourceSummary?: string;
   reportSources?: ReportSource[];
+  description?: ReportDescription | null;
   branding?: {
     logoUrl?: string;
     source?: string;

@@ -134,7 +134,7 @@ function buildInsight(props: GeneralInsightsSlideProps) {
   }
 
   if (parts.length <= 1) {
-    return "Este resumen se generó con las métricas disponibles actualmente en la fuente de Facebook Insights. Algunas métricas no estuvieron disponibles con suficiente precisión para este periodo.";
+    return "Este resumen se generó con las métricas disponibles actualmente en la fuente conectada. Algunas métricas no estuvieron disponibles con suficiente precisión para este periodo.";
   }
 
   return parts.join(" ");

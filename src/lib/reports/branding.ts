@@ -20,15 +20,20 @@ export function resolveReportBranding(
   const fallbackLogo = fallbackBranding?.logoUrl?.trim() || null;
 
   return {
-    logoUrl: overrideLogo ?? reportVersionLogo ?? reportLogo ?? fallbackLogo ?? null,
-    source: overrideLogo
-      ? `override.${options?.overrideBranding?.source || "branding.logo_url"}`
-      : reportVersionLogo
+    logoUrl:
+      reportVersionLogo ??
+      reportLogo ??
+      fallbackLogo ??
+      overrideLogo ??
+      null,
+    source: reportVersionLogo
       ? `reportVersion.${reportVersionBranding?.source || "branding.logo_url"}`
       : reportLogo
         ? `report.${reportBranding?.source || "branding.logo_url"}`
         : fallbackLogo
           ? `fallback.${fallbackBranding?.source || "branding.logo_url"}`
-          : "empty",
+          : overrideLogo
+            ? `override.${options?.overrideBranding?.source || "branding.logo_url"}`
+            : "empty",
   };
 }
