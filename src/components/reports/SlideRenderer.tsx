@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { FooterMeta } from "@/components/reports/primitives/FooterMeta";
 import { HeroBlock } from "@/components/reports/primitives/HeroBlock";
+import { InsightBox } from "@/components/reports/primitives/InsightBox";
+import { KPICard, KPIGrid } from "@/components/reports/primitives/KPIGrid";
 import { SlideDeckViewport } from "@/components/reports/SlideDeckViewport";
 import { SlideCanvas } from "@/components/reports/SlideCanvas";
 import type { ExecutiveDarkViewModel } from "@/components/reports/report-view.helpers";
@@ -4571,7 +4573,7 @@ export function SlideRenderer({
     logoUrl: safeBranding.logoUrl || null,
     brandName: safeBranding.brandName,
     source: safeBranding.source,
-  });
+  }, reportId);
   const rootClassName =
     renderMode === "export"
       ? `report-pdf-root ${REPORT_SLIDE_THEME.spacing.exportGap}`

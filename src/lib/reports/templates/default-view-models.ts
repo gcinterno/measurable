@@ -15,6 +15,7 @@ import { formatDisplayNumber, formatNumber } from "@/lib/formatters";
 import { getIntegrationReportContext } from "@/lib/integrations/session";
 
 export type DefaultTemplateContext = {
+  reportId?: string;
   report: ExecutiveDarkViewModel;
   branding: {
     logoUrl: string | null;
@@ -37,6 +38,50 @@ export type DefaultTemplateContext = {
   frequency: number;
   impressionsDailyPoints: ExecutiveDarkSeriesPoint[];
 };
+
+function formatMetricSummaryValue(metric: unknown): string {
+  if (metric === null || metric === undefined || metric === "") {
+    return "N/A";
+  }
+
+  if (typeof metric === "string" || typeof metric === "number") {
+    const normalized = String(metric).trim();
+    return normalized || "N/A";
+  }
+
+  if (typeof metric !== "object") {
+    return "N/A";
+  }
+
+  const record = metric as Record<string, unknown>;
+  const candidates = [
+    record.formatted_value,
+    record.formattedValue,
+    record.value,
+    record.total,
+    record.amount,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return formatDisplayNumber(candidate);
+    }
+
+    if (candidate && typeof candidate === "object") {
+      const nested = formatMetricSummaryValue(candidate);
+
+      if (nested !== "N/A") {
+        return nested;
+      }
+    }
+  }
+
+  return "N/A";
+}
 
 function formatIntegrationDisplayName(value: string) {
   return value
@@ -278,7 +323,8 @@ export function buildDefaultTemplateContext(
     logoUrl: string | null;
     brandName: string;
     source?: string;
-  }
+  },
+  reportId?: string
 ): DefaultTemplateContext {
   const reachDisplayLabel = "ALCANCE";
   const impressionsDisplayLabel = "IMPRESIONES";
@@ -294,6 +340,7 @@ export function buildDefaultTemplateContext(
         : [];
 
   return {
+    reportId,
     report,
     branding,
     coverBrandName: branding.brandName || getCoverBrandName(report.title),
@@ -329,6 +376,21 @@ export function buildReachSlideModel(
   context: DefaultTemplateContext
 ): ReachSlideModel {
   const extremes = getReachExtremes(context.report.viewersDailyPoints);
+
+  if (process.env.NODE_ENV === "development") {
+    console.log("[5-slide metric debug]", {
+      reportId: context.reportId || null,
+      slideNumber: "02",
+      metricKey: "reach",
+      total: context.report.viewersTotalValue,
+      rawSlideKeys: [],
+      dailySeriesRaw: null,
+      chartDataRaw: null,
+      normalizedDailySeries: context.report.viewersDailyPoints,
+      normalizedDailySeriesLength: context.report.viewersDailyPoints.length,
+      values: context.report.viewersDailyPoints.map((point) => point.value),
+    });
+  }
 
   console.info("[MetaTimeframe][render.reach]", {
     source: context.report.timeframeSource,
@@ -369,6 +431,21 @@ export function buildReachSlideModel(
 export function buildImpressionsSlideModel(
   context: DefaultTemplateContext
 ): ImpressionsSlideModel {
+  if (process.env.NODE_ENV === "development") {
+    console.log("[5-slide metric debug]", {
+      reportId: context.reportId || null,
+      slideNumber: "03",
+      metricKey: "impressions",
+      total: context.impressionsTotal,
+      rawSlideKeys: [],
+      dailySeriesRaw: null,
+      chartDataRaw: null,
+      normalizedDailySeries: context.impressionsDailyPoints,
+      normalizedDailySeriesLength: context.impressionsDailyPoints.length,
+      values: context.impressionsDailyPoints.map((point) => point.value),
+    });
+  }
+
   console.info("[MetaTimeframe][render.impressions]", {
     source: context.report.timeframeSource,
     label: context.report.descriptionTimeframe?.label || context.report.periodLabel,
@@ -417,6 +494,21 @@ export function buildEngagementSlideModel(
 ): ReachSlideModel {
   const extremes = getReachExtremes(context.report.engagementDailyPoints);
 
+  if (process.env.NODE_ENV === "development") {
+    console.log("[5-slide metric debug]", {
+      reportId: context.reportId || null,
+      slideNumber: "04",
+      metricKey: "engagement",
+      total: context.report.engagementTotalValue,
+      rawSlideKeys: [],
+      dailySeriesRaw: null,
+      chartDataRaw: null,
+      normalizedDailySeries: context.report.engagementDailyPoints,
+      normalizedDailySeriesLength: context.report.engagementDailyPoints.length,
+      values: context.report.engagementDailyPoints.map((point) => point.value),
+    });
+  }
+
   return {
     metricKey: "engagement",
     metricEyebrow: "Metric",
@@ -447,6 +539,15 @@ export function buildEngagementSlideModel(
 export function buildSummarySlideModel(
   context: DefaultTemplateContext
 ): SummarySlideModel {
+  if (process.env.NODE_ENV === "development") {
+    console.log("[5-slide summary debug]", {
+      metricsSummary: context.report.finalSummaryMetrics,
+      reach: context.report.finalSummaryMetrics?.reach,
+      impressions: context.report.finalSummaryMetrics?.impressions,
+      engagement: context.report.finalSummaryMetrics?.engagement,
+    });
+  }
+
   return {
     title: "Resumen final",
     aiSummary: context.report.finalSummaryAiText,
@@ -454,26 +555,23 @@ export function buildSummarySlideModel(
     metrics: [
       {
         label: "Reach",
-        value:
-          context.report.finalSummaryMetrics?.reach ||
-          formatDisplayNumber(context.report.viewersTotalValue) ||
-          "N/A",
+        value: formatMetricSummaryValue(context.report.finalSummaryMetrics?.reach) !== "N/A"
+          ? formatMetricSummaryValue(context.report.finalSummaryMetrics?.reach)
+          : formatMetricSummaryValue(context.report.viewersTotalValue),
         meta: context.report.viewersLabel || "Total reach in period",
       },
       {
         label: "Impressions",
-        value:
-          context.report.finalSummaryMetrics?.impressions ||
-          formatDisplayNumber(context.report.impressionsTotalValue) ||
-          "N/A",
+        value: formatMetricSummaryValue(context.report.finalSummaryMetrics?.impressions) !== "N/A"
+          ? formatMetricSummaryValue(context.report.finalSummaryMetrics?.impressions)
+          : formatMetricSummaryValue(context.report.impressionsTotalValue),
         meta: context.report.impressionsLabel || "Total impressions in period",
       },
       {
         label: "Engagement",
-        value:
-          context.report.finalSummaryMetrics?.engagement ||
-          formatDisplayNumber(context.report.engagementTotalValue) ||
-          "N/A",
+        value: formatMetricSummaryValue(context.report.finalSummaryMetrics?.engagement) !== "N/A"
+          ? formatMetricSummaryValue(context.report.finalSummaryMetrics?.engagement)
+          : formatMetricSummaryValue(context.report.engagementTotalValue),
         meta: context.report.engagementLabel || "Total interactions in period",
       },
     ],

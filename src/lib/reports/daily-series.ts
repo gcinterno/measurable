@@ -159,7 +159,13 @@ export function normalizeDailySeries(slide: unknown): DailySeriesPoint[] {
   const blocksValue = Array.isArray(record.blocks)
     ? record.blocks.flatMap((block) => {
         const blockRecord = getRecord(block);
-        return collectSeries(blockRecord?.daily_series);
+        return [
+          ...collectSeries(blockRecord?.daily_series),
+          ...collectSeries(blockRecord?.chart_data),
+          ...collectSeries(blockRecord?.dailyChart),
+          ...collectSeries(getRecord(blockRecord?.data)?.daily_series),
+          ...collectSeries(blockRecord),
+        ];
       })
     : [];
 
@@ -187,4 +193,3 @@ export function normalizeDailySeries(slide: unknown): DailySeriesPoint[] {
     (left, right) => new Date(left.date).getTime() - new Date(right.date).getTime()
   );
 }
-
