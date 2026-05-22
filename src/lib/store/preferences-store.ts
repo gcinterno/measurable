@@ -39,6 +39,24 @@ type PreferencesState = {
   ) => void;
 };
 
+function isPersistableLogoUrl(value: string | undefined) {
+  if (!value) {
+    return "";
+  }
+
+  const trimmedValue = value.trim();
+
+  if (
+    trimmedValue.startsWith("data:") ||
+    trimmedValue.startsWith("blob:") ||
+    trimmedValue.length > 2048
+  ) {
+    return "";
+  }
+
+  return trimmedValue;
+}
+
 export const usePreferencesStore = create<PreferencesState>()(
   persist(
     (set) => ({
@@ -56,18 +74,29 @@ export const usePreferencesStore = create<PreferencesState>()(
     }),
     {
       name: "measurable-preferences",
+      partialize: (state) => ({
+        brandName: state.brandName,
+        displayName: state.displayName,
+        logoDataUrl: isPersistableLogoUrl(state.logoDataUrl),
+        logoSource: isPersistableLogoUrl(state.logoDataUrl) ? state.logoSource : "",
+        timezone: state.timezone,
+        language: state.language,
+        theme: state.theme,
+      }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
       },
       merge: (persistedState, currentState) => {
         const persisted = (persistedState as Partial<PreferencesState>) || {};
+        const persistedLogoUrl = isPersistableLogoUrl(persisted.logoDataUrl);
 
         return {
           ...currentState,
           ...persisted,
           brandName: persisted.brandName ?? persisted.displayName ?? currentState.brandName,
           displayName: persisted.displayName ?? currentState.displayName,
-          logoSource: persisted.logoSource ?? currentState.logoSource,
+          logoDataUrl: persistedLogoUrl,
+          logoSource: persistedLogoUrl ? persisted.logoSource ?? currentState.logoSource : "",
         };
       },
     }

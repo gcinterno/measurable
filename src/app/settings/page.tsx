@@ -8,9 +8,18 @@ import { AppShell } from "@/components/layout/AppShell";
 import { useI18n } from "@/components/providers/LanguageProvider";
 import { isAbortError, isAuthError } from "@/lib/api";
 import { deleteAccount } from "@/lib/api/auth";
-import { fetchCurrentUser, updateCurrentUser } from "@/lib/api/me";
-import { fetchWorkspace, updateWorkspace } from "@/lib/api/workspaces";
+import { fetchIntegrationsConnectionStatus } from "@/lib/api/integrations";
+import { fetchCurrentUser } from "@/lib/api/me";
+import { fetchReports } from "@/lib/api/reports";
+import {
+  fetchWorkspace,
+  updateWorkspaceBranding,
+} from "@/lib/api/workspaces";
 import { startLogoutInProgress } from "@/lib/auth/session";
+import {
+  integrationCatalog,
+  META_FRONTEND_INTEGRATION_KEYS,
+} from "@/lib/integrations/catalog";
 import { useAuthStore } from "@/lib/store/auth-store";
 import { usePreferencesStore } from "@/lib/store/preferences-store";
 import { getActiveWorkspaceId } from "@/lib/workspace/session";
@@ -118,6 +127,9 @@ export default function SettingsPage() {
   const logout = useAuthStore((state) => state.logout);
   const [user, setUser] = useState<User | null>(null);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [reportsGenerated, setReportsGenerated] = useState(0);
+  const [reportsAvailable, setReportsAvailable] = useState(0);
+  const [connectedIntegrationsCount, setConnectedIntegrationsCount] = useState(0);
   const [brandNameDraft, setBrandNameDraft] = useState(preferences.brandName);
   const [logoUrlDraft, setLogoUrlDraft] = useState(preferences.logoDataUrl);
   const [loadingWorkspace, setLoadingWorkspace] = useState(true);
@@ -212,17 +224,17 @@ export default function SettingsPage() {
           return;
         }
 
+        const backendBrandName =
+          currentWorkspace.branding?.brandName || currentWorkspace.name;
         const backendLogoUrl = currentWorkspace.branding?.logoUrl || "";
-        const localCachedLogoUrl =
-          preferences.logoSource === "manual" ? preferences.logoDataUrl || "" : "";
         setWorkspace(currentWorkspace);
-        setBrandNameDraft(currentWorkspace.name || preferences.brandName);
-        setLogoUrlDraft(backendLogoUrl || localCachedLogoUrl || "");
+        setBrandNameDraft(backendBrandName || preferences.brandName);
+        setLogoUrlDraft(backendLogoUrl);
         preferences.updatePreferences({
-          brandName: currentWorkspace.name || preferences.brandName,
-          displayName: currentWorkspace.name || preferences.displayName,
-          logoDataUrl: backendLogoUrl || localCachedLogoUrl || "",
-          logoSource: backendLogoUrl ? "workspace" : localCachedLogoUrl ? "manual" : "",
+          brandName: backendBrandName || preferences.brandName,
+          displayName: backendBrandName || preferences.displayName,
+          logoDataUrl: backendLogoUrl,
+          logoSource: backendLogoUrl ? "workspace" : "",
         });
       } catch (error) {
         if (!isAbortError(error) && !isAuthError(error)) {
@@ -235,7 +247,30 @@ export default function SettingsPage() {
       }
     }
 
-    void Promise.all([loadUser(), loadWorkspace()]);
+    async function loadWorkspaceStats() {
+      const [reportsResult, integrationsResult] = await Promise.allSettled([
+        fetchReports({ signal: controller.signal }),
+        fetchIntegrationsConnectionStatus(),
+      ]);
+
+      if (!active) {
+        return;
+      }
+
+      if (reportsResult.status === "fulfilled") {
+        setReportsGenerated(reportsResult.value.length);
+        setReportsAvailable(reportsResult.value.length);
+      }
+
+      setConnectedIntegrationsCount(
+        integrationsResult.status === "fulfilled" &&
+          integrationsResult.value.metaConnected
+          ? META_FRONTEND_INTEGRATION_KEYS.length
+          : 0
+      );
+    }
+
+    void Promise.all([loadUser(), loadWorkspace(), loadWorkspaceStats()]);
 
     return () => {
       active = false;
@@ -285,7 +320,6 @@ export default function SettingsPage() {
       });
 
       setLogoUrlDraft(dataUrl);
-      preferences.updatePreferences({ logoDataUrl: dataUrl, logoSource: "manual" });
       setCropModalOpen(false);
       setSaved("");
     } catch (error) {
@@ -299,31 +333,30 @@ export default function SettingsPage() {
     const workspaceId = getActiveWorkspaceId();
     const nextBrandName = brandNameDraft.trim() || "Measurable";
 
-    preferences.updatePreferences({
-      brandName: nextBrandName,
-      displayName: nextBrandName,
-      logoDataUrl: logoUrlDraft,
-      logoSource: logoUrlDraft ? "manual" : "",
-    });
-
     if (!workspaceId) {
+      preferences.updatePreferences({
+        brandName: nextBrandName,
+        displayName: nextBrandName,
+        logoDataUrl: "",
+        logoSource: "",
+      });
       setSaved(messages.settings.changesSaved);
       return;
     }
 
     try {
       setSavingWorkspace(true);
-      const updatedWorkspace = await updateWorkspace(workspaceId, {
-        name: nextBrandName,
+      const { workspace: updatedWorkspace } = await updateWorkspaceBranding(workspaceId, {
+        brandName: nextBrandName,
         logoUrl: logoUrlDraft || null,
       });
 
       setWorkspace(updatedWorkspace);
-      setBrandNameDraft(updatedWorkspace.name || nextBrandName);
+      setBrandNameDraft(updatedWorkspace.branding?.brandName || nextBrandName);
       setLogoUrlDraft(updatedWorkspace.branding?.logoUrl || "");
       preferences.updatePreferences({
-        brandName: updatedWorkspace.name || nextBrandName,
-        displayName: updatedWorkspace.name || nextBrandName,
+        brandName: updatedWorkspace.branding?.brandName || nextBrandName,
+        displayName: updatedWorkspace.branding?.brandName || nextBrandName,
         logoDataUrl: updatedWorkspace.branding?.logoUrl || "",
         logoSource: updatedWorkspace.branding?.logoUrl ? "workspace" : "",
       });
@@ -390,6 +423,41 @@ export default function SettingsPage() {
         onSubmit={handleSave}
         className="grid max-w-full gap-6 overflow-x-hidden"
       >
+        <section className="grid gap-4 md:grid-cols-3">
+          {[
+            {
+              label: "Reportes generados",
+              value: String(reportsGenerated),
+              description: "Total creado en este workspace.",
+            },
+            {
+              label: "Reportes disponibles",
+              value: String(reportsAvailable),
+              description: "Reportes listos para abrir y exportar.",
+            },
+            {
+              label: "Integraciones conectadas",
+              value: `${connectedIntegrationsCount}/${integrationCatalog.length}`,
+              description: "Conectadas del total de la plataforma.",
+            },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-600">
+                {stat.label}
+              </p>
+              <p className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-slate-950">
+                {stat.value}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                {stat.description}
+              </p>
+            </div>
+          ))}
+        </section>
+
         <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
             {messages.settings.setupBrand}
@@ -471,6 +539,7 @@ export default function SettingsPage() {
                         <button
                           type="button"
                           onClick={async () => {
+                            const workspaceId = getActiveWorkspaceId();
                             setLogoUrlDraft("");
                             preferences.updatePreferences({
                               logoDataUrl: "",
@@ -478,14 +547,33 @@ export default function SettingsPage() {
                             });
                             setSaved("");
 
+                            if (!workspaceId) {
+                              setSaved(messages.settings.changesSaved);
+                              return;
+                            }
+
                             try {
                               setSavingWorkspace(true);
-                              const updatedUser = await updateCurrentUser({ logoUrl: null });
-                              setUser(updatedUser);
-                              setLogoUrlDraft(updatedUser.branding?.logoUrl || "");
+                              const { workspace: updatedWorkspace } =
+                                await updateWorkspaceBranding(workspaceId, {
+                                  brandName: brandNameDraft.trim() || undefined,
+                                  logoUrl: null,
+                                });
+                              setWorkspace(updatedWorkspace);
+                              setLogoUrlDraft(updatedWorkspace.branding?.logoUrl || "");
                               preferences.updatePreferences({
-                                logoDataUrl: updatedUser.branding?.logoUrl || "",
-                                logoSource: updatedUser.branding?.logoUrl ? "manual" : "",
+                                brandName:
+                                  updatedWorkspace.branding?.brandName ||
+                                  brandNameDraft.trim() ||
+                                  preferences.brandName,
+                                displayName:
+                                  updatedWorkspace.branding?.brandName ||
+                                  brandNameDraft.trim() ||
+                                  preferences.displayName,
+                                logoDataUrl: updatedWorkspace.branding?.logoUrl || "",
+                                logoSource: updatedWorkspace.branding?.logoUrl
+                                  ? "workspace"
+                                  : "",
                               });
                               setSaved(messages.settings.changesSaved);
                             } catch (error) {
@@ -534,7 +622,7 @@ export default function SettingsPage() {
                     </p>
                     <Link
                       href="/plans"
-                      className="mt-5 inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                      className="mt-5 inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
                     >
                       Upgrade your plan
                     </Link>

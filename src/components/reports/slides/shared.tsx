@@ -7,6 +7,7 @@ import { MEASURABLE_BRAND_LOGO_URL } from "@/lib/branding";
 import { getLogoContentAspectRatio } from "@/lib/reports/logo";
 import { formatNumber } from "@/lib/formatters";
 
+const SLIDE_HEADER_FALLBACK_LOGO_URL = "/brand/transparente-blanco.svg";
 const CHART_WIDTH = 560;
 const CHART_HEIGHT = 280;
 const CHART_PADDING_X = 12;
@@ -771,6 +772,55 @@ export function CoverLogo({
           }
         />
       </div>
+    </div>
+  );
+}
+
+export function SlideHeaderLogo({
+  logoUrl,
+  brandName,
+  slideNumber,
+  dark = true,
+}: {
+  logoUrl: string | null;
+  brandName?: string;
+  slideNumber?: string;
+  dark?: boolean;
+}) {
+  const requestedLogoUrl = logoUrl?.trim();
+  const resolvedLogoUrl =
+    !requestedLogoUrl || requestedLogoUrl === MEASURABLE_BRAND_LOGO_URL
+      ? SLIDE_HEADER_FALLBACK_LOGO_URL
+      : requestedLogoUrl;
+  const usesWhiteFallbackLogo = resolvedLogoUrl === SLIDE_HEADER_FALLBACK_LOGO_URL;
+
+  if (process.env.NODE_ENV === "development") {
+    console.log("[5-slide branding render]", {
+      slideNumber,
+      logoUrl: resolvedLogoUrl,
+      brandName,
+    });
+  }
+
+  return (
+    <div
+      className={`flex h-10 w-28 items-center justify-center rounded-2xl border px-3 py-2 ${
+        dark
+          ? usesWhiteFallbackLogo
+            ? "border-white/10 bg-white/10 shadow-[0_12px_28px_rgba(2,6,23,0.18)]"
+            : "border-white/10 bg-white/90 shadow-[0_12px_28px_rgba(2,6,23,0.18)]"
+          : "border-slate-200 bg-white shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
+      }`}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={resolvedLogoUrl}
+        alt={brandName || "Brand logo"}
+        data-report-logo="true"
+        loading="eager"
+        decoding="sync"
+        className="h-full w-full object-contain"
+      />
     </div>
   );
 }

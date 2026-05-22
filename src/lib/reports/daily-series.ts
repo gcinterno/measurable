@@ -1,6 +1,7 @@
 import type { ExecutiveDarkSeriesPoint } from "@/components/reports/report-view.helpers";
 
 type DailySeriesPoint = ExecutiveDarkSeriesPoint;
+type MetricSeriesKey = "reach" | "engagement" | "page_views" | "impressions" | "unknown";
 
 function getRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -99,7 +100,97 @@ function normalizePoint(value: unknown): DailySeriesPoint | null {
   };
 }
 
-function collectSeries(value: unknown): DailySeriesPoint[] {
+function inferMetricSeriesKey(record: Record<string, unknown>): MetricSeriesKey {
+  const haystack = [
+    record.metric_key,
+    record.metricKey,
+    record.metric_label,
+    record.metricLabel,
+    record.semantic_name,
+    record.semanticName,
+    record.key,
+    record.name,
+    record.title,
+    record.label,
+    record.source_label,
+  ]
+    .map((value) => getTrimmedString(value))
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (
+    haystack.includes("page_views") ||
+    haystack.includes("page views") ||
+    haystack.includes("page_visits") ||
+    haystack.includes("page visits") ||
+    haystack.includes("profile_views") ||
+    haystack.includes("profile views")
+  ) {
+    return "page_views";
+  }
+
+  if (
+    haystack.includes("engagement") ||
+    haystack.includes("interaction") ||
+    haystack.includes("interacciones")
+  ) {
+    return "engagement";
+  }
+
+  if (haystack.includes("impression") || haystack.includes("impresion")) {
+    return "impressions";
+  }
+
+  if (haystack.includes("reach") || haystack.includes("alcance") || haystack.includes("viewer")) {
+    return "reach";
+  }
+
+  return "unknown";
+}
+
+function collectMetricSpecificSeries(
+  record: Record<string, unknown>,
+  metricKey: MetricSeriesKey
+) {
+  if (metricKey === "reach") {
+    return [
+      ...collectSeries(record.reach_daily, metricKey),
+      ...collectSeries(record.viewers_daily, metricKey),
+      ...collectSeries(record.viewer_daily, metricKey),
+    ];
+  }
+
+  if (metricKey === "engagement") {
+    return [
+      ...collectSeries(record.engagement_daily, metricKey),
+      ...collectSeries(record.interactions_daily, metricKey),
+      ...collectSeries(record.interaction_daily, metricKey),
+    ];
+  }
+
+  if (metricKey === "page_views") {
+    return [
+      ...collectSeries(record.page_views_daily, metricKey),
+      ...collectSeries(record.pageViewsDaily, metricKey),
+      ...collectSeries(record.page_visits_daily, metricKey),
+      ...collectSeries(record.pageVisitsDaily, metricKey),
+      ...collectSeries(record.profile_views_daily, metricKey),
+      ...collectSeries(record.profileViewsDaily, metricKey),
+      ...collectSeries(record.profile_visits_daily, metricKey),
+    ];
+  }
+
+  if (metricKey === "impressions") {
+    return [
+      ...collectSeries(record.impressions_daily, metricKey),
+    ];
+  }
+
+  return [];
+}
+
+function collectSeries(value: unknown, metricHint: MetricSeriesKey = "unknown"): DailySeriesPoint[] {
   if (!value) {
     return [];
   }
@@ -115,11 +206,11 @@ function collectSeries(value: unknown): DailySeriesPoint[] {
       const record = getRecord(entry);
 
       return [
-        ...collectSeries(record?.points),
-        ...collectSeries(record?.data),
-        ...collectSeries(record?.values),
-        ...collectSeries(record?.series),
-        ...collectSeries(record?.daily_series),
+        ...collectSeries(record?.points, metricHint),
+        ...collectSeries(record?.data, metricHint),
+        ...collectSeries(record?.values, metricHint),
+        ...collectSeries(record?.series, metricHint),
+        ...collectSeries(record?.daily_series, metricHint),
       ];
     });
   }
@@ -130,20 +221,21 @@ function collectSeries(value: unknown): DailySeriesPoint[] {
     return [];
   }
 
+  const metricKey =
+    metricHint !== "unknown" ? metricHint : inferMetricSeriesKey(record);
+
   return [
-    ...collectSeries(record.points),
-    ...collectSeries(record.data),
-    ...collectSeries(record.values),
-    ...collectSeries(record.series),
-    ...collectSeries(record.chart),
-    ...collectSeries(record.chart_data),
-    ...collectSeries(record.dailyChart),
-    ...collectSeries(record.daily_series),
-    ...collectSeries(record.dailySeries),
-    ...collectSeries(record.daily),
-    ...collectSeries(record.reach_daily),
-    ...collectSeries(record.impressions_daily),
-    ...collectSeries(record.engagement_daily),
+    ...collectSeries(record.points, metricKey),
+    ...collectSeries(record.data, metricKey),
+    ...collectSeries(record.values, metricKey),
+    ...collectSeries(record.series, metricKey),
+    ...collectSeries(record.chart, metricKey),
+    ...collectSeries(record.chart_data, metricKey),
+    ...collectSeries(record.dailyChart, metricKey),
+    ...collectSeries(record.daily_series, metricKey),
+    ...collectSeries(record.dailySeries, metricKey),
+    ...collectSeries(record.daily, metricKey),
+    ...collectMetricSpecificSeries(record, metricKey),
   ];
 }
 
@@ -156,27 +248,28 @@ export function normalizeDailySeries(slide: unknown): DailySeriesPoint[] {
 
   const metricRecord = getRecord(record.metric);
   const dataRecord = getRecord(record.data);
+  const metricKey = inferMetricSeriesKey(record);
   const blocksValue = Array.isArray(record.blocks)
     ? record.blocks.flatMap((block) => {
         const blockRecord = getRecord(block);
         return [
-          ...collectSeries(blockRecord?.daily_series),
-          ...collectSeries(blockRecord?.chart_data),
-          ...collectSeries(blockRecord?.dailyChart),
-          ...collectSeries(getRecord(blockRecord?.data)?.daily_series),
-          ...collectSeries(blockRecord),
+          ...collectSeries(blockRecord?.daily_series, metricKey),
+          ...collectSeries(blockRecord?.chart_data, metricKey),
+          ...collectSeries(blockRecord?.dailyChart, metricKey),
+          ...collectSeries(getRecord(blockRecord?.data)?.daily_series, metricKey),
+          ...collectSeries(blockRecord, metricKey),
         ];
       })
     : [];
 
   const points = [
-    ...collectSeries(record.daily_series),
-    ...collectSeries(record.chart_data),
-    ...collectSeries(record.dailyChart),
-    ...collectSeries(metricRecord?.daily_series),
-    ...collectSeries(dataRecord?.daily_series),
+    ...collectSeries(record.daily_series, metricKey),
+    ...collectSeries(record.chart_data, metricKey),
+    ...collectSeries(record.dailyChart, metricKey),
+    ...collectSeries(metricRecord?.daily_series, metricKey),
+    ...collectSeries(dataRecord?.daily_series, metricKey),
     ...blocksValue,
-    ...collectSeries(record),
+    ...collectSeries(record, metricKey),
   ];
 
   const deduped = new Map<string, DailySeriesPoint>();

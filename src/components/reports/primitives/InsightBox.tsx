@@ -9,6 +9,7 @@ type InsightBoxProps = {
   templateId?: ReportTemplateId;
   label?: string;
   bodyClassName?: string;
+  clampLines?: number;
 };
 
 export function InsightBox({
@@ -17,17 +18,44 @@ export function InsightBox({
   templateId = "executive",
   label = "Insight",
   bodyClassName = "",
+  clampLines = 5,
 }: InsightBoxProps) {
   const tone = getTemplateTone(templateId);
   const modern = templateId === "modern";
 
   return (
-    <div className={`min-h-0 rounded-[26px] border p-5 ${modern ? tone.insight : tone.card} ${className}`}>
-      <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${modern ? tone.insightTitle : tone.accent}`}>
-        {label}
-      </p>
+    <div
+      className={`relative isolate min-h-0 overflow-hidden rounded-[26px] border p-5 ${
+        modern ? tone.insight : tone.card
+      } ${className}`}
+    >
+      <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/35 to-transparent" />
+      <div className="pointer-events-none absolute -right-8 top-0 h-24 w-24 rounded-full bg-sky-300/10 blur-2xl" />
+      <div className="flex items-center gap-3">
+        <span
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold uppercase tracking-[0.18em] ${
+            modern
+              ? "border-slate-300/65 bg-white/75 text-slate-800"
+              : "border-white/10 bg-white/8 text-white/85"
+          }`}
+        >
+          AI
+        </span>
+        <p
+          className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${
+            modern ? tone.insightTitle : tone.accent
+          }`}
+        >
+          {label}
+        </p>
+      </div>
       <p
-        className={`mt-3 max-w-none overflow-hidden text-[0.92rem] leading-6 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:6] ${modern ? tone.insightBody : tone.subtitle} ${bodyClassName}`}
+        className={`mt-4 max-w-none overflow-hidden pr-1 text-[0.95rem] leading-[1.62] [display:-webkit-box] [-webkit-box-orient:vertical] ${
+          modern ? tone.insightBody : tone.subtitle
+        } ${bodyClassName}`}
+        style={{
+          WebkitLineClamp: clampLines,
+        }}
       >
         {text}
       </p>

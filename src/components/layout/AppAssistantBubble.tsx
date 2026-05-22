@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
+import { UserSuggestionModal } from "@/components/suggestions/UserSuggestionModal";
 import { ApiError } from "@/lib/api";
 import { sendAssistantMessage } from "@/lib/api/assistant";
 import { getToken } from "@/lib/auth/session";
@@ -332,6 +333,7 @@ export function AppAssistantBubble() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
+  const [suggestionOpen, setSuggestionOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const counter = useRef(1);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -595,6 +597,26 @@ export function AppAssistantBubble() {
 
       <button
         type="button"
+        onClick={() => setSuggestionOpen(true)}
+        aria-label="Enviar sugerencia"
+        className={`fixed bottom-[12.5rem] right-5 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full text-white shadow-[0_14px_32px_rgba(15,23,42,0.22)] transition sm:right-6 lg:bottom-[5.5rem] ${
+          darkMode
+            ? "border border-white/10 bg-slate-950 hover:bg-slate-900"
+            : "bg-slate-950 hover:bg-slate-800"
+        }`}
+      >
+        <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 stroke-current">
+          <path
+            d="M12 19V5M7 10l5-5 5 5"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+
+      <button
+        type="button"
         onClick={() => setOpen(true)}
         aria-label="Open AI assistant"
         className={`fixed bottom-32 right-4 z-40 inline-flex h-14 w-14 items-center justify-center rounded-full text-white shadow-[0_18px_44px_rgba(15,23,42,0.24)] transition sm:right-5 lg:bottom-5 ${
@@ -608,6 +630,10 @@ export function AppAssistantBubble() {
           <path d="M12 4.5v2M9.5 13h.01M14.5 13h.01M10 16h4" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       </button>
+      <UserSuggestionModal
+        open={suggestionOpen}
+        onClose={() => setSuggestionOpen(false)}
+      />
     </>
   );
 }

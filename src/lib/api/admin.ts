@@ -156,6 +156,17 @@ export type AdminReferralPartnerInput = {
   status: string;
 };
 
+export type AdminSuggestionStatus = "new" | "reviewed" | "archived" | string;
+
+export type AdminSuggestion = {
+  id: string;
+  message: string;
+  user: string;
+  workspace: string;
+  createdAt: string;
+  status: AdminSuggestionStatus;
+};
+
 function getNumber(value: unknown) {
   return typeof value === "number"
     ? value
@@ -230,12 +241,12 @@ function normalizeInsights(value: unknown) {
         raw === "critical" ||
         raw === "neutral"
       ) {
-        return raw;
+        return raw as AdminOverviewInsightSeverity;
       }
 
       return "neutral";
     })(),
-  }));
+  })) satisfies AdminOverviewInsight[];
 }
 
 function normalizeFunnel(value: unknown) {
@@ -267,6 +278,50 @@ function normalizeCohorts(value: unknown) {
       retainedDay30: getNumber(item.retained_day_30 || item.retainedDay30 || item.day_30_users || item.day30Users),
     };
   });
+}
+
+function normalizeAdminSuggestions(value: unknown) {
+  return getArray<Record<string, unknown>>(value)
+    .map((item, index) => {
+      const userSource =
+        (item.user as Record<string, unknown> | undefined) ||
+        (item.author as Record<string, unknown> | undefined) ||
+        {};
+      const workspaceSource =
+        (item.workspace as Record<string, unknown> | undefined) || {};
+
+      return {
+        id: getString(item.id || item._id, `suggestion-${index}`),
+        message: getString(item.message || item.text || item.body),
+        user: getString(
+          item.user_email ||
+            item.userEmail ||
+            item.user_name ||
+            item.userName ||
+            userSource.email ||
+            userSource.name,
+          ""
+        ),
+        workspace: getString(
+          item.workspace_name ||
+            item.workspaceName ||
+            item.workspace_id ||
+            item.workspaceId ||
+            workspaceSource.name ||
+            workspaceSource.id,
+          ""
+        ),
+        createdAt: getString(item.created_at || item.createdAt || item.date),
+        status: getString(item.status, "new"),
+      };
+    })
+    .filter((item) => item.message)
+    .sort((left, right) => {
+      const leftTime = new Date(left.createdAt).getTime();
+      const rightTime = new Date(right.createdAt).getTime();
+
+      return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
+    }) satisfies AdminSuggestion[];
 }
 
 export async function fetchAdminMetrics(input: FetchAdminMetricsInput = {}) {
@@ -518,6 +573,39 @@ export async function fetchAdminUsers() {
       item.health_reasons || item.healthReasons
     ).map((reason) => String(reason)),
   })) satisfies AdminUserRow[];
+}
+
+export async function getAdminSuggestions() {
+  const payload = await apiFetch<Record<string, unknown> | Array<Record<string, unknown>>>(
+    "/admin/suggestions"
+  );
+  const list = Array.isArray(payload)
+    ? payload
+    : getArray<Record<string, unknown>>(
+        payload.data || payload.suggestions || payload.items || payload.results
+      );
+
+  return normalizeAdminSuggestions(list);
+}
+
+export async function updateSuggestionStatus(
+  suggestionId: string,
+  status: "reviewed" | "archived"
+) {
+  const payload = await apiFetch<Record<string, unknown>>(
+    `/admin/suggestions/${encodeURIComponent(suggestionId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }
+  );
+  const source =
+    (payload.data as Record<string, unknown> | undefined) ||
+    (payload.suggestion as Record<string, unknown> | undefined) ||
+    payload;
+  const [suggestion] = normalizeAdminSuggestions([source]);
+
+  return suggestion;
 }
 
 export async function fetchAdminInsights() {

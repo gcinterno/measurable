@@ -1,11 +1,9 @@
 import type {
-  ExecutiveDarkGeneralInsightsMetric,
   ExecutiveDarkSeriesPoint,
   ExecutiveDarkViewModel,
 } from "@/components/reports/report-view.helpers";
 import type {
   CoverSlideModel,
-  GeneralInsightsMetricState,
   ImpressionsSlideModel,
   ReachSlideCardModel,
   ReachSlideModel,
@@ -13,6 +11,10 @@ import type {
 } from "@/components/reports/slides/types";
 import { formatDisplayNumber, formatNumber } from "@/lib/formatters";
 import { getIntegrationReportContext } from "@/lib/integrations/session";
+
+const DEFAULT_AI_INSIGHT_FALLBACK = "Dato no disponible en este momento.";
+const PAGE_VIEWS_UNAVAILABLE_MESSAGE =
+  "Dato no disponible en este momento con los permisos actuales de Meta.";
 
 export type DefaultTemplateContext = {
   reportId?: string;
@@ -54,6 +56,11 @@ function formatMetricSummaryValue(metric: unknown): string {
   }
 
   const record = metric as Record<string, unknown>;
+
+  if (record.is_available === false || record.isAvailable === false) {
+    return "N/A";
+  }
+
   const candidates = [
     record.formatted_value,
     record.formattedValue,
@@ -81,6 +88,30 @@ function formatMetricSummaryValue(metric: unknown): string {
   }
 
   return "N/A";
+}
+
+function isMetricSummaryUnavailable(metric: unknown) {
+  return Boolean(
+    metric &&
+      typeof metric === "object" &&
+      ((metric as Record<string, unknown>).is_available === false ||
+        (metric as Record<string, unknown>).isAvailable === false)
+  );
+}
+
+function formatMetricSummaryDescription(metric: unknown, fallback: string): string {
+  if (!metric || typeof metric !== "object") {
+    return fallback;
+  }
+
+  const record = metric as Record<string, unknown>;
+  const description =
+    (typeof record.description === "string" && record.description.trim()) ||
+    (typeof record.unavailable_message === "string" && record.unavailable_message.trim()) ||
+    (typeof record.unavailableMessage === "string" && record.unavailableMessage.trim()) ||
+    "";
+
+  return description || fallback;
 }
 
 function formatIntegrationDisplayName(value: string) {
@@ -206,7 +237,12 @@ function getCoverIntegrationLabel() {
 }
 
 function getReachInsight(report: ExecutiveDarkViewModel) {
-  return report.premiumInsight || report.primaryNarrative || report.subtitle;
+  return (
+    report.reachInsightText ||
+    report.premiumInsight ||
+    report.primaryNarrative ||
+    DEFAULT_AI_INSIGHT_FALLBACK
+  );
 }
 
 function formatInsightDate(value: string) {
@@ -284,7 +320,7 @@ function buildSourceCaption(integrationLabel: string) {
 
 function buildReachCard(
   label: string,
-  point: ExecutiveDarkSeriesPoint | null,
+  point: { date: string; value: number; label?: string } | null,
   metricLabel: string
 ): ReachSlideCardModel {
   if (!point) {
@@ -299,21 +335,6 @@ function buildReachCard(
     label,
     value: formatInsightDate(point.date),
     meta: `${formatMetricValue(point.value)} ${metricLabel.toLowerCase()}`,
-  };
-}
-
-function toGeneralInsightsMetricState(
-  metric: ExecutiveDarkGeneralInsightsMetric | null
-): GeneralInsightsMetricState | null {
-  if (!metric) {
-    return null;
-  }
-
-  return {
-    value: metric.value,
-    available: metric.available,
-    semantic_valid: metric.semanticValid,
-    source_metric_name: metric.sourceMetricName,
   };
 }
 
@@ -378,17 +399,17 @@ export function buildReachSlideModel(
   const extremes = getReachExtremes(context.report.viewersDailyPoints);
 
   if (process.env.NODE_ENV === "development") {
-    console.log("[5-slide metric debug]", {
+    console.log("[5-slide metric render]", {
       reportId: context.reportId || null,
       slideNumber: "02",
       metricKey: "reach",
-      total: context.report.viewersTotalValue,
-      rawSlideKeys: [],
-      dailySeriesRaw: null,
-      chartDataRaw: null,
-      normalizedDailySeries: context.report.viewersDailyPoints,
-      normalizedDailySeriesLength: context.report.viewersDailyPoints.length,
-      values: context.report.viewersDailyPoints.map((point) => point.value),
+      formattedTotal: formatDisplayNumber(context.report.viewersTotalValue),
+      isAvailable: true,
+      unavailableReason: "",
+      unavailableMessage: "",
+      dailySeriesLength: context.report.viewersDailyPoints.length,
+      firstDate: context.report.viewersDailyPoints[0]?.date,
+      lastDate: context.report.viewersDailyPoints.at(-1)?.date,
     });
   }
 
@@ -404,12 +425,14 @@ export function buildReachSlideModel(
 
   return {
     metricKey: "reach",
+    branding: context.branding,
     metricEyebrow: "Metric",
     metricTitle: context.reachDisplayLabel,
     sourceCaption: buildSourceCaption(context.coverIntegrationLabel),
     totalLabel: `Total de ${context.reachDisplayLabel.toLowerCase()} del periodo`,
     totalValue: formatDisplayNumber(context.report.viewersTotalValue),
-    insightText: context.reachInsight,
+    isAvailable: true,
+    insightText: context.reachInsight || DEFAULT_AI_INSIGHT_FALLBACK,
     chartPoints: context.report.viewersDailyPoints,
     chartAvailable:
       context.report.viewersDailyAvailable ||
@@ -432,17 +455,19 @@ export function buildImpressionsSlideModel(
   context: DefaultTemplateContext
 ): ImpressionsSlideModel {
   if (process.env.NODE_ENV === "development") {
-    console.log("[5-slide metric debug]", {
+    console.log("[5-slide metric render]", {
       reportId: context.reportId || null,
       slideNumber: "03",
       metricKey: "impressions",
-      total: context.impressionsTotal,
-      rawSlideKeys: [],
-      dailySeriesRaw: null,
-      chartDataRaw: null,
-      normalizedDailySeries: context.impressionsDailyPoints,
-      normalizedDailySeriesLength: context.impressionsDailyPoints.length,
-      values: context.impressionsDailyPoints.map((point) => point.value),
+      formattedTotal: context.report.impressionsUnavailable
+        ? "N/A"
+        : formatMetricSummaryValue(context.report.impressionsTotalValue),
+      isAvailable: !context.report.impressionsUnavailable,
+      unavailableReason: context.report.impressionsUnavailableReason,
+      unavailableMessage: context.report.impressionsUnavailableMessage,
+      dailySeriesLength: context.impressionsDailyPoints.length,
+      firstDate: context.impressionsDailyPoints[0]?.date,
+      lastDate: context.impressionsDailyPoints.at(-1)?.date,
     });
   }
 
@@ -458,6 +483,14 @@ export function buildImpressionsSlideModel(
 
   return {
     impressions_total: context.impressionsTotal,
+    formatted_total:
+      context.report.impressionsUnavailable
+        ? "N/A"
+        : formatMetricSummaryValue(context.report.impressionsTotalValue),
+    is_available: !context.report.impressionsUnavailable,
+    unavailable_reason: context.report.impressionsUnavailableReason,
+    unavailable_message: context.report.impressionsUnavailableMessage,
+    branding: context.branding,
     impressions_daily: context.impressionsDailyPoints.map((point) => ({
       date: point.date,
       value: point.value,
@@ -478,14 +511,10 @@ export function buildImpressionsSlideModel(
     title: context.impressionsDisplayLabel,
     impressions_slide_present: context.report.impressionsSlidePresent,
     unavailable:
-      context.report.impressionsUnavailable &&
-      context.impressionsDailyPoints.length === 0 &&
-      context.impressionsTotal === 0,
+      context.report.impressionsUnavailable,
     source_metric_name: context.report.impressionsLabel,
     timeframe_source: context.report.timeframeSource,
     source_caption: buildSourceCaption(context.coverIntegrationLabel),
-    unavailable_message:
-      "Impressions data was not available with enough detail for this reporting period.",
   };
 }
 
@@ -495,33 +524,43 @@ export function buildEngagementSlideModel(
   const extremes = getReachExtremes(context.report.engagementDailyPoints);
 
   if (process.env.NODE_ENV === "development") {
-    console.log("[5-slide metric debug]", {
+    console.log("[5-slide metric render]", {
       reportId: context.reportId || null,
-      slideNumber: "04",
+      slideNumber: "03",
       metricKey: "engagement",
-      total: context.report.engagementTotalValue,
-      rawSlideKeys: [],
-      dailySeriesRaw: null,
-      chartDataRaw: null,
-      normalizedDailySeries: context.report.engagementDailyPoints,
-      normalizedDailySeriesLength: context.report.engagementDailyPoints.length,
-      values: context.report.engagementDailyPoints.map((point) => point.value),
+      formattedTotal: context.report.engagementUnavailable
+        ? "N/A"
+        : formatMetricSummaryValue(context.report.engagementTotalValue),
+      isAvailable: !context.report.engagementUnavailable,
+      unavailableReason: context.report.engagementUnavailableReason,
+      unavailableMessage: context.report.engagementUnavailableMessage,
+      dailySeriesLength: context.report.engagementDailyPoints.length,
+      firstDate: context.report.engagementDailyPoints[0]?.date,
+      lastDate: context.report.engagementDailyPoints.at(-1)?.date,
     });
   }
 
   return {
     metricKey: "engagement",
+    branding: context.branding,
     metricEyebrow: "Metric",
     metricTitle: "ENGAGEMENT",
     sourceCaption: buildSourceCaption(context.coverIntegrationLabel),
-    totalLabel: "Total engagement this period",
+    totalLabel: "Total engagement",
     totalValue:
-      formatDisplayNumber(context.report.engagementTotalValue) || "N/A",
-    insightText: context.report.engagementInsightText,
+      context.report.engagementUnavailable
+        ? "N/A"
+        : formatMetricSummaryValue(context.report.engagementTotalValue),
+    isAvailable: !context.report.engagementUnavailable,
+    unavailableMessage: context.report.engagementUnavailableMessage,
+    insightText: context.report.engagementUnavailable
+      ? context.report.engagementUnavailableMessage || DEFAULT_AI_INSIGHT_FALLBACK
+      : context.report.engagementInsightText || DEFAULT_AI_INSIGHT_FALLBACK,
     chartPoints: context.report.engagementDailyPoints,
     chartAvailable:
-      context.report.engagementDailyAvailable ||
-      context.report.engagementDailyPoints.length > 0,
+      !context.report.engagementUnavailable &&
+      (context.report.engagementDailyAvailable ||
+        context.report.engagementDailyPoints.length > 0),
     chartMetricLabel: context.report.engagementLabel || "Engagement",
     highestDayCard: buildReachCard(
       "Highest day",
@@ -536,43 +575,169 @@ export function buildEngagementSlideModel(
   };
 }
 
-export function buildSummarySlideModel(
+export function buildPageViewsSlideModel(
   context: DefaultTemplateContext
-): SummarySlideModel {
+): ReachSlideModel {
+  const extremes = getReachExtremes(context.report.pageViewsDailyPoints);
+
   if (process.env.NODE_ENV === "development") {
-    console.log("[5-slide summary debug]", {
-      metricsSummary: context.report.finalSummaryMetrics,
-      reach: context.report.finalSummaryMetrics?.reach,
-      impressions: context.report.finalSummaryMetrics?.impressions,
-      engagement: context.report.finalSummaryMetrics?.engagement,
+    console.log("[5-slide metric render]", {
+      reportId: context.reportId || null,
+      slideNumber: "04",
+      metricKey: "page_views",
+      formattedTotal: context.report.pageViewsUnavailable
+        ? "N/A"
+        : formatMetricSummaryValue(context.report.pageViewsTotalValue),
+      isAvailable: !context.report.pageViewsUnavailable,
+      unavailableReason: context.report.pageViewsUnavailableReason,
+      unavailableMessage: context.report.pageViewsUnavailableMessage,
+      dailySeriesLength: context.report.pageViewsDailyPoints.length,
+      firstDate: context.report.pageViewsDailyPoints[0]?.date,
+      lastDate: context.report.pageViewsDailyPoints.at(-1)?.date,
     });
   }
 
   return {
+    metricKey: "page_views",
+    branding: context.branding,
+    metricEyebrow: "Metric",
+    metricTitle: "PAGE VIEWS",
+    sourceCaption: buildSourceCaption(context.coverIntegrationLabel),
+    totalLabel: "Total page views",
+    totalValue: context.report.pageViewsUnavailable
+      ? "N/A"
+      : formatMetricSummaryValue(context.report.pageViewsTotalValue),
+    isAvailable: !context.report.pageViewsUnavailable,
+    unavailableMessage:
+      context.report.pageViewsUnavailableMessage || PAGE_VIEWS_UNAVAILABLE_MESSAGE,
+    insightText: context.report.pageViewsUnavailable
+      ? context.report.pageViewsUnavailableMessage || PAGE_VIEWS_UNAVAILABLE_MESSAGE
+      : context.report.pageViewsInsightText || DEFAULT_AI_INSIGHT_FALLBACK,
+    chartPoints: context.report.pageViewsDailyPoints,
+    chartAvailable:
+      !context.report.pageViewsUnavailable &&
+      (context.report.pageViewsDailyAvailable ||
+        context.report.pageViewsDailyPoints.length > 0),
+    chartMetricLabel: context.report.pageViewsLabel || "Page views",
+    highestDayCard: buildReachCard(
+      "Highest day",
+      context.report.pageViewsHighestDay || extremes.highest,
+      context.report.pageViewsLabel || "Page views"
+    ),
+    lowestDayCard: buildReachCard(
+      "Lowest day",
+      context.report.pageViewsLowestDay || extremes.lowest,
+      context.report.pageViewsLabel || "Page views"
+    ),
+  };
+}
+
+export function buildSummarySlideModel(
+  context: DefaultTemplateContext
+): SummarySlideModel {
+  if (process.env.NODE_ENV === "development") {
+    console.log("[5-slide summary render]", {
+      metricsSummary: context.report.finalSummaryMetrics,
+      reach: context.report.finalSummaryMetrics?.reach,
+      engagement: context.report.finalSummaryMetrics?.engagement,
+      followers: context.report.finalSummaryMetrics?.followers,
+      pageViews:
+        context.report.finalSummaryMetrics?.page_views ||
+        context.report.finalSummaryMetrics?.page_visits ||
+        context.report.finalSummaryMetrics?.profile_views,
+    });
+  }
+
+  const reachValue = formatMetricSummaryValue(context.report.finalSummaryMetrics?.reach);
+  const summaryEngagementUnavailable =
+    context.report.engagementUnavailable ||
+    isMetricSummaryUnavailable(context.report.finalSummaryMetrics?.engagement);
+  const summaryFollowersUnavailable = isMetricSummaryUnavailable(
+    context.report.finalSummaryMetrics?.followers
+  );
+  const summaryPageViewsMetric =
+    context.report.finalSummaryMetrics?.page_views ||
+    context.report.finalSummaryMetrics?.page_visits ||
+    context.report.finalSummaryMetrics?.profile_views;
+  const summaryPageViewsUnavailable =
+    context.report.pageViewsUnavailable ||
+    isMetricSummaryUnavailable(summaryPageViewsMetric);
+  const engagementValue = summaryEngagementUnavailable
+    ? "N/A"
+    : formatMetricSummaryValue(context.report.finalSummaryMetrics?.engagement);
+  const followersValue = summaryFollowersUnavailable
+    ? "N/A"
+    : formatMetricSummaryValue(context.report.finalSummaryMetrics?.followers);
+  const pageViewsValue = summaryPageViewsUnavailable
+    ? "N/A"
+    : formatMetricSummaryValue(summaryPageViewsMetric);
+
+  return {
     title: "Resumen final",
-    aiSummary: context.report.finalSummaryAiText,
-    recommendation: context.report.finalRecommendationText,
+    branding: context.branding,
+    aiSummary: context.report.finalSummaryAiText || DEFAULT_AI_INSIGHT_FALLBACK,
+    recommendation: context.report.finalRecommendationText || DEFAULT_AI_INSIGHT_FALLBACK,
     metrics: [
       {
         label: "Reach",
-        value: formatMetricSummaryValue(context.report.finalSummaryMetrics?.reach) !== "N/A"
-          ? formatMetricSummaryValue(context.report.finalSummaryMetrics?.reach)
+        value: reachValue !== "N/A"
+          ? reachValue
           : formatMetricSummaryValue(context.report.viewersTotalValue),
-        meta: context.report.viewersLabel || "Total reach in period",
-      },
-      {
-        label: "Impressions",
-        value: formatMetricSummaryValue(context.report.finalSummaryMetrics?.impressions) !== "N/A"
-          ? formatMetricSummaryValue(context.report.finalSummaryMetrics?.impressions)
-          : formatMetricSummaryValue(context.report.impressionsTotalValue),
-        meta: context.report.impressionsLabel || "Total impressions in period",
+        meta: formatMetricSummaryDescription(
+          context.report.finalSummaryMetrics?.reach,
+          context.report.viewersLabel || "Total reach in period"
+        ),
       },
       {
         label: "Engagement",
-        value: formatMetricSummaryValue(context.report.finalSummaryMetrics?.engagement) !== "N/A"
-          ? formatMetricSummaryValue(context.report.finalSummaryMetrics?.engagement)
+        value: summaryEngagementUnavailable
+          ? "N/A"
+          : engagementValue !== "N/A"
+          ? engagementValue
           : formatMetricSummaryValue(context.report.engagementTotalValue),
-        meta: context.report.engagementLabel || "Total interactions in period",
+        meta: summaryEngagementUnavailable
+          ? formatMetricSummaryDescription(
+              context.report.finalSummaryMetrics?.engagement,
+              context.report.engagementUnavailableMessage
+            )
+          : formatMetricSummaryDescription(
+              context.report.finalSummaryMetrics?.engagement,
+              context.report.engagementLabel || "Total interactions in period"
+            ),
+      },
+      {
+        label: "Followers",
+        value: summaryFollowersUnavailable
+          ? "N/A"
+          : followersValue !== "N/A"
+          ? followersValue
+          : formatMetricSummaryValue(context.report.followersTotalValue),
+        meta: summaryFollowersUnavailable
+          ? formatMetricSummaryDescription(
+              context.report.finalSummaryMetrics?.followers,
+              "Follower data is not available for this period."
+            )
+          : formatMetricSummaryDescription(
+              context.report.finalSummaryMetrics?.followers,
+              "Total followers in period"
+            ),
+      },
+      {
+        label: "Page Views",
+        value: summaryPageViewsUnavailable
+          ? "N/A"
+          : pageViewsValue !== "N/A"
+          ? pageViewsValue
+          : formatMetricSummaryValue(context.report.pageViewsTotalValue),
+        meta: summaryPageViewsUnavailable
+          ? formatMetricSummaryDescription(
+              summaryPageViewsMetric,
+              context.report.pageViewsUnavailableMessage || PAGE_VIEWS_UNAVAILABLE_MESSAGE
+            )
+          : formatMetricSummaryDescription(
+              summaryPageViewsMetric,
+              context.report.pageViewsLabel || "Total page views in period"
+            ),
       },
     ],
   };

@@ -41,7 +41,6 @@ import {
   resolveReportTemplateSelection,
   saveReportTemplateSelection,
 } from "@/lib/reports/template-selection";
-import { usePreferencesStore } from "@/lib/store/preferences-store";
 import { getPlanCapabilities } from "@/lib/workspace/plan-limits";
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 import type { SourceKey } from "@/lib/integrations/session";
@@ -179,7 +178,6 @@ function NewReportFlowReviewPageContent() {
   const selectedTemplate = resolveReportTemplateSelection(
     searchParams.get("template") || storedIntegrationContext?.templateId
   );
-  const preferenceLogoUrl = usePreferencesStore((state) => state.logoDataUrl);
   const currentStep = 4;
   const stepHrefMap: Record<number, string> = {
     1: integrationSource
@@ -418,6 +416,7 @@ function NewReportFlowReviewPageContent() {
                 selectedAccountsBySource?.[selectedSourceKey]?.datasetId) ||
               storedIntegrationContext.datasetId ||
               "",
+            workspaceId: storedIntegrationContext.workspaceId,
             timeframe: normalizedSelection.key,
             startDate: normalizedSelection.startDate,
             endDate: normalizedSelection.endDate,
@@ -430,10 +429,12 @@ function NewReportFlowReviewPageContent() {
           return;
         }
 
-        saveReportBrandingSnapshot(report.reportId, {
-          logoUrl: preferenceLogoUrl,
-          source: "preferences.logoDataUrl",
-        });
+        if (workspace?.branding?.logoUrl) {
+          saveReportBrandingSnapshot(report.reportId, {
+            logoUrl: workspace.branding.logoUrl,
+            source: "workspace.branding.logoUrl",
+          });
+        }
         saveReportTemplateSelection(report.reportId, selectedTemplate);
         console.info("[MetaTimeframe][flow.review.generate] response", {
           reportId: report.reportId,
@@ -484,12 +485,12 @@ function NewReportFlowReviewPageContent() {
   }, [
     messages.reports.generateReportError,
     messages.reports.noDatasetYet,
-    preferenceLogoUrl,
     router,
     shouldGenerateReport,
     integrationSource,
     selectedTemplate,
     storedIntegrationContext,
+    workspace?.branding?.logoUrl,
   ]);
 
   useEffect(() => {

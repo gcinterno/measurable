@@ -623,6 +623,7 @@ export async function createReport(input: {
 
 export async function createMetaPagesReport(input: {
   datasetId: string;
+  workspaceId?: string;
   timeframe: string;
   startDate?: string;
   endDate?: string;
@@ -632,6 +633,7 @@ export async function createMetaPagesReport(input: {
   const locale = getCurrentLocale();
   const payload = {
     dataset_id: Number(input.datasetId),
+    workspace_id: input.workspaceId,
     timeframe: input.timeframe,
     start_date: input.startDate,
     end_date: input.endDate,
@@ -643,6 +645,7 @@ export async function createMetaPagesReport(input: {
 
   console.info("[MetaTimeframe][api.createMetaPagesReport.request]", {
     datasetId: input.datasetId,
+    workspaceId: input.workspaceId,
     timeframe: input.timeframe,
     startDate: input.startDate,
     endDate: input.endDate,

@@ -1,10 +1,12 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 
 import { IntegrationCard } from "@/components/integrations/IntegrationCard";
 import { AppShell } from "@/components/layout/AppShell";
+import { UserSuggestionModal } from "@/components/suggestions/UserSuggestionModal";
 import {
   connectMetaIntegration,
   fetchMetaPages,
@@ -42,6 +44,7 @@ function IntegrationsPageContent() {
   const [metaLoading, setMetaLoading] = useState(false);
   const [metaError, setMetaError] = useState("");
   const [metaConnected, setMetaConnected] = useState(false);
+  const [suggestionOpen, setSuggestionOpen] = useState(false);
   const activeWorkspaceId = workspace?.id || null;
   const connectInFlightRef = useRef(false);
 
@@ -363,6 +366,40 @@ function IntegrationsPageContent() {
             />
         ))}
       </div>
+
+      <section className="mt-6 flex min-h-[180px] w-full max-w-[1400px] flex-col justify-between gap-5 rounded-[28px] border border-sky-100 bg-sky-50/60 p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)] sm:flex-row sm:items-center sm:p-7">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <Image
+              src="/brand/measurable-logo.svg"
+              alt="Measurable"
+              width={32}
+              height={32}
+              className="h-8 w-8 object-contain"
+            />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
+              Measurable
+            </p>
+            <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-950 sm:text-2xl">
+              ¿Qué más integraciones te gustaría obtener?
+            </h3>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setSuggestionOpen(true)}
+          className="inline-flex h-11 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-950 shadow-sm hover:bg-slate-50 sm:w-auto"
+        >
+          Enviar sugerencia
+        </button>
+      </section>
+
+      <UserSuggestionModal
+        open={suggestionOpen}
+        onClose={() => setSuggestionOpen(false)}
+      />
     </AppShell>
   );
 }

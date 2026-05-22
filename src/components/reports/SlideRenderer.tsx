@@ -312,6 +312,18 @@ function getBlockMetricKey(block: ReportVersionBlock) {
     return "engagement";
   }
 
+  if (
+    haystack.includes("page_views") ||
+    haystack.includes("page views") ||
+    haystack.includes("page_visits") ||
+    haystack.includes("page visits") ||
+    haystack.includes("profile_views") ||
+    haystack.includes("profile views") ||
+    haystack.includes("visitas a la pagina")
+  ) {
+    return "page_views";
+  }
+
   if (haystack.includes("reach") || haystack.includes("alcance")) {
     return "reach";
   }
@@ -375,9 +387,9 @@ function normalizeFiveSlideBlockOrder(blocks: ReportVersionBlock[]) {
     pick((block) => getBlockOrder(block, 0) === 2) ||
       pick((block) => getBlockMetricKey(block) === "reach"),
     pick((block) => getBlockOrder(block, 0) === 3) ||
-      pick((block) => getBlockMetricKey(block) === "impressions"),
-    pick((block) => getBlockOrder(block, 0) === 4) ||
       pick((block) => getBlockMetricKey(block) === "engagement"),
+    pick((block) => getBlockOrder(block, 0) === 4) ||
+      pick((block) => getBlockMetricKey(block) === "page_views"),
     pick((block) => getBlockOrder(block, 0) === 5) ||
       pick((block) => getBlockSlideType(block) === "summary"),
     ...blocks.filter((block) => !consumed.has(block.id)),

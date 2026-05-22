@@ -19,11 +19,19 @@ function readReportBrandingSnapshots() {
   }
 }
 
+function isSafeSnapshotLogoUrl(value: string) {
+  return (
+    !value.startsWith("data:") &&
+    !value.startsWith("blob:") &&
+    value.length <= 2048
+  );
+}
+
 export function getReportBrandingSnapshot(reportId: string) {
   const snapshot = readReportBrandingSnapshots()[reportId];
   const logoUrl = snapshot?.logoUrl?.trim() || null;
 
-  if (!logoUrl) {
+  if (!logoUrl || !isSafeSnapshotLogoUrl(logoUrl)) {
     return null;
   }
 
@@ -43,7 +51,7 @@ export function saveReportBrandingSnapshot(
 
   const logoUrl = branding.logoUrl?.trim();
 
-  if (!logoUrl) {
+  if (!logoUrl || !isSafeSnapshotLogoUrl(logoUrl)) {
     return;
   }
 

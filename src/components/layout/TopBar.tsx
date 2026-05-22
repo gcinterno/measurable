@@ -7,14 +7,19 @@ import { logoutUser } from "@/lib/api/auth";
 import { startLogoutInProgress } from "@/lib/auth/session";
 import { usePreferencesStore } from "@/lib/store/preferences-store";
 import { useAuthStore } from "@/lib/store/auth-store";
+import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 
 export function TopBar() {
   const router = useRouter();
   const { messages } = useI18n();
-  const brandName = usePreferencesStore((state) => state.brandName);
-  const logoDataUrl = usePreferencesStore((state) => state.logoDataUrl);
+  const preferenceBrandName = usePreferencesStore((state) => state.brandName);
+  const preferenceLogoUrl = usePreferencesStore((state) => state.logoDataUrl);
   const theme = usePreferencesStore((state) => state.theme);
   const logout = useAuthStore((state) => state.logout);
+  const { workspace } = useActiveWorkspace();
+  const brandName =
+    workspace?.branding?.brandName || workspace?.name || preferenceBrandName;
+  const logoDataUrl = workspace?.branding?.logoUrl || preferenceLogoUrl;
   const darkMode = theme === "dark";
   const initials = brandName
     .split(" ")

@@ -6,7 +6,7 @@ import { ChartBlock } from "@/components/reports/primitives/ChartBlock";
 import { InsightBox } from "@/components/reports/primitives/InsightBox";
 import { KPICard, KPIGrid } from "@/components/reports/primitives/KPIGrid";
 import { getTemplateTone } from "@/components/reports/slides/template";
-import { MetricDailyChart } from "@/components/reports/slides/shared";
+import { MetricDailyChart, SlideHeaderLogo } from "@/components/reports/slides/shared";
 import { formatDisplayNumber, formatNumber } from "@/lib/formatters";
 import type { ReportTemplateId } from "@/lib/reports/template-selection";
 
@@ -17,7 +17,14 @@ type ImpressionsDailyPoint = {
 
 type ImpressionsSlideProps = {
   impressions_total: number;
+  formatted_total?: string;
+  is_available?: boolean;
+  unavailable_reason?: string;
   impressions_daily: ImpressionsDailyPoint[];
+  branding: {
+    logoUrl: string | null;
+    brandName: string;
+  };
   reach_total: number;
   timeframe_since?: string;
   timeframe_until?: string;
@@ -103,48 +110,6 @@ function formatShortDayLabel(value: string) {
     month: "short",
     day: "numeric",
   }).format(date);
-}
-
-function normalizeDateKey(value: string) {
-  const isoCandidate = /^\d{4}-\d{2}-\d{2}$/.test(value)
-    ? `${value}T12:00:00Z`
-    : value;
-  const date = new Date(isoCandidate);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return date.toISOString().slice(0, 10);
-}
-
-function buildContinuousDailyPoints(points: ChartPoint[], since?: string, until?: string) {
-  const sorted = [...points].sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-  );
-  const startKey = normalizeDateKey(since || "");
-  const endKey = normalizeDateKey(until || "");
-
-  if (!startKey || !endKey) {
-    return sorted;
-  }
-
-  const pointsByDate = new Map(sorted.map((point) => [normalizeDateKey(point.date), point.value]));
-  const result: ChartPoint[] = [];
-  const current = new Date(`${startKey}T12:00:00Z`);
-  const end = new Date(`${endKey}T12:00:00Z`);
-
-  while (current.getTime() <= end.getTime()) {
-    const dateKey = current.toISOString().slice(0, 10);
-    result.push({
-      date: dateKey,
-      label: formatShortDayLabel(dateKey),
-      value: pointsByDate.get(dateKey) ?? 0,
-    });
-    current.setUTCDate(current.getUTCDate() + 1);
-  }
-
-  return result;
 }
 
 function formatMetricValue(value: number) {
@@ -566,7 +531,10 @@ function ImpressionsChart({
 
 export function ImpressionsSlide({
   impressions_total,
+  formatted_total,
+  is_available = true,
   impressions_daily,
+  branding,
   reach_total,
   timeframe_since,
   timeframe_until,
@@ -591,7 +559,7 @@ export function ImpressionsSlide({
       value: point.value,
     }))
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  const continuousPoints = buildContinuousDailyPoints(points, timeframe_since, timeframe_until);
+  const continuousPoints = points;
   console.info("[MetaTimeframe][render.impressions]", {
     source: timeframe_source || (
       timeframe_since && timeframe_until
@@ -605,13 +573,15 @@ export function ImpressionsSlide({
     },
     impressionsDailyCount: continuousPoints.length,
   });
-  const normalizedImpressionsTotal =
-    impressions_total > 0
-      ? impressions_total
-      : continuousPoints.reduce((sum, point) => sum + point.value, 0);
+  const normalizedImpressionsTotal = impressions_total;
+  const displayTotal = unavailable || is_available === false
+    ? "N/A"
+    : formatted_total || formatMetricDisplayValue(normalizedImpressionsTotal);
   const normalizedReachTotal =
     reach_total > 0 ? reach_total : Math.round(normalizedImpressionsTotal / 2.14);
-  const extremes = getExtremes(continuousPoints);
+  const extremes = unavailable || is_available === false
+    ? { highest: null, lowest: null } as const
+    : getExtremes(continuousPoints);
   const normalizedFrequency =
     frequency !== undefined && Number.isFinite(frequency)
       ? frequency
@@ -627,13 +597,18 @@ export function ImpressionsSlide({
       continuousPoints,
       normalizedReachTotal
     );
+  const insightText =
+    unavailable || is_available === false
+      ? unavailable_message ||
+        "Dato no disponible en este momento con los permisos actuales de Meta."
+      : insight || "Dato no disponible en este momento.";
 
   if (process.env.NODE_ENV === "development") {
     console.log("[5-slide metric slide]", {
       slideNumber: "03",
       metricKey: "impressions",
       title: title || metric_label,
-      total: normalizedImpressionsTotal,
+      total: displayTotal,
       dailySeriesLength: continuousPoints.length,
       values: continuousPoints.map((point) => point.value),
     });
@@ -642,9 +617,12 @@ export function ImpressionsSlide({
   return (
     <div className="grid h-full min-h-0 grid-cols-[346px_minmax(0,1fr)] gap-6">
         <div className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
-          <p className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${tone.accent}`}>
-            Metric
-          </p>
+          <SlideHeaderLogo
+            logoUrl={branding.logoUrl}
+            brandName={branding.brandName}
+            slideNumber="03"
+            dark={tone.dark}
+          />
           <div className="mt-4">
           <h2 className={`max-w-[14rem] text-4xl font-semibold tracking-[-0.05em] ${tone.title}`}>
             {title || metric_label}
@@ -655,31 +633,28 @@ export function ImpressionsSlide({
           <p className={`mt-8 text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.subtle}`}>
             Total de {metric_label.toLowerCase()} del periodo
           </p>
-          {unavailable ? (
-            <p className={`mt-3 text-base leading-7 ${tone.subtle}`}>
-              No disponible para este periodo
+          <p className={`mt-3 break-words text-[3.2rem] font-semibold tracking-[-0.06em] ${tone.title}`}>
+            {displayTotal}
+          </p>
+          {unavailable || is_available === false ? (
+            <p className={`mt-2 text-sm leading-6 ${tone.subtle}`}>
+              {unavailable_message}
             </p>
-          ) : (
-            <p className={`mt-3 break-words text-[3.2rem] font-semibold tracking-[-0.06em] ${tone.title}`}>
-              {formatMetricDisplayValue(normalizedImpressionsTotal)}
-            </p>
-          )}
+          ) : null}
           </div>
 
           <InsightBox
-            text={
-              unavailable
-                ? unavailable_message
-                : insight
-            }
-            label="AI Insight"
-            className="mt-7 max-h-[220px]"
+            text={insightText}
+            label="AI INSIGHT"
+            className="mt-7 max-h-[214px]"
+            bodyClassName="leading-[1.62]"
+            clampLines={5}
             templateId={templateId}
           />
         </div>
 
         <ChartBlock className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-4">
-          {unavailable ? (
+          {unavailable || is_available === false ? (
             <MetricDailyChart
               points={[]}
               isAvailable={false}
@@ -698,7 +673,7 @@ export function ImpressionsSlide({
                 dark={tone.dark}
                 slideNumber="03"
                 metricKey="impressions"
-                placeholderText={unavailable_message}
+                placeholderText="Daily series is not available for this metric yet."
               />
               <KPIGrid columns={3}>
                 <KPICard

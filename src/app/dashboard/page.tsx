@@ -10,9 +10,13 @@ import { QuickActionCard } from "@/components/dashboard/QuickActionCard";
 import { RecentReportCard } from "@/components/dashboard/RecentReportCard";
 import { IntegrationDropzoneCard } from "@/components/reports/IntegrationDropzoneCard";
 import { ApiError, isAbortError, isAuthError } from "@/lib/api";
+import { fetchIntegrationsConnectionStatus } from "@/lib/api/integrations";
 import { fetchCurrentUser } from "@/lib/api/me";
 import { fetchReports } from "@/lib/api/reports";
-import { integrationCatalog } from "@/lib/integrations/catalog";
+import {
+  integrationCatalog,
+  META_FRONTEND_INTEGRATION_KEYS,
+} from "@/lib/integrations/catalog";
 import { useAuthStore } from "@/lib/store/auth-store";
 import type { User } from "@/types/auth";
 import type { Report } from "@/types/report";
@@ -28,6 +32,8 @@ export default function DashboardPage() {
   const authUser = useAuthStore((state) => state.user);
   const [user, setUser] = useState<User | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
+  const [reportsTotal, setReportsTotal] = useState(0);
+  const [connectedIntegrationsCount, setConnectedIntegrationsCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reportsAvailable, setReportsAvailable] = useState(true);
@@ -36,6 +42,7 @@ export default function DashboardPage() {
 
   const refreshRecentReports = useCallback(async () => {
     const nextReports = await fetchReports();
+    setReportsTotal(nextReports.length);
     setReports(nextReports.slice(0, 5));
     setReportsAvailable(true);
   }, []);
@@ -102,9 +109,10 @@ export default function DashboardPage() {
         setLoading(true);
         setError("");
 
-        const [userResult, reportsResult] = await Promise.allSettled([
+        const [userResult, reportsResult, integrationsResult] = await Promise.allSettled([
           fetchCurrentUser({ signal: controller.signal }),
           fetchReports({ signal: controller.signal }),
+          fetchIntegrationsConnectionStatus(),
         ]);
 
         if (!active) {
@@ -123,8 +131,15 @@ export default function DashboardPage() {
         const nextReportsAvailable = reportsResult.status === "fulfilled";
 
         setUser(nextUser || authUser || null);
+        setReportsTotal(nextReports.length);
         setReports(nextReports.slice(0, 5));
         setReportsAvailable(nextReportsAvailable);
+        setConnectedIntegrationsCount(
+          integrationsResult.status === "fulfilled" &&
+            integrationsResult.value.metaConnected
+            ? META_FRONTEND_INTEGRATION_KEYS.length
+            : 0
+        );
 
         const hasUserContext = Boolean(nextUser || authUser);
 
@@ -204,6 +219,25 @@ export default function DashboardPage() {
   }
 
   const userName = user?.name || "team";
+  const dashboardStats = [
+    {
+      label: "Reportes creados",
+      value: String(reportsTotal),
+      description: "Total generado en esta cuenta.",
+    },
+    {
+      label: "Reportes disponibles",
+      value: String(reportsAvailable ? reportsTotal : 0),
+      description: reportsAvailable
+        ? "Listos para revisar desde la biblioteca."
+        : "No disponibles temporalmente.",
+    },
+    {
+      label: "Integraciones conectadas",
+      value: `${connectedIntegrationsCount}/${integrationCatalog.length}`,
+      description: "Conectadas del total de la plataforma.",
+    },
+  ];
   const quickActions = [
     {
       title: messages.dashboard.quickActionNewReportTitle,
@@ -251,6 +285,25 @@ export default function DashboardPage() {
           </h1>
         </section>
 
+        <section className="grid gap-3 md:grid-cols-3">
+          {dashboardStats.map((stat) => (
+            <div
+              key={stat.label}
+              className="rounded-[24px] border border-[var(--border-soft)] bg-[var(--surface)] p-5 shadow-[0_14px_34px_rgba(7,17,31,0.06)]"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                {stat.label}
+              </p>
+              <p className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-[var(--text-primary)]">
+                {stat.value}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+                {stat.description}
+              </p>
+            </div>
+          ))}
+        </section>
+
         <IntegrationDropzoneCard />
 
         <section className="brand-card p-5 sm:p-6">
@@ -274,6 +327,31 @@ export default function DashboardPage() {
                   onDeleteError={handleDeleteError}
                 />
               ))}
+              <Link
+                href="/reports"
+                className="flex min-h-[260px] flex-col justify-between rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-4 text-left transition hover:border-slate-400 hover:bg-slate-100"
+              >
+                <div className="flex aspect-[1160/670] items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-white/70">
+                  <div className="text-center">
+                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400">
+                      <svg viewBox="0 0 24 24" fill="none" className="h-7 w-7 stroke-current">
+                        <path d="M5 12h14M13 6l6 6-6 6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                    <p className="mt-4 text-lg font-semibold text-slate-700">
+                      Ver todos los reportes.
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <h3 className="mt-4 text-lg font-semibold text-slate-700">
+                    Biblioteca de reportes
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-500">
+                    Abre el historial completo de reportes generados.
+                  </p>
+                </div>
+              </Link>
             </div>
           ) : (
             <div className="mt-6 rounded-[16px] border border-dashed border-[var(--border-blue-soft)] bg-[var(--surface-soft)] px-4 py-6">

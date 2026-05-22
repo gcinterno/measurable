@@ -183,6 +183,44 @@ function StateCard({
   );
 }
 
+function getClipboardReportId(reportId: string) {
+  return reportId.replace(/\D/g, "") || reportId;
+}
+
+function ReportAssistantPrompt() {
+  return (
+    <div
+      className="fixed bottom-28 right-5 z-40 max-w-[min(22rem,calc(100vw-2rem))] animate-[assistantPromptIn_420ms_ease-out] rounded-[28px] border border-sky-200 bg-white px-5 py-4 text-slate-950 shadow-[0_24px_70px_rgba(14,165,233,0.22)]"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-950 text-lg text-white">
+          🤖
+        </span>
+        <div>
+          <p className="text-sm font-semibold">AI Assistant</p>
+          <p className="mt-1 text-sm font-medium text-slate-700">
+            Hablemos de tu Reporte! 🤖📊
+          </p>
+        </div>
+      </div>
+      <style jsx>{`
+        @keyframes assistantPromptIn {
+          from {
+            opacity: 0;
+            transform: translateY(14px) scale(0.96);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 export default function ReportView({
   reportId,
   hideOverviewInsights = false,
@@ -215,6 +253,8 @@ export default function ReportView({
   const [folderId, setFolderId] = useState("");
   const [deletingReport, setDeletingReport] = useState(false);
   const [resolvedVersionId, setResolvedVersionId] = useState("");
+  const [idCopied, setIdCopied] = useState(false);
+  const [showReportAssistantPrompt, setShowReportAssistantPrompt] = useState(false);
   const exportSurfaceRef = useRef<HTMLDivElement | null>(null);
   const slideDeckRef = useRef<HTMLDivElement | null>(null);
   const latestLoadRequestRef = useRef(0);
@@ -232,6 +272,7 @@ export default function ReportView({
 
     setLoading(true);
     setError("");
+    setShowReportAssistantPrompt(false);
 
     try {
       const renderData = await fetchLatestReportRenderData(reportId, {
@@ -264,6 +305,35 @@ export default function ReportView({
   useEffect(() => {
     void loadReport().catch(() => undefined);
   }, [loadReport]);
+
+  useEffect(() => {
+    if (loading || error || blocks.length === 0) {
+      setShowReportAssistantPrompt(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setShowReportAssistantPrompt(true);
+    }, 450);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [blocks.length, error, loading, reportId]);
+
+  useEffect(() => {
+    if (!idCopied) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setIdCopied(false);
+    }, 1800);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [idCopied]);
 
   const title = useMemo(
     () => getReportTitle(blocks, reportDetail?.title),
@@ -431,7 +501,17 @@ export default function ReportView({
         };
       });
     },
-    [blocks, hideOverviewInsights, language, resolvedBranding.logoUrl, selectedTemplateId, template.slides, thumbnailContext, viewModel]
+    [
+      blocks,
+      hideOverviewInsights,
+      language,
+      resolvedBranding.brandName,
+      resolvedBranding.logoUrl,
+      selectedTemplateId,
+      template.slides,
+      thumbnailContext,
+      viewModel,
+    ]
   );
   useEffect(() => {
     console.info("[AUDIT_RENDER_PATH][ReportView]", {
@@ -464,6 +544,11 @@ export default function ReportView({
 
     await navigator.clipboard.writeText(reportUrl);
     setShareFeedback(messages.reports.copiedLink);
+  }
+
+  async function handleCopyReportId() {
+    await navigator.clipboard.writeText(getClipboardReportId(reportId));
+    setIdCopied(true);
   }
 
   async function handleDownload() {
@@ -735,6 +820,8 @@ export default function ReportView({
 
   return (
     <div className="space-y-8">
+      {showReportAssistantPrompt ? <ReportAssistantPrompt /> : null}
+
       {mountExportSurface ? (
         <ReportExportSurface
           reportId={reportId}
@@ -766,6 +853,21 @@ export default function ReportView({
               <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
                 {messages.reports.templateLabel}: {getReportTemplateLabel(selectedTemplateId)}
               </span>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleCopyReportId();
+                }}
+                className="rounded-full bg-slate-950 px-3 py-1 font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-slate-800"
+                title="Copy report ID"
+              >
+                REPORT ID: {reportId}
+              </button>
+              {idCopied ? (
+                <span className="rounded-full bg-emerald-50 px-3 py-1 font-medium text-emerald-700">
+                  ID copiado
+                </span>
+              ) : null}
               {reportDetail?.sourceSummary ? (
                 <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
                   {reportDetail.sourceSummary}

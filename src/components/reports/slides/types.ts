@@ -32,13 +32,21 @@ export type ReachSlideCardModel = {
   meta: string;
 };
 
+export type SlideBrandingModel = {
+  logoUrl: string | null;
+  brandName: string;
+};
+
 export type ReachSlideModel = {
   metricKey?: string;
+  branding: SlideBrandingModel;
   metricEyebrow: string;
   metricTitle: string;
   sourceCaption: string;
   totalLabel: string;
   totalValue: string;
+  isAvailable: boolean;
+  unavailableMessage?: string;
   insightText: string;
   chartPoints: ExecutiveDarkSeriesPoint[];
   chartAvailable: boolean;
@@ -49,10 +57,15 @@ export type ReachSlideModel = {
 
 export type ImpressionsSlideModel = {
   impressions_total: number;
+  formatted_total?: string;
+  is_available?: boolean;
+  unavailable_reason?: string;
+  unavailable_message?: string;
   impressions_daily: {
     date: string;
     value: number;
   }[];
+  branding: SlideBrandingModel;
   reach_total: number;
   timeframe_since?: string;
   timeframe_until?: string;
@@ -69,7 +82,6 @@ export type ImpressionsSlideModel = {
   source_metric_name?: string;
   timeframe_source?: string;
   source_caption?: string;
-  unavailable_message?: string;
 };
 
 export type GeneralInsightsMetricState = {
@@ -118,6 +130,7 @@ export type ClosingSlideModel = {
 
 export type SummarySlideModel = {
   title: string;
+  branding: SlideBrandingModel;
   aiSummary: string;
   recommendation: string;
   metrics: Array<{

@@ -4,13 +4,16 @@ import { useEffect, useState } from "react";
 
 import { AdminPageShell } from "@/components/admin/AdminPageShell";
 import {
+  type AdminSuggestion,
   fetchAdminMetrics,
+  getAdminSuggestions,
   type AdminDistributionItem,
   type AdminMetricGrowthKey,
   type AdminOverviewInsight,
   type AdminMetricsSeriesPoint,
   type AdminMetrics,
   type AdminMetricsTimeframe,
+  updateSuggestionStatus,
 } from "@/lib/api/admin";
 
 const timeframeOptions: Array<{ key: AdminMetricsTimeframe; label: string }> = [
@@ -20,7 +23,19 @@ const timeframeOptions: Array<{ key: AdminMetricsTimeframe; label: string }> = [
   { key: "custom", label: "Custom" },
 ];
 
-const metricCards: Array<{ key: keyof AdminMetrics; label: string; format?: "currency" | "percent" }> = [
+type AdminMetricCardKey =
+  | "totalUsers"
+  | "usersInPeriod"
+  | "activeUsersInPeriod"
+  | "reportsGenerated"
+  | "reportsInPeriod"
+  | "onboardingCompletedInPeriod"
+  | "onboardingCompletionRate"
+  | "freeUsers"
+  | "paidUsers"
+  | "mrr";
+
+const metricCards: Array<{ key: AdminMetricCardKey; label: string; format?: "currency" | "percent" }> = [
   { key: "totalUsers", label: "Total users" },
   { key: "usersInPeriod", label: "Users in selected period" },
   { key: "activeUsersInPeriod", label: "Active users in selected period" },
@@ -169,6 +184,23 @@ function formatReadableDate(value: string) {
     month: "short",
     day: "numeric",
     year: "numeric",
+  }).format(date);
+}
+
+function formatSuggestionDate(value: string) {
+  if (!value) {
+    return "No date";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("es-MX", {
+    dateStyle: "medium",
+    timeStyle: "short",
   }).format(date);
 }
 
@@ -637,8 +669,120 @@ function buildLifecycleMetricCards(metrics: AdminMetrics): AdminLifecycleMetricC
   ];
 }
 
+function AdminSuggestionsSection({
+  suggestions,
+  loading,
+  error,
+  updatingSuggestionId,
+  onUpdateStatus,
+}: {
+  suggestions: AdminSuggestion[];
+  loading: boolean;
+  error: string;
+  updatingSuggestionId: string;
+  onUpdateStatus: (suggestionId: string, status: "reviewed" | "archived") => void;
+}) {
+  return (
+    <section className="mt-6 rounded-[24px] border border-[var(--border-soft)] bg-[var(--surface)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)] sm:p-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--measurable-blue)]">
+            Feedback
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
+            Sugerencias de usuarios
+          </h2>
+          <p className="mt-2 text-sm text-[var(--text-secondary)]">
+            Mensajes enviados desde el botón de sugerencias de la aplicación.
+          </p>
+        </div>
+        <span className="inline-flex w-fit rounded-full border border-[var(--border-soft)] bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--text-secondary)]">
+          {suggestions.length} total
+        </span>
+      </div>
+
+      {loading ? (
+        <div className="mt-5 space-y-3">
+          {Array.from({ length: 3 }, (_, index) => (
+            <div key={index} className="h-20 animate-pulse rounded-[18px] bg-[var(--surface-soft)]" />
+          ))}
+        </div>
+      ) : error ? (
+        <div className="mt-5 rounded-[18px] border border-red-100 bg-red-50 px-5 py-4">
+          <p className="text-sm text-red-700">{error}</p>
+        </div>
+      ) : suggestions.length === 0 ? (
+        <div className="mt-5 rounded-[18px] border border-dashed border-[var(--border-soft)] bg-[var(--surface-soft)] px-5 py-8 text-center">
+          <p className="text-sm font-semibold text-[var(--text-primary)]">
+            Aún no hay sugerencias.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-5 overflow-hidden rounded-[20px] border border-[var(--border-soft)]">
+          <div className="hidden grid-cols-[minmax(260px,1.6fr)_minmax(130px,0.7fr)_minmax(130px,0.7fr)_minmax(120px,0.7fr)_minmax(170px,0.9fr)] gap-4 border-b border-[var(--border-soft)] bg-[var(--surface-soft)] px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-secondary)] lg:grid">
+            <span>Mensaje</span>
+            <span>Usuario</span>
+            <span>Workspace</span>
+            <span>Fecha</span>
+            <span>Status</span>
+          </div>
+          <div className="divide-y divide-[var(--border-soft)]">
+            {suggestions.map((suggestion) => (
+              <article
+                key={suggestion.id}
+                className="grid gap-3 px-4 py-4 text-sm lg:grid-cols-[minmax(260px,1.6fr)_minmax(130px,0.7fr)_minmax(130px,0.7fr)_minmax(120px,0.7fr)_minmax(170px,0.9fr)] lg:gap-4"
+              >
+                <p className="whitespace-pre-wrap break-words leading-6 text-[var(--text-primary)]">
+                  {suggestion.message}
+                </p>
+                <p className="text-[var(--text-secondary)]">
+                  <span className="mr-2 font-semibold text-[var(--text-primary)] lg:hidden">Usuario:</span>
+                  {suggestion.user || "—"}
+                </p>
+                <p className="text-[var(--text-secondary)]">
+                  <span className="mr-2 font-semibold text-[var(--text-primary)] lg:hidden">Workspace:</span>
+                  {suggestion.workspace || "—"}
+                </p>
+                <p className="text-[var(--text-secondary)]">
+                  <span className="mr-2 font-semibold text-[var(--text-primary)] lg:hidden">Fecha:</span>
+                  {formatSuggestionDate(suggestion.createdAt)}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-[var(--border-soft)] bg-[var(--surface-soft)] px-2.5 py-1 text-xs font-semibold capitalize text-[var(--text-secondary)]">
+                    {suggestion.status || "new"}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={updatingSuggestionId === suggestion.id || suggestion.status === "reviewed"}
+                    onClick={() => onUpdateStatus(suggestion.id, "reviewed")}
+                    className="rounded-full border border-[var(--border-soft)] bg-[var(--surface)] px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-soft)] disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    Reviewed
+                  </button>
+                  <button
+                    type="button"
+                    disabled={updatingSuggestionId === suggestion.id || suggestion.status === "archived"}
+                    onClick={() => onUpdateStatus(suggestion.id, "archived")}
+                    className="rounded-full border border-[var(--border-soft)] bg-[var(--surface)] px-2.5 py-1 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-soft)] disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    Archived
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function AdminOverviewPage() {
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
+  const [suggestions, setSuggestions] = useState<AdminSuggestion[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(true);
+  const [suggestionsError, setSuggestionsError] = useState("");
+  const [updatingSuggestionId, setUpdatingSuggestionId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [timeframe, setTimeframe] = useState<AdminMetricsTimeframe>("all");
@@ -695,6 +839,70 @@ export default function AdminOverviewPage() {
       active = false;
     };
   }, [appliedCustomRange.endDate, appliedCustomRange.startDate, timeframe]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadSuggestions() {
+      setSuggestionsLoading(true);
+      setSuggestionsError("");
+
+      try {
+        const nextSuggestions = await getAdminSuggestions();
+
+        if (!active) {
+          return;
+        }
+
+        setSuggestions(nextSuggestions);
+      } catch (loadError) {
+        console.error("admin suggestions load error:", loadError);
+
+        if (!active) {
+          return;
+        }
+
+        setSuggestionsError("No pudimos cargar las sugerencias de usuarios.");
+      } finally {
+        if (active) {
+          setSuggestionsLoading(false);
+        }
+      }
+    }
+
+    void loadSuggestions();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function handleUpdateSuggestionStatus(
+    suggestionId: string,
+    status: "reviewed" | "archived"
+  ) {
+    try {
+      setUpdatingSuggestionId(suggestionId);
+      setSuggestionsError("");
+      const updatedSuggestion = await updateSuggestionStatus(suggestionId, status);
+
+      setSuggestions((current) =>
+        current.map((suggestion) =>
+          suggestion.id === suggestionId
+            ? {
+                ...suggestion,
+                status: updatedSuggestion?.status || status,
+              }
+            : suggestion
+        )
+      );
+    } catch (updateError) {
+      console.error("admin suggestion status update error:", updateError);
+      setSuggestionsError("No pudimos actualizar el status de la sugerencia.");
+    } finally {
+      setUpdatingSuggestionId("");
+    }
+  }
 
   const customRangeInvalid =
     !customInputs.startDate ||
@@ -903,6 +1111,16 @@ export default function AdminOverviewPage() {
           </div>
         </section>
       ) : null}
+
+      <AdminSuggestionsSection
+        suggestions={suggestions}
+        loading={suggestionsLoading}
+        error={suggestionsError}
+        updatingSuggestionId={updatingSuggestionId}
+        onUpdateStatus={(suggestionId, status) =>
+          void handleUpdateSuggestionStatus(suggestionId, status)
+        }
+      />
 
       {loading ? (
         <section className="mt-6 grid gap-4 xl:grid-cols-3">

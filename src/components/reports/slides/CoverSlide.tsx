@@ -150,6 +150,114 @@ function ModernCover({
   );
 }
 
+function SimpleCover({
+  slideId,
+  renderMode,
+  model,
+}: {
+  slideId: string;
+  renderMode: "preview" | "export";
+  model: CoverSlideModel;
+}) {
+  const slideClassName = renderMode === "export" ? "report-pdf-slide" : "report-preview-slide";
+  const frameClassName =
+    renderMode === "export"
+      ? slideClassName
+      : `${slideClassName} ${REPORT_SLIDE_THEME.radius.outerFrame} border ${REPORT_SLIDE_THEME.colors.frameBorder} ${REPORT_SLIDE_THEME.colors.frameBackground} ${REPORT_SLIDE_THEME.spacing.outerPadding} ${REPORT_SLIDE_THEME.effects.outerShadow}`;
+  const shellWidth =
+    renderMode === "export"
+      ? REPORT_SLIDE_THEME.slide.width
+      : REPORT_SLIDE_THEME.slide.surfaceWidth;
+  const shellHeight =
+    renderMode === "export"
+      ? REPORT_SLIDE_THEME.slide.height
+      : REPORT_SLIDE_THEME.slide.surfaceHeight;
+
+  return (
+    <section
+      data-report-slide={slideId}
+      className={frameClassName}
+      style={{
+        width: REPORT_SLIDE_THEME.slide.width,
+        minWidth: REPORT_SLIDE_THEME.slide.width,
+        maxWidth: REPORT_SLIDE_THEME.slide.width,
+        height: REPORT_SLIDE_THEME.slide.height,
+        minHeight: REPORT_SLIDE_THEME.slide.height,
+        maxHeight: REPORT_SLIDE_THEME.slide.height,
+        fontFamily: "var(--font-sans)",
+        fontKerning: "normal",
+        fontSynthesis: "none",
+        textRendering: "geometricPrecision",
+      }}
+    >
+      <div
+        className={`mx-auto max-w-none overflow-hidden ${renderMode === "export" ? "" : "rounded-[32px] border border-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_18px_42px_rgba(15,23,42,0.08)]"} bg-[linear-gradient(180deg,#f8fbff_0%,#f3f6fa_100%)]`}
+        style={{
+          width: shellWidth,
+          height: shellHeight,
+          boxSizing: "border-box",
+          margin: renderMode === "export" ? 0 : "0 auto",
+        }}
+      >
+        <div className="relative grid h-full grid-cols-[0.55fr_0.45fr] overflow-hidden bg-[linear-gradient(180deg,#f7fafc_0%,#f2f5f9_100%)]">
+          <div className="relative border-r border-[#E6EBF2] bg-[linear-gradient(180deg,#f2f5f8_0%,#edf1f5_100%)]">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,rgba(148,163,184,0.12),transparent_38%),linear-gradient(135deg,rgba(255,255,255,0.42),rgba(255,255,255,0)_45%)]" />
+            <div className="absolute bottom-0 left-0 right-0 h-[84px] rounded-t-[26px] bg-[linear-gradient(180deg,rgba(218,225,236,0.88)_0%,rgba(212,219,231,0.96)_100%)]" />
+
+            <div className="relative flex h-full flex-col px-[52px] pb-[92px] pt-[52px]">
+              <div className="max-w-[31rem] rounded-[28px] bg-[linear-gradient(180deg,rgba(245,248,252,0.95)_0%,rgba(236,241,246,0.92)_100%)] px-[30px] py-[34px] shadow-[0_10px_24px_rgba(148,163,184,0.10)]">
+                <h1 className="text-[5rem] font-semibold leading-[0.9] tracking-[-0.08em] text-black">
+                  {model.reportTitle}
+                </h1>
+              </div>
+
+              <div className="mt-auto max-w-[38rem]">
+                {model.subtitle ? (
+                  <p className="text-[1.1rem] font-normal tracking-[-0.02em] text-[#7084A0]">
+                    {model.subtitle}
+                  </p>
+                ) : null}
+                {model.meta ? (
+                  <p className="mt-5 text-[0.9rem] font-medium uppercase tracking-[0.28em] text-[#2B83D7]">
+                    {model.meta}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="relative overflow-hidden bg-[linear-gradient(180deg,#ffffff_0%,#fbfcfe_100%)]">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.08),transparent_26%),linear-gradient(180deg,rgba(255,255,255,0.72),rgba(248,250,252,0.82))]" />
+            <div className="absolute right-[34px] top-[26px] h-3 w-12 rounded-full bg-slate-100/70" />
+            <div className="absolute right-[18px] top-[20px] text-[0.95rem] uppercase tracking-[0.12em] text-slate-100">
+              {model.branding.brandName}
+            </div>
+
+            <div className="relative flex h-full items-center justify-center px-16">
+              {model.branding.logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={model.branding.logoUrl}
+                  alt="Brand visual"
+                  className="max-h-[64%] max-w-[76%] object-contain drop-shadow-[0_18px_30px_rgba(59,130,246,0.12)]"
+                />
+              ) : (
+                <div className="relative h-[290px] w-[290px]">
+                  <div className="absolute inset-[18%] rounded-[36px] bg-[linear-gradient(135deg,#2563eb_0%,#1d4ed8_100%)] opacity-95" />
+                  <div className="absolute left-[18%] top-[14%] h-[58%] w-[18%] rounded-[20px] bg-[#2563eb]" />
+                  <div className="absolute right-[18%] top-[14%] h-[70%] w-[18%] rounded-[20px] bg-[#2563eb]" />
+                  <div className="absolute left-[28%] top-[34%] h-[18%] w-[44%] rotate-[-39deg] rounded-[18px] bg-[#1d4ed8]" />
+                  <div className="absolute right-[10%] top-[56%] h-[18%] w-[34%] rotate-[-48deg] rounded-[18px] bg-[#2563eb]" />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function CoverSlide({
   slideId,
   eyebrow,
@@ -162,6 +270,10 @@ export function CoverSlide({
 
   if (templateId === "modern") {
     return <ModernCover slideId={slideId} renderMode={renderMode} model={model} />;
+  }
+
+  if (templateId === "simple") {
+    return <SimpleCover slideId={slideId} renderMode={renderMode} model={model} />;
   }
 
   return (

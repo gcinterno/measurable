@@ -28,6 +28,7 @@ import {
   getPlanCapabilities,
 } from "@/lib/workspace/plan-limits";
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
+import { updateWorkspaceBranding } from "@/lib/api/workspaces";
 import {
   type ReportTemplateId,
   resolveReportTemplateSelection,
@@ -180,6 +181,7 @@ function NewReportFlowGeneratePageContent() {
   const [brandLogoDraft, setBrandLogoDraft] = useState(() => preferences.logoDataUrl || "");
   const [brandAssetsError, setBrandAssetsError] = useState("");
   const [brandAssetsSaved, setBrandAssetsSaved] = useState(false);
+  const [brandAssetsSaving, setBrandAssetsSaving] = useState(false);
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [cropSource, setCropSource] = useState("");
   const [cropSourceWidth, setCropSourceWidth] = useState(0);
@@ -394,7 +396,18 @@ function NewReportFlowGeneratePageContent() {
     }
   }
 
-  function handleSaveBrandAssets() {
+  useEffect(() => {
+    const backendBrandName = workspace?.branding?.brandName;
+    const backendLogoUrl = workspace?.branding?.logoUrl;
+
+    if (backendBrandName) {
+      setBrandNameDraft(backendBrandName);
+    }
+
+    setBrandLogoDraft(backendLogoUrl || "");
+  }, [workspace?.branding?.brandName, workspace?.branding?.logoUrl]);
+
+  async function handleSaveBrandAssets() {
     const normalizedBrandName = brandNameDraft.trim();
 
     if (!normalizedBrandName) {
@@ -403,15 +416,38 @@ function NewReportFlowGeneratePageContent() {
       return;
     }
 
-    preferences.updatePreferences({
-      brandName: normalizedBrandName,
-      displayName: normalizedBrandName,
-      logoDataUrl: brandLogoDraft,
-      logoSource: brandLogoDraft ? "manual" : "",
-    });
-    setBrandNameDraft(normalizedBrandName);
-    setBrandAssetsError("");
-    setBrandAssetsSaved(true);
+    if (!workspace?.id) {
+      setBrandAssetsSaved(false);
+      setBrandAssetsError("Workspace is not ready yet. Please try again.");
+      return;
+    }
+
+    try {
+      setBrandAssetsSaving(true);
+      const { workspace: updatedWorkspace } = await updateWorkspaceBranding(workspace.id, {
+        brandName: normalizedBrandName,
+        logoUrl: brandLogoDraft || null,
+      });
+      const savedBrandName = updatedWorkspace.branding?.brandName || normalizedBrandName;
+      const savedLogoUrl = updatedWorkspace.branding?.logoUrl || "";
+
+      preferences.updatePreferences({
+        brandName: savedBrandName,
+        displayName: savedBrandName,
+        logoDataUrl: savedLogoUrl,
+        logoSource: savedLogoUrl ? "workspace" : "",
+      });
+      setBrandNameDraft(savedBrandName);
+      setBrandLogoDraft(savedLogoUrl);
+      setBrandAssetsError("");
+      setBrandAssetsSaved(true);
+    } catch (saveError) {
+      console.error("generate flow brand assets save error:", saveError);
+      setBrandAssetsSaved(false);
+      setBrandAssetsError("We could not save Brand Assets right now.");
+    } finally {
+      setBrandAssetsSaving(false);
+    }
   }
 
   useEffect(() => {
@@ -803,10 +839,13 @@ function NewReportFlowGeneratePageContent() {
                             <div className="mt-5 flex flex-wrap items-center gap-3">
                               <button
                                 type="button"
-                                onClick={handleSaveBrandAssets}
-                                className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                                onClick={() => {
+                                  void handleSaveBrandAssets();
+                                }}
+                                disabled={brandAssetsSaving}
+                                className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
                               >
-                                Save changes
+                                {brandAssetsSaving ? "Saving..." : "Save changes"}
                               </button>
                               {brandAssetsSaved ? (
                                 <div className="inline-flex items-center gap-3 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-700">
@@ -919,7 +958,7 @@ function NewReportFlowGeneratePageContent() {
                           </p>
                           <Link
                             href="/plans"
-                            className="mt-5 inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                            className="mt-5 inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
                           >
                             Upgrade your plan
                           </Link>

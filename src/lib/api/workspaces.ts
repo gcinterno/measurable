@@ -198,6 +198,7 @@ export async function updateWorkspace(
   workspaceId: string,
   input: {
     name?: string;
+    brandName?: string;
     logoUrl?: string | null;
   },
   options?: {
@@ -210,8 +211,13 @@ export async function updateWorkspace(
     payload.name = input.name;
   }
 
+  if (input.brandName !== undefined) {
+    payload.brand_name = input.brandName;
+  }
+
   if (input.logoUrl !== undefined) {
     payload.logo_url = input.logoUrl ?? null;
+    payload.brand_logo_url = input.logoUrl ?? null;
   }
 
   const response = await apiFetch<WorkspaceDetailResponse>(`/workspaces/${workspaceId}`, {
@@ -227,6 +233,46 @@ export async function updateWorkspace(
   }
 
   return normalizeWorkspace(workspace, 0);
+}
+
+export async function getWorkspaceBranding(
+  workspaceId: string,
+  options?: {
+    authToken?: string;
+    signal?: AbortSignal;
+  }
+) {
+  const workspace = await fetchWorkspace(workspaceId, options);
+
+  return {
+    workspace,
+    branding: workspace.branding,
+  };
+}
+
+export async function updateWorkspaceBranding(
+  workspaceId: string,
+  input: {
+    brandName?: string;
+    logoUrl?: string | null;
+  },
+  options?: {
+    signal?: AbortSignal;
+  }
+) {
+  const workspace = await updateWorkspace(
+    workspaceId,
+    {
+      brandName: input.brandName,
+      logoUrl: input.logoUrl,
+    },
+    options
+  );
+
+  return {
+    workspace,
+    branding: workspace.branding,
+  };
 }
 
 export function resolveActiveWorkspace(workspaces: Workspace[]) {

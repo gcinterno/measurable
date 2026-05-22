@@ -155,7 +155,14 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
         }`}
       >
         <div className={isCollapsed ? "flex flex-col items-center gap-3" : "flex items-center justify-between gap-4"}>
-          <div className={`min-w-0 ${isCollapsed ? "flex justify-center" : "flex-1"}`}>
+          <Link
+            href="/dashboard"
+            onClick={onNavigate}
+            aria-label="Go to dashboard"
+            className={`min-w-0 rounded-2xl outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-white/50 ${
+              isCollapsed ? "flex justify-center" : "flex-1"
+            }`}
+          >
             <img
               src={isCollapsed ? "/brand/measurable-logo.svg" : "/brand/measurable-logo-white.svg"}
               alt="Measurable"
@@ -163,7 +170,7 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
                 isCollapsed ? "h-11 max-w-[3rem]" : "h-16 max-w-[10.75rem]"
               }`}
             />
-          </div>
+          </Link>
           {!mobile ? (
             <button
               type="button"
