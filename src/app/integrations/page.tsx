@@ -1,8 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 
 import { IntegrationCard } from "@/components/integrations/IntegrationCard";
 import { AppShell } from "@/components/layout/AppShell";
@@ -19,8 +18,10 @@ import {
   createPendingMetaOAuth,
   clearMetaOAuthDebugUrl,
   hasMetaConnectPrerequisites,
+  isMetaOAuthWindowMessage,
   markMetaRedirectStarted,
   normalizeMetaAuthUrl,
+  openMetaOAuthPopup,
   showMetaOAuthReadyBanner,
   storeMetaOAuthDebugUrl,
 } from "@/lib/integrations/meta-oauth";
@@ -39,14 +40,70 @@ import {
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 
 function IntegrationsPageContent() {
-  const router = useRouter();
   const { workspace, loading: workspaceLoading } = useActiveWorkspace();
   const [metaLoading, setMetaLoading] = useState(false);
+  const [metaStatusLoading, setMetaStatusLoading] = useState(true);
   const [metaError, setMetaError] = useState("");
+  const [metaStatusMessage, setMetaStatusMessage] = useState("");
   const [metaConnected, setMetaConnected] = useState(false);
   const [suggestionOpen, setSuggestionOpen] = useState(false);
   const activeWorkspaceId = workspace?.id || null;
   const connectInFlightRef = useRef(false);
+  const popupPollRef = useRef<number | null>(null);
+  const popupTimeoutRef = useRef<number | null>(null);
+
+  const stopPopupPolling = useCallback(() => {
+    if (popupPollRef.current !== null && typeof window !== "undefined") {
+      window.clearInterval(popupPollRef.current);
+      popupPollRef.current = null;
+    }
+    if (popupTimeoutRef.current !== null && typeof window !== "undefined") {
+      window.clearTimeout(popupTimeoutRef.current);
+      popupTimeoutRef.current = null;
+    }
+  }, []);
+
+  const refreshMetaIntegrationState = useCallback(async () => {
+    const storedContext = getIntegrationReportContext();
+    const response = await fetchIntegrationsConnectionStatus();
+
+    if (!response.metaConnected) {
+      setMetaConnected(false);
+      return false;
+    }
+
+    let hasAuthorizedPages = true;
+
+    if (response.integrationId && (storedContext?.workspaceId || activeWorkspaceId)) {
+      const authorizedPages = await fetchMetaPages(
+        response.integrationId,
+        storedContext?.workspaceId || activeWorkspaceId || ""
+      );
+      hasAuthorizedPages = authorizedPages.length > 0;
+    }
+
+    setMetaConnected(hasAuthorizedPages);
+
+    if (response.integrationId && hasAuthorizedPages) {
+      setIntegrationReportContext({
+        source:
+          storedContext && isMetaFrontendIntegrationKey(storedContext.source)
+            ? storedContext.source
+            : "facebook_pages",
+        integration: "meta",
+        workspaceId: storedContext?.workspaceId || activeWorkspaceId || "",
+        integrationId: response.integrationId,
+        pageId: storedContext?.pageId,
+        pageName: storedContext?.pageName,
+        datasetId: storedContext?.datasetId,
+        synced: storedContext?.synced,
+        requestedSlides: storedContext?.requestedSlides,
+        aiMode: storedContext?.aiMode,
+      });
+    }
+
+    return hasAuthorizedPages;
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     const retryAuthUrl = consumePendingMetaOAuthForRetry({
@@ -66,44 +123,10 @@ function IntegrationsPageContent() {
 
     async function loadIntegrationStatus() {
       try {
-        const storedContext = getIntegrationReportContext();
-        const response = await fetchIntegrationsConnectionStatus();
+        setMetaStatusLoading(true);
+        const connected = await refreshMetaIntegrationState();
 
-        if (!active) {
-          return;
-        }
-
-        if (response.metaConnected) {
-          let hasAuthorizedPages = true;
-
-          if (response.integrationId && (storedContext?.workspaceId || activeWorkspaceId)) {
-            const authorizedPages = await fetchMetaPages(
-              response.integrationId,
-              storedContext?.workspaceId || activeWorkspaceId || ""
-            );
-            hasAuthorizedPages = authorizedPages.length > 0;
-          }
-
-          setMetaConnected(hasAuthorizedPages);
-
-          if (response.integrationId && hasAuthorizedPages) {
-            setIntegrationReportContext({
-              source:
-                storedContext && isMetaFrontendIntegrationKey(storedContext.source)
-                  ? storedContext.source
-                  : "facebook_pages",
-              integration: "meta",
-              workspaceId: storedContext?.workspaceId || activeWorkspaceId || "",
-              integrationId: response.integrationId,
-              pageId: storedContext?.pageId,
-              pageName: storedContext?.pageName,
-              datasetId: storedContext?.datasetId,
-              synced: storedContext?.synced,
-              requestedSlides: storedContext?.requestedSlides,
-              aiMode: storedContext?.aiMode,
-            });
-          }
-
+        if (!active || connected) {
           return;
         }
 
@@ -114,6 +137,10 @@ function IntegrationsPageContent() {
         }
 
         console.error("integrations status load error:", error);
+      } finally {
+        if (active) {
+          setMetaStatusLoading(false);
+        }
       }
     }
 
@@ -122,7 +149,50 @@ function IntegrationsPageContent() {
     return () => {
       active = false;
     };
-  }, [activeWorkspaceId]);
+  }, [activeWorkspaceId, refreshMetaIntegrationState]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    async function handleMetaWindowMessage(event: MessageEvent) {
+      if (event.origin !== window.location.origin || !isMetaOAuthWindowMessage(event.data)) {
+        return;
+      }
+
+      stopPopupPolling();
+      clearPendingMetaOAuth();
+      connectInFlightRef.current = false;
+      setMetaLoading(false);
+
+      if (event.data.type === "MEASURABLE_META_CONNECT_SUCCESS") {
+        setMetaError("");
+        try {
+          const connected = await refreshMetaIntegrationState();
+          setMetaStatusMessage(
+            connected
+              ? "Integración conectada correctamente."
+              : "La conexión terminó, pero no se encontraron páginas autorizadas todavía."
+          );
+        } catch (error) {
+          console.error("meta popup refresh error:", error);
+          setMetaError("La conexión terminó, pero no pudimos refrescar el estado.");
+        }
+        return;
+        }
+
+      setMetaStatusMessage("");
+      setMetaError(event.data.message || "No se pudo completar la conexión con Meta.");
+    }
+
+    window.addEventListener("message", handleMetaWindowMessage);
+
+    return () => {
+      stopPopupPolling();
+      window.removeEventListener("message", handleMetaWindowMessage);
+    };
+  }, [activeWorkspaceId, refreshMetaIntegrationState, stopPopupPolling]);
 
   async function handleMetaConnect() {
     if (connectInFlightRef.current) {
@@ -132,10 +202,14 @@ function IntegrationsPageContent() {
       return;
     }
 
+    let popupStarted = false;
+
     try {
       connectInFlightRef.current = true;
       setMetaLoading(true);
       setMetaError("");
+      setMetaStatusMessage("");
+      setMetaStatusLoading(true);
       const storedContext = getIntegrationReportContext();
       const connectWorkspaceId = activeWorkspaceId || storedContext?.workspaceId || "";
       const { tokenReady } = hasMetaConnectPrerequisites();
@@ -221,24 +295,69 @@ function IntegrationsPageContent() {
         authUrl,
         source,
         route: "/integrations",
+        transport: "popup",
       });
       storeMetaOAuthDebugUrl(authUrl);
       await showMetaOAuthReadyBanner();
 
       if (typeof window !== "undefined") {
         markMetaRedirectStarted();
-        window.location.href = authUrl;
+        const popup = openMetaOAuthPopup(authUrl);
+
+        if (!popup) {
+          window.location.href = authUrl;
+          return;
+        }
+
+        popupStarted = true;
+        setMetaStatusMessage("Waiting for Meta connection...");
+        stopPopupPolling();
+        popupTimeoutRef.current = window.setTimeout(() => {
+          connectInFlightRef.current = false;
+          setMetaLoading(false);
+          setMetaStatusMessage(
+            "Si terminaste la conexión, ya puedes cerrar la pestaña de Meta."
+          );
+        }, 90000);
+        popupPollRef.current = window.setInterval(async () => {
+          if (!popup.closed) {
+            return;
+          }
+
+          stopPopupPolling();
+          clearPendingMetaOAuth();
+          connectInFlightRef.current = false;
+          setMetaLoading(false);
+
+          try {
+            const connected = await refreshMetaIntegrationState();
+            if (connected) {
+              setMetaError("");
+              setMetaStatusMessage("Integración conectada correctamente.");
+              return;
+            }
+          } catch (error) {
+            console.error("meta popup closed refresh error:", error);
+          }
+
+          setMetaStatusMessage("");
+          setMetaError("La ventana de conexión se cerró antes de completar la autorización.");
+        }, 2500);
         return;
       }
     } catch (err: unknown) {
       console.error("meta connect error:", err);
       setMetaConnected(false);
+      setMetaStatusMessage("");
       setMetaError(
         "We could not start the Facebook Pages connection. Try again."
       );
     } finally {
-      connectInFlightRef.current = false;
-      setMetaLoading(false);
+      if (!popupStarted) {
+        connectInFlightRef.current = false;
+        setMetaLoading(false);
+        setMetaStatusLoading(false);
+      }
     }
   }
 
@@ -247,8 +366,10 @@ function IntegrationsPageContent() {
     clearIntegrationReportContext();
     clearPendingMetaOAuth();
     clearMetaOAuthDebugUrl();
+    stopPopupPolling();
     setMetaConnected(false);
     setMetaError("");
+    setMetaStatusMessage("");
   }
 
   function handleMetaConnectSource(source: "facebook_pages" | "instagram_business") {
@@ -279,22 +400,6 @@ function IntegrationsPageContent() {
     void handleMetaConnect();
   }
 
-  function handleMetaSelectSource(source: "facebook_pages" | "instagram_business") {
-    const storedContext = getIntegrationReportContext();
-    const contextWorkspaceId = activeWorkspaceId || storedContext?.workspaceId || "";
-
-    setIntegrationReportContext({
-      source,
-      integration: "meta",
-      workspaceId: contextWorkspaceId,
-      integrationId: storedContext?.integrationId || "",
-      requestedSlides: storedContext?.requestedSlides,
-      aiMode: storedContext?.aiMode,
-    });
-
-    router.push(`/reports/new/flow/sync?integration=${source}`);
-  }
-
   return (
     <AppShell>
       <div className="mb-5 sm:mb-6">
@@ -306,7 +411,7 @@ function IntegrationsPageContent() {
         </h2>
       </div>
 
-      {!metaConnected ? (
+      {!metaStatusLoading && !metaConnected ? (
         <section className="mb-5 rounded-[28px] border border-dashed border-slate-300 bg-slate-50 p-5 sm:mb-6 sm:p-6">
           <h3 className="text-lg font-semibold text-slate-950">
             There are no connected integrations yet
@@ -314,6 +419,12 @@ function IntegrationsPageContent() {
           <p className="mt-2 text-sm leading-6 text-slate-500">
             You can start with Facebook Pages to validate the full connection, selection, and sync flow.
           </p>
+        </section>
+      ) : null}
+
+      {metaStatusMessage ? (
+        <section className="mb-5 rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700 sm:mb-6">
+          {metaStatusMessage}
         </section>
       ) : null}
 
@@ -328,21 +439,25 @@ function IntegrationsPageContent() {
             logoAlt={integration.logoAlt}
             status={
               isMetaFrontendIntegrationKey(integration.integrationKey)
-                ? metaConnected
+                ? metaStatusLoading
+                  ? "Checking"
+                  : metaConnected
                   ? "Connected"
                   : integration.status
                 : integration.status
             }
             actionLabel={
               isMetaFrontendIntegrationKey(integration.integrationKey)
-                ? metaConnected
+                ? metaStatusLoading
+                  ? "Checking..."
+                  : metaConnected
                   ? undefined
                   : "Connect"
                 : integration.actionLabel
             }
             onAction={
               isMetaFrontendIntegrationKey(integration.integrationKey)
-                ? metaConnected
+                ? metaStatusLoading || metaConnected
                   ? undefined
                   : () =>
                       handleMetaConnectSource(
@@ -351,17 +466,24 @@ function IntegrationsPageContent() {
                 : undefined
             }
             secondaryActionLabel={
-              isMetaFrontendIntegrationKey(integration.integrationKey) && metaConnected
+              isMetaFrontendIntegrationKey(integration.integrationKey) &&
+              !metaStatusLoading &&
+              metaConnected
                 ? "Disconnect"
                 : undefined
             }
             onSecondaryAction={
-              isMetaFrontendIntegrationKey(integration.integrationKey) && metaConnected
+              isMetaFrontendIntegrationKey(integration.integrationKey) &&
+              !metaStatusLoading &&
+              metaConnected
                 ? handleMetaDisconnect
                 : undefined
             }
             disabled={!isMetaFrontendIntegrationKey(integration.integrationKey)}
-            loading={isMetaFrontendIntegrationKey(integration.integrationKey) && metaLoading}
+            loading={
+              isMetaFrontendIntegrationKey(integration.integrationKey) &&
+              (metaLoading || metaStatusLoading)
+            }
             error={isMetaFrontendIntegrationKey(integration.integrationKey) ? metaError : ""}
             />
         ))}

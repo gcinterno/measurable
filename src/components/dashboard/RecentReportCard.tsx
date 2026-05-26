@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { ReportLibraryCard } from "@/components/reports/ReportLibraryCard";
+import { updateReportFolder } from "@/lib/api/reports";
 import type { Report } from "@/types/report";
 
 type RecentReportCardProps = {
@@ -48,23 +49,26 @@ export function RecentReportCard({
   onDeleted,
   onDeleteError,
 }: RecentReportCardProps) {
-  const [folders, setFolders] = useState<ReportFolder[]>([]);
-  const [assignments, setAssignments] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    setFolders(loadStoredFolders());
-    setAssignments(loadStoredAssignments());
-  }, []);
+  const [folders] = useState<ReportFolder[]>(() => loadStoredFolders());
+  const [assignments, setAssignments] = useState<Record<string, string>>(
+    () => loadStoredAssignments()
+  );
 
   return (
     <ReportLibraryCard
       report={report}
       folders={folders}
       folderId={assignments[report.id] || ""}
-      onMoveToFolder={(reportId, nextFolderId) => {
+      onMoveToFolder={async (reportId, nextFolderId) => {
         if (typeof window === "undefined") {
           return;
         }
+
+        const nextFolder = folders.find((folder) => folder.id === nextFolderId);
+        await updateReportFolder(reportId, {
+          folderId: nextFolderId || null,
+          folderName: nextFolder?.name || null,
+        });
 
         const nextAssignments = JSON.parse(
           window.localStorage.getItem("reportFolderAssignments") || "{}"

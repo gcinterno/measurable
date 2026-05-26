@@ -197,7 +197,7 @@ export function PlanLimitsSummary({
           </div>
           {showUpgrade ? (
             <Link
-              href="/plans"
+              href="/pricing"
               className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/8 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/12"
             >
               Upgrade plan
@@ -242,7 +242,7 @@ export function PlanLimitsSummary({
         </div>
         {showUpgrade ? (
           <Link
-            href="/plans"
+            href="/pricing"
             className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
           >
             Upgrade plan

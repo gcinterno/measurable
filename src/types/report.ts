@@ -8,6 +8,15 @@ export type ReportSource = {
   label?: string;
 };
 
+export type ReportIntegrationMetadata = {
+  integrationType?: string;
+  integrationDisplayName?: string;
+  sourceName?: string;
+  sourceHandle?: string;
+  socialNetwork?: string;
+  channel?: string;
+};
+
 export type Report = {
   id: string;
   title: string;
@@ -16,6 +25,7 @@ export type Report = {
   thumbnailUrl?: string;
   sourceSummary?: string;
   reportSources?: ReportSource[];
+  integrationMetadata?: ReportIntegrationMetadata;
   description?: ReportDescription | null;
   branding?: {
     logoUrl?: string;
@@ -23,6 +33,37 @@ export type Report = {
     source?: string;
     brandNameSource?: string;
   };
+  rawIntegrationHints?: {
+    integrationLabel?: string;
+    integrationType?: string;
+    integrationDisplayName?: string;
+    sourceName?: string;
+    sourceHandle?: string;
+    socialNetwork?: string;
+    channel?: string;
+    brandName?: string;
+    logoUrl?: string;
+    periodStart?: string;
+    periodEnd?: string;
+    template?: string;
+    reportTitle?: string;
+    sourceType?: string;
+    integration?: string;
+    type?: string;
+    reportType?: string;
+    pageName?: string;
+  };
+  workspaceId?: string;
+  integrationType?: string;
+  integrationLabel?: string;
+  sourceName?: string;
+  channel?: string;
+  brandName?: string;
+  logoUrl?: string;
+  periodStart?: string;
+  periodEnd?: string;
+  template?: string;
+  reportTitle?: string;
 };
 
 export type ReportDescriptionTimeframe = {

@@ -6,23 +6,24 @@ import { useRouter } from "next/navigation";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { useI18n } from "@/components/providers/LanguageProvider";
+import { fetchAccountSummary, updateAccountDisplayName, type AccountSummary } from "@/lib/api/account";
 import { isAbortError, isAuthError } from "@/lib/api";
+import { API_URL } from "@/lib/api/config";
 import { deleteAccount } from "@/lib/api/auth";
-import { fetchIntegrationsConnectionStatus } from "@/lib/api/integrations";
 import { fetchCurrentUser } from "@/lib/api/me";
-import { fetchReports } from "@/lib/api/reports";
+import { resolveAssetUrl } from "@/lib/reports/branding";
 import {
   fetchWorkspace,
   updateWorkspaceBranding,
+  uploadWorkspaceBrandLogo,
 } from "@/lib/api/workspaces";
 import { startLogoutInProgress } from "@/lib/auth/session";
 import {
-  integrationCatalog,
-  META_FRONTEND_INTEGRATION_KEYS,
 } from "@/lib/integrations/catalog";
 import { useAuthStore } from "@/lib/store/auth-store";
 import { usePreferencesStore } from "@/lib/store/preferences-store";
 import { getActiveWorkspaceId } from "@/lib/workspace/session";
+import type { AppLanguage } from "@/lib/store/preferences-store";
 import type { User } from "@/types/auth";
 import type { Workspace } from "@/types/workspace";
 
@@ -49,6 +50,14 @@ const deletionReasons = [
 ] as const;
 
 const LOGO_CROP_SIZE = 512;
+const MAX_BRAND_LOGO_SIZE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_BRAND_LOGO_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+  "image/svg+xml",
+]);
 
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -127,14 +136,20 @@ export default function SettingsPage() {
   const logout = useAuthStore((state) => state.logout);
   const [user, setUser] = useState<User | null>(null);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
-  const [reportsGenerated, setReportsGenerated] = useState(0);
-  const [reportsAvailable, setReportsAvailable] = useState(0);
-  const [connectedIntegrationsCount, setConnectedIntegrationsCount] = useState(0);
+  const [accountSummary, setAccountSummary] = useState<AccountSummary | null>(null);
   const [brandNameDraft, setBrandNameDraft] = useState(preferences.brandName);
   const [logoUrlDraft, setLogoUrlDraft] = useState(preferences.logoDataUrl);
+  const [accountNameDraft, setAccountNameDraft] = useState(preferences.displayName);
   const [loadingWorkspace, setLoadingWorkspace] = useState(true);
   const [savingWorkspace, setSavingWorkspace] = useState(false);
+  const [savingAccountName, setSavingAccountName] = useState(false);
   const [saved, setSaved] = useState("");
+  const [accountNameSaved, setAccountNameSaved] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [accountNameError, setAccountNameError] = useState("");
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [logoRemoved, setLogoRemoved] = useState(false);
+  const [logoPreviewFailed, setLogoPreviewFailed] = useState(false);
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [cropSource, setCropSource] = useState("");
   const [cropSourceWidth, setCropSourceWidth] = useState(0);
@@ -162,8 +177,6 @@ export default function SettingsPage() {
     [cropSourceHeight, cropSourceWidth]
   );
   const cropVisibleSize = cropMinDimension > 0 ? cropMinDimension / cropZoom : 0;
-  const cropMaxX = Math.max(0, cropSourceWidth - cropVisibleSize);
-  const cropMaxY = Math.max(0, cropSourceHeight - cropVisibleSize);
   const cropPreviewScale = cropVisibleSize > 0 ? 240 / cropVisibleSize : 1;
   const cropPreviewImageStyle =
     cropSourceWidth > 0 && cropSourceHeight > 0
@@ -174,7 +187,13 @@ export default function SettingsPage() {
           transform: `translate(${-cropOffsetX * cropPreviewScale}px, ${-cropOffsetY * cropPreviewScale}px)`,
         }
       : undefined;
-  const isFreePlan = workspace?.plan?.trim().toLowerCase() === "free";
+  const isFreePlan =
+    accountSummary?.isFreePlan ??
+    (workspace?.plan?.trim().toLowerCase() === "free");
+  const resolvedLogoPreviewUrl = useMemo(
+    () => resolveAssetUrl(logoUrlDraft, API_URL, { workspaceId: workspace?.id }) || "",
+    [logoUrlDraft, workspace?.id]
+  );
 
   function clampCropOffsets(nextOffsetX: number, nextOffsetY: number, nextZoom = cropZoom) {
     const nextVisibleSize = cropMinDimension > 0 ? cropMinDimension / nextZoom : 0;
@@ -230,9 +249,10 @@ export default function SettingsPage() {
         setWorkspace(currentWorkspace);
         setBrandNameDraft(backendBrandName || preferences.brandName);
         setLogoUrlDraft(backendLogoUrl);
+        setLogoPreviewFailed(false);
+        setLogoRemoved(false);
         preferences.updatePreferences({
           brandName: backendBrandName || preferences.brandName,
-          displayName: backendBrandName || preferences.displayName,
           logoDataUrl: backendLogoUrl,
           logoSource: backendLogoUrl ? "workspace" : "",
         });
@@ -247,30 +267,31 @@ export default function SettingsPage() {
       }
     }
 
-    async function loadWorkspaceStats() {
-      const [reportsResult, integrationsResult] = await Promise.allSettled([
-        fetchReports({ signal: controller.signal }),
-        fetchIntegrationsConnectionStatus(),
-      ]);
+    async function loadAccountData() {
+      try {
+        const summary = await fetchAccountSummary({
+          signal: controller.signal,
+        });
 
-      if (!active) {
-        return;
+        if (!active) {
+          return;
+        }
+
+        setAccountSummary(summary);
+        setAccountNameDraft(
+          summary.accountDisplayName || summary.accountDisplayNameEffective
+        );
+        preferences.updatePreferences({
+          displayName: summary.accountDisplayNameEffective,
+        });
+      } catch (error) {
+        if (!isAbortError(error) && !isAuthError(error)) {
+          console.error("settings account summary error:", error);
+        }
       }
-
-      if (reportsResult.status === "fulfilled") {
-        setReportsGenerated(reportsResult.value.length);
-        setReportsAvailable(reportsResult.value.length);
-      }
-
-      setConnectedIntegrationsCount(
-        integrationsResult.status === "fulfilled" &&
-          integrationsResult.value.metaConnected
-          ? META_FRONTEND_INTEGRATION_KEYS.length
-          : 0
-      );
     }
 
-    void Promise.all([loadUser(), loadWorkspace(), loadWorkspaceStats()]);
+    void Promise.all([loadUser(), loadWorkspace(), loadAccountData()]);
 
     return () => {
       active = false;
@@ -280,12 +301,26 @@ export default function SettingsPage() {
 
   async function handleLogoChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
+    event.target.value = "";
 
     if (!file) {
       return;
     }
 
+    if (!ALLOWED_BRAND_LOGO_TYPES.has(file.type)) {
+      setSaved("");
+      setSaveError("We could not upload the logo right now.");
+      return;
+    }
+
+    if (file.size > MAX_BRAND_LOGO_SIZE_BYTES) {
+      setSaved("");
+      setSaveError("We could not upload the logo right now.");
+      return;
+    }
+
     try {
+      setSaveError("");
       const dataUrl = await readFileAsDataUrl(file);
       const dimensions = await loadImageDimensions(dataUrl);
       const minDimension = Math.min(dimensions.width, dimensions.height);
@@ -298,9 +333,10 @@ export default function SettingsPage() {
       setCropOffsetY(Math.max(0, (dimensions.height - minDimension) / 2));
       setCropModalOpen(true);
       setSaved("");
-      event.target.value = "";
     } catch (error) {
       console.error("settings logo file error:", error);
+      setSaved("");
+      setSaveError("We could not upload the logo right now.");
     }
   }
 
@@ -310,6 +346,9 @@ export default function SettingsPage() {
     }
 
     try {
+      setUploadingLogo(true);
+      setSaved("");
+      setSaveError("");
       const dataUrl = await buildCroppedLogo({
         src: cropSource,
         width: cropSourceWidth,
@@ -318,25 +357,36 @@ export default function SettingsPage() {
         offsetX: cropOffsetX,
         offsetY: cropOffsetY,
       });
+      const logoBlob = await fetch(dataUrl).then((response) => response.blob());
+      const uploadedLogo = await uploadWorkspaceBrandLogo(
+        new File([logoBlob], "brand-logo.png", { type: "image/png" })
+      );
 
-      setLogoUrlDraft(dataUrl);
+      setLogoUrlDraft(uploadedLogo.logoUrl);
+      setLogoPreviewFailed(false);
+      setLogoRemoved(false);
       setCropModalOpen(false);
       setSaved("");
     } catch (error) {
-      console.error("settings logo crop error:", error);
+      console.error("settings logo upload error:", {
+        endpoint: "/workspace/branding/logo",
+        error,
+      });
       setSaved("");
+      setSaveError("We could not upload the logo right now.");
+    } finally {
+      setUploadingLogo(false);
     }
   }
 
   async function handleSave(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const workspaceId = getActiveWorkspaceId();
-    const nextBrandName = brandNameDraft.trim() || "Measurable";
+      const workspaceId = getActiveWorkspaceId();
+      const nextBrandName = brandNameDraft.trim() || "Measurable";
 
     if (!workspaceId) {
       preferences.updatePreferences({
         brandName: nextBrandName,
-        displayName: nextBrandName,
         logoDataUrl: "",
         logoSource: "",
       });
@@ -346,28 +396,77 @@ export default function SettingsPage() {
 
     try {
       setSavingWorkspace(true);
-      const { workspace: updatedWorkspace } = await updateWorkspaceBranding(workspaceId, {
+      setSaveError("");
+      const payload = {
         brandName: nextBrandName,
-        logoUrl: logoUrlDraft || null,
-      });
+        ...(logoRemoved
+          ? { removeLogo: true as const }
+          : logoUrlDraft
+            ? { logoUrl: logoUrlDraft }
+            : {}),
+      };
+      const { workspace: updatedWorkspace } = await updateWorkspaceBranding(
+        workspaceId,
+        payload
+      );
 
       setWorkspace(updatedWorkspace);
       setBrandNameDraft(updatedWorkspace.branding?.brandName || nextBrandName);
       setLogoUrlDraft(updatedWorkspace.branding?.logoUrl || "");
+      setLogoPreviewFailed(false);
       preferences.updatePreferences({
         brandName: updatedWorkspace.branding?.brandName || nextBrandName,
-        displayName: updatedWorkspace.branding?.brandName || nextBrandName,
         logoDataUrl: updatedWorkspace.branding?.logoUrl || "",
         logoSource: updatedWorkspace.branding?.logoUrl ? "workspace" : "",
       });
+      setLogoRemoved(false);
       setSaved(messages.settings.changesSaved);
     } catch (error) {
       if (!isAbortError(error) && !isAuthError(error)) {
-        console.error("settings workspace update error:", error);
+        console.error("settings workspace update error:", {
+          endpoint: "/workspace/branding",
+          payload: {
+            brand_name: nextBrandName,
+            ...(logoRemoved
+              ? { remove_logo: true }
+              : logoUrlDraft
+                ? { logo_url: logoUrlDraft }
+                : {}),
+          },
+          error,
+        });
       }
       setSaved("");
+      setSaveError("No se pudieron guardar los cambios. Intenta nuevamente.");
     } finally {
       setSavingWorkspace(false);
+    }
+  }
+
+  async function handleSaveAccountName() {
+    const nextAccountName = accountNameDraft.trim();
+
+    try {
+      setSavingAccountName(true);
+      setAccountNameError("");
+      await updateAccountDisplayName(nextAccountName);
+      const refreshedSummary = await fetchAccountSummary();
+      setAccountSummary(refreshedSummary);
+      setAccountNameDraft(
+        refreshedSummary.accountDisplayName || refreshedSummary.accountDisplayNameEffective
+      );
+      preferences.updatePreferences({
+        displayName: refreshedSummary.accountDisplayNameEffective,
+      });
+      setAccountNameSaved(messages.settings.changesSaved);
+    } catch (error) {
+      if (!isAbortError(error) && !isAuthError(error)) {
+        console.error("settings account name update error:", error);
+      }
+      setAccountNameSaved("");
+      setAccountNameError("No se pudieron guardar los cambios. Intenta nuevamente.");
+    } finally {
+      setSavingAccountName(false);
     }
   }
 
@@ -423,214 +522,206 @@ export default function SettingsPage() {
         onSubmit={handleSave}
         className="grid max-w-full gap-6 overflow-x-hidden"
       >
-        <section className="grid gap-4 md:grid-cols-3">
-          {[
-            {
-              label: "Reportes generados",
-              value: String(reportsGenerated),
-              description: "Total creado en este workspace.",
-            },
-            {
-              label: "Reportes disponibles",
-              value: String(reportsAvailable),
-              description: "Reportes listos para abrir y exportar.",
-            },
-            {
-              label: "Integraciones conectadas",
-              value: `${connectedIntegrationsCount}/${integrationCatalog.length}`,
-              description: "Conectadas del total de la plataforma.",
-            },
-          ].map((stat) => (
-            <div
-              key={stat.label}
-              className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm"
-            >
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-600">
-                {stat.label}
+        <section className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_380px] xl:items-start">
+          <div className="space-y-6">
+            <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
+                Workspace
               </p>
-              <p className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-slate-950">
-                {stat.value}
+              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+                Account Name
+              </h2>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 sm:text-base">
+                Este nombre se muestra en el header y como nombre visible de la cuenta.
               </p>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                {stat.description}
+
+              <div className="mt-8 grid gap-5">
+                <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Valor actual
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">
+                    {accountSummary?.accountDisplayNameEffective || preferences.displayName}
+                  </p>
+                </div>
+
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-950">
+                    Nombre de cuenta
+                  </span>
+                  <input
+                    type="text"
+                    value={accountNameDraft}
+                    onChange={(event) => {
+                      setAccountNameDraft(event.target.value);
+                      setAccountNameSaved("");
+                      setAccountNameError("");
+                    }}
+                    placeholder={
+                      accountSummary?.accountDisplayNameEffective || "Measurable"
+                    }
+                    className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                  />
+                </label>
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveAccountName()}
+                    disabled={savingAccountName}
+                    className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  >
+                    {savingAccountName ? "Saving..." : messages.settings.saveChanges}
+                  </button>
+                  <p className={`text-sm ${accountNameSaved ? "text-emerald-600" : "text-slate-500"}`}>
+                    {accountNameSaved || "Actualiza solo el nombre de la cuenta, sin tocar Brand Assets."}
+                  </p>
+                </div>
+                {accountNameError ? (
+                  <p className="text-sm text-red-600">{accountNameError}</p>
+                ) : null}
+              </div>
+            </section>
+
+            <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
+                {messages.settings.setupBrand}
               </p>
-            </div>
-          ))}
-        </section>
+              <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+                {messages.settings.brandAssets}
+              </h2>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 sm:text-base">
+                {messages.settings.brandAssetsDescription}
+              </p>
 
-        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
-            {messages.settings.setupBrand}
-          </p>
-          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-            {messages.settings.brandAssets}
-          </h2>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 sm:text-base">
-            {messages.settings.brandAssetsDescription}
-          </p>
-
-          <div className="mt-8">
-            <div className="relative min-w-0 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
-              <div
-                className={
-                  isFreePlan
-                    ? "pointer-events-none opacity-70 blur-[1.5px]"
-                    : ""
-                }
-              >
-              <label className="block">
-                <span className="text-sm font-medium text-slate-950">
-                  {messages.settings.brandName}
-                </span>
-                <input
-                  type="text"
-                  disabled={isFreePlan}
-                  value={brandNameDraft}
-                  onChange={(event) => {
-                    setBrandNameDraft(event.target.value);
-                    setSaved("");
-                  }}
-                  className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
-                  placeholder={messages.settings.brandNamePlaceholder}
-                />
-              </label>
-
-              <div className="mt-6">
-                <span className="text-sm font-medium text-slate-950">
-                  {messages.settings.brandLogo}
-                </span>
-                <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center">
-                  <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-[28px] border border-slate-200 bg-white">
-                    {logoUrlDraft ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={logoUrlDraft}
-                        alt="Brand logo preview"
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <span className="text-sm font-semibold text-slate-400">
-                        {messages.settings.logoPlaceholder}
+              <div className="mt-8">
+                <div className="relative min-w-0 rounded-[24px] border border-slate-200 bg-slate-50 p-5">
+                  <div
+                    className={
+                      isFreePlan
+                        ? "pointer-events-none opacity-70 blur-[1.5px]"
+                        : ""
+                    }
+                  >
+                    <label className="block">
+                      <span className="text-sm font-medium text-slate-950">
+                        {messages.settings.brandName}
                       </span>
-                    )}
+                      <input
+                        type="text"
+                        disabled={isFreePlan}
+                        value={brandNameDraft}
+                        onChange={(event) => {
+                          setBrandNameDraft(event.target.value);
+                          setSaved("");
+                          setSaveError("");
+                        }}
+                        className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                        placeholder={messages.settings.brandNamePlaceholder}
+                      />
+                    </label>
+
+                    <div className="mt-6">
+                      <span className="text-sm font-medium text-slate-950">
+                        {messages.settings.brandLogo}
+                      </span>
+                      <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center">
+                        <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-[28px] border border-slate-200 bg-white">
+                          {resolvedLogoPreviewUrl && !logoPreviewFailed ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={resolvedLogoPreviewUrl}
+                              alt="Brand logo preview"
+                              className="h-full w-full object-cover"
+                              onError={() => setLogoPreviewFailed(true)}
+                            />
+                          ) : (
+                            <span className="text-sm font-semibold text-slate-400">
+                              Logo
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm leading-6 text-slate-500">
+                            {messages.settings.logoRecommendation}
+                          </p>
+                          <div className="mt-4 flex flex-wrap gap-3">
+                            <label
+                              className={`inline-flex items-center justify-center rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
+                                isFreePlan
+                                  ? "cursor-not-allowed bg-slate-300 text-slate-500"
+                                  : "cursor-pointer bg-slate-950 text-white hover:bg-slate-800"
+                              }`}
+                            >
+                              {messages.settings.uploadLogo}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                disabled={isFreePlan || uploadingLogo || savingWorkspace}
+                                onChange={handleLogoChange}
+                              />
+                            </label>
+                            {logoUrlDraft && !isFreePlan ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setLogoUrlDraft("");
+                                  setLogoPreviewFailed(false);
+                                  setLogoRemoved(true);
+                                  setSaved("");
+                                  setSaveError("");
+                                }}
+                                disabled={uploadingLogo || savingWorkspace}
+                                className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                              >
+                                {messages.settings.removeLogo}
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-sm leading-6 text-slate-500">
-                      {messages.settings.logoRecommendation}
-                    </p>
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      <label
-                        className={`inline-flex items-center justify-center rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${
-                          isFreePlan
-                            ? "cursor-not-allowed bg-slate-300 text-slate-500"
-                            : "cursor-pointer bg-slate-950 text-white hover:bg-slate-800"
-                        }`}
-                      >
-                        {messages.settings.uploadLogo}
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          disabled={isFreePlan}
-                          onChange={handleLogoChange}
-                        />
-                      </label>
-                      {logoUrlDraft && !isFreePlan ? (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const workspaceId = getActiveWorkspaceId();
-                            setLogoUrlDraft("");
-                            preferences.updatePreferences({
-                              logoDataUrl: "",
-                              logoSource: "",
-                            });
-                            setSaved("");
-
-                            if (!workspaceId) {
-                              setSaved(messages.settings.changesSaved);
-                              return;
-                            }
-
-                            try {
-                              setSavingWorkspace(true);
-                              const { workspace: updatedWorkspace } =
-                                await updateWorkspaceBranding(workspaceId, {
-                                  brandName: brandNameDraft.trim() || undefined,
-                                  logoUrl: null,
-                                });
-                              setWorkspace(updatedWorkspace);
-                              setLogoUrlDraft(updatedWorkspace.branding?.logoUrl || "");
-                              preferences.updatePreferences({
-                                brandName:
-                                  updatedWorkspace.branding?.brandName ||
-                                  brandNameDraft.trim() ||
-                                  preferences.brandName,
-                                displayName:
-                                  updatedWorkspace.branding?.brandName ||
-                                  brandNameDraft.trim() ||
-                                  preferences.displayName,
-                                logoDataUrl: updatedWorkspace.branding?.logoUrl || "",
-                                logoSource: updatedWorkspace.branding?.logoUrl
-                                  ? "workspace"
-                                  : "",
-                              });
-                              setSaved(messages.settings.changesSaved);
-                            } catch (error) {
-                              if (!isAbortError(error) && !isAuthError(error)) {
-                                console.error("settings logo remove error:", error);
-                              }
-                              setSaved("");
-                            } finally {
-                              setSavingWorkspace(false);
-                            }
-                          }}
-                          className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                  {isFreePlan ? (
+                    <div className="pointer-events-auto absolute inset-0 z-10 flex items-center justify-center rounded-[24px] bg-white/75 px-5 text-center backdrop-blur-[2px]">
+                      <div className="max-w-md rounded-[24px] border border-slate-200 bg-white/95 p-6 shadow-[0_18px_45px_rgba(15,23,42,0.10)]">
+                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700">
+                          <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            className="h-5 w-5"
+                            aria-hidden="true"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M16.5 10V7.75a4.5 4.5 0 1 0-9 0V10m-.75 0h10.5A1.5 1.5 0 0 1 18.75 11.5v7A1.5 1.5 0 0 1 17.25 20h-10.5a1.5 1.5 0 0 1-1.5-1.5v-7A1.5 1.5 0 0 1 6.75 10Z"
+                            />
+                          </svg>
+                        </div>
+                        <h3 className="mt-4 text-lg font-semibold text-slate-950">
+                          Custom branding is available on paid plans
+                        </h3>
+                        <p className="mt-2 text-sm leading-6 text-slate-500">
+                          Upgrade your plan to add your own brand name and logo to reports.
+                        </p>
+                        <Link
+                          href="/pricing"
+                          className="mt-5 inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
                         >
-                          {messages.settings.removeLogo}
-                        </button>
-                      ) : null}
+                          Upgrade your plan
+                        </Link>
+                      </div>
                     </div>
-                  </div>
+                  ) : null}
                 </div>
               </div>
-              </div>
-              {isFreePlan ? (
-                <div className="pointer-events-auto absolute inset-0 z-10 flex items-center justify-center rounded-[24px] bg-white/75 px-5 text-center backdrop-blur-[2px]">
-                  <div className="max-w-md rounded-[24px] border border-slate-200 bg-white/95 p-6 shadow-[0_18px_45px_rgba(15,23,42,0.10)]">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700">
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        className="h-5 w-5"
-                        aria-hidden="true"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M16.5 10V7.75a4.5 4.5 0 1 0-9 0V10m-.75 0h10.5A1.5 1.5 0 0 1 18.75 11.5v7A1.5 1.5 0 0 1 17.25 20h-10.5a1.5 1.5 0 0 1-1.5-1.5v-7A1.5 1.5 0 0 1 6.75 10Z"
-                        />
-                      </svg>
-                    </div>
-                    <h3 className="mt-4 text-lg font-semibold text-slate-950">
-                      Custom branding is available on paid plans
-                    </h3>
-                    <p className="mt-2 text-sm leading-6 text-slate-500">
-                      Upgrade your plan to add your own brand name and logo to reports.
-                    </p>
-                    <Link
-                      href="/plans"
-                      className="mt-5 inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
-                    >
-                      Upgrade your plan
-                    </Link>
-                  </div>
-                </div>
-              ) : null}
-            </div>
+            </section>
           </div>
+
         </section>
 
         <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
@@ -723,7 +814,9 @@ export default function SettingsPage() {
                 <select
                   value={preferences.language}
                   onChange={(event) => {
-                    preferences.updatePreferences({ language: event.target.value });
+                    preferences.updatePreferences({
+                      language: event.target.value as AppLanguage,
+                    });
                     setSaved("");
                   }}
                   className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
@@ -787,10 +880,14 @@ export default function SettingsPage() {
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
             <button
               type="submit"
-              disabled={savingWorkspace || loadingWorkspace}
+              disabled={savingWorkspace || loadingWorkspace || uploadingLogo}
               className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
             >
-              {savingWorkspace ? "Saving..." : messages.settings.saveChanges}
+              {uploadingLogo
+                ? "Uploading..."
+                : savingWorkspace
+                  ? "Saving..."
+                  : messages.settings.saveChanges}
             </button>
             {saved ? (
               <p className="text-sm text-emerald-600">{saved}</p>
@@ -800,6 +897,9 @@ export default function SettingsPage() {
               </p>
             )}
           </div>
+          {saveError ? (
+            <p className="mt-3 text-sm text-red-600">{saveError}</p>
+          ) : null}
         </section>
 
         <div className="flex justify-center pt-2 sm:justify-start">
@@ -932,6 +1032,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={() => setCropModalOpen(false)}
+                disabled={uploadingLogo}
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
               >
                 {messages.settings.cancel}
@@ -939,10 +1040,10 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={() => void handleApplyLogoCrop()}
-                disabled={savingWorkspace}
+                disabled={savingWorkspace || uploadingLogo}
                 className="rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
               >
-                {messages.settings.applyLogo}
+                {uploadingLogo ? "Uploading..." : messages.settings.applyLogo}
               </button>
             </div>
           </div>

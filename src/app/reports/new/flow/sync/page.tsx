@@ -15,7 +15,6 @@ import {
   fetchMetaInstagramAccounts,
   fetchMetaPages,
   selectMetaPage,
-  syncAllMetaDataSources,
   syncMetaInstagramAccount,
   syncMetaPages,
 } from "@/lib/api/integrations";
@@ -187,7 +186,6 @@ function NewReportFlowSyncPageContent() {
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [syncingSource, setSyncingSource] = useState<SourceKey | null>(null);
-  const [syncingAllSources, setSyncingAllSources] = useState(false);
   const [error, setError] = useState("");
   const hasLoadedRef = useRef(false);
   const flowSteps = [
@@ -558,135 +556,6 @@ function NewReportFlowSyncPageContent() {
     }
   }
 
-  async function handleSyncAllSources() {
-    if (!hasSelectedSources) {
-      setError("Select at least one source before syncing.");
-      return;
-    }
-
-    const hasMissingAccount = selectedSources.some(
-      (sourceKey) => !selectedAccountsBySource[sourceKey].accountId
-    );
-
-    if (hasMissingAccount) {
-      setError("Select an account for each source before syncing all data sources.");
-      return;
-    }
-
-    const timeframeError = validateMetaTimeframe({
-      timeframe: selectedTimeframe,
-      startDate,
-      endDate,
-    });
-
-    if (timeframeError) {
-      setError(timeframeError);
-      return;
-    }
-
-    const normalizedSelection = normalizeCurrentTimeframe();
-    const nextSyncingState = { ...selectedAccountsBySource };
-
-    selectedSources.forEach((sourceKey) => {
-      nextSyncingState[sourceKey] = {
-        ...nextSyncingState[sourceKey],
-        syncStatus: "syncing",
-        error: undefined,
-      };
-    });
-
-    setSelectedAccountsBySource(nextSyncingState);
-    setSyncingAllSources(true);
-    setError("");
-
-    try {
-      const response = await syncAllMetaDataSources({
-        facebookPageId: selectedAccountsBySource.facebook_pages.accountId || undefined,
-        instagramBusinessAccountId:
-          selectedAccountsBySource.instagram_business.accountId || undefined,
-        timeframe: normalizedSelection.key,
-      });
-
-      const nextAccountsBySource = { ...nextSyncingState };
-      let syncedCount = 0;
-      let failedCount = 0;
-
-      selectedSources.forEach((sourceKey) => {
-        const selectedAccount = selectedAccountsBySource[sourceKey];
-        const sourceResult = response.sources[sourceKey];
-
-        if (sourceResult?.success && sourceResult.datasetId) {
-          syncedCount += 1;
-          nextAccountsBySource[sourceKey] = {
-            ...selectedAccount,
-            integrationId: sourceResult.integrationId || selectedAccount.integrationId || integrationId,
-            integrationAccountId: selectedAccount.accountId,
-            datasetId: sourceResult.datasetId,
-            syncStatus: "synced",
-            error: undefined,
-          };
-          return;
-        }
-
-        failedCount += 1;
-        nextAccountsBySource[sourceKey] = {
-          ...selectedAccount,
-          datasetId: undefined,
-          syncStatus: "error",
-          error:
-            sourceResult?.detail ||
-            sourceResult?.message ||
-            "Failed to sync this data source.",
-        };
-      });
-
-      setSelectedAccountsBySource(nextAccountsBySource);
-      setIntegrationReportContext(buildNextContext(nextAccountsBySource));
-
-      if (failedCount === 0) {
-        return;
-      }
-
-      if (syncedCount > 0) {
-        setError("Some data sources synced successfully, but others failed. Review the cards and retry the failed source.");
-        return;
-      }
-
-      setError(response.message || "We could not sync the selected data sources.");
-    } catch (err: unknown) {
-      console.error("flow meta sync all error:", err);
-      setSelectedAccountsBySource((current) => {
-        const nextAccountsBySource = { ...current };
-
-        selectedSources.forEach((sourceKey) => {
-          nextAccountsBySource[sourceKey] = {
-            ...nextAccountsBySource[sourceKey],
-            datasetId: undefined,
-            syncStatus: "error",
-            error:
-              isLimitError(err)
-                ? err.message || messages.reports.syncPageDataError
-                : err instanceof ApiError && err.message
-                  ? err.message
-                  : "Failed to sync this data source.",
-          };
-        });
-
-        return nextAccountsBySource;
-      });
-
-      if (isLimitError(err)) {
-        setError(err.message || messages.reports.syncPageDataError);
-      } else if (err instanceof ApiError && err.message) {
-        setError(err.message);
-      } else {
-        setError("We could not sync the selected data sources.");
-      }
-    } finally {
-      setSyncingAllSources(false);
-    }
-  }
-
   function handleContinueToGenerate() {
     const hasMissingAccount = selectedSources.some(
       (sourceKey) => !selectedAccountsBySource[sourceKey].accountId
@@ -725,24 +594,9 @@ function NewReportFlowSyncPageContent() {
         selectedAccountsBySource[sourceKey].syncStatus === "synced" &&
         Boolean(selectedAccountsBySource[sourceKey].datasetId)
     );
-  const hasMissingSelection = selectedSources.some(
-    (sourceKey) => !selectedAccountsBySource[sourceKey].accountId
-  );
-  const syncingInFlight = syncingAllSources || Boolean(syncingSource);
-  const canSyncAllSources =
-    hasSelectedSources &&
-    !hasMissingSelection &&
-    !loading &&
-    !syncingInFlight;
-
   return (
     <AppShell>
-      {syncingAllSources ? (
-        <FlowLoadingOverlay
-          title="Syncing all data sources..."
-          description="We are syncing your selected Meta data sources. This can take a moment."
-        />
-      ) : syncingSource ? (
+      {syncingSource ? (
         <FlowLoadingOverlay
           title={messages.reports.syncing}
           description="We are syncing your Meta data. This can take a moment."
@@ -883,45 +737,13 @@ function NewReportFlowSyncPageContent() {
                   ) : null}
                 </section>
 
-                <section className="rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,#f8fbff_0%,#eef6ff_100%)] p-4 sm:p-5">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
-                        Global sync
-                      </p>
-                      <h3 className="mt-2 text-xl font-semibold text-slate-950">
-                        Sync all data sources
-                      </h3>
-                      <p className="mt-2 text-sm leading-6 text-slate-500">
-                        Run one sync for all selected Meta data sources and keep the flow moving in a single step.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void handleSyncAllSources()}
-                      disabled={!canSyncAllSources}
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                    >
-                      {syncingAllSources ? (
-                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                      ) : null}
-                      Sync all data sources
-                    </button>
-                  </div>
-                  {hasMissingSelection ? (
-                    <p className="mt-3 text-sm text-slate-500">
-                      Select an account for each source to enable the global sync action.
-                    </p>
-                  ) : null}
-                </section>
-
                 <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
                   {selectedSources.map((sourceKey) => {
                     const config = getSourceConfig(sourceKey);
                     const sourceSelectorState = sourceState[sourceKey];
                     const selectedAccount = selectedAccountsBySource[sourceKey];
                     const isSourceLoading = sourceSelectorState.loading || loading;
-                    const isSourceSyncing = syncingAllSources || syncingSource === sourceKey;
+                    const isSourceSyncing = syncingSource === sourceKey;
 
                     return (
                       <div key={sourceKey}>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { SlideRenderer } from "@/components/reports/SlideRenderer";
 import { buildExecutiveDarkViewModel } from "@/components/reports/report-view.helpers";
+import { fetchAccountSummary } from "@/lib/api/account";
 import { getMeasurableBrandingOverride } from "@/lib/branding";
 import {
   fetchReportDetail,
@@ -54,7 +55,11 @@ function getLatestReportVersionId(versions: ReportVersionCandidate[]) {
 
 function LoadingState() {
   return (
-    <div className="report-pdf-mode min-h-screen bg-[#07111f] px-0 py-0">
+    <div
+      className="report-pdf-mode min-h-screen bg-[#07111f] px-0 py-0"
+      data-report-export-ready="false"
+      data-report-export-status="loading"
+    >
       <div className="mx-auto w-[1160px] space-y-0">
         {Array.from({ length: 5 }).map((_, index) => (
           <section
@@ -71,7 +76,11 @@ function LoadingState() {
 
 function ErrorState({ message }: { message: string }) {
   return (
-    <div className="report-pdf-mode flex min-h-screen items-center justify-center bg-[#eef3f8] px-8 py-12">
+    <div
+      className="report-pdf-mode flex min-h-screen items-center justify-center bg-[#eef3f8] px-8 py-12"
+      data-report-export-ready="true"
+      data-report-export-status="error"
+    >
       <div className="w-full max-w-2xl rounded-[32px] border border-slate-200 bg-white p-8 shadow-sm">
         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-red-600">
           Export
@@ -101,6 +110,7 @@ export function ReportPdfView({ reportId, exportAuthToken }: ReportPdfViewProps)
   const [fontsReady, setFontsReady] = useState(false);
   const [slidesRendered, setSlidesRendered] = useState(false);
   const [error, setError] = useState("");
+  const [showFreeWatermark, setShowFreeWatermark] = useState(false);
   const rootRef = useRef<HTMLElement | null>(null);
   const selectedTemplateId = useMemo(
     () => getStoredReportTemplateSelection(reportId),
@@ -114,6 +124,34 @@ export function ReportPdfView({ reportId, exportAuthToken }: ReportPdfViewProps)
       hasExportAuthToken: Boolean(exportAuthToken),
     });
   }, [exportAuthToken, reportId]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadAccountSummary() {
+      try {
+        const summary = await fetchAccountSummary();
+
+        if (!active) {
+          return;
+        }
+
+        setShowFreeWatermark(
+          summary.isFreePlan ||
+            summary.reportBrandingMode === "measurable" ||
+            summary.canUseCustomBranding === false
+        );
+      } catch (error) {
+        console.error("report pdf summary error:", error);
+      }
+    }
+
+    void loadAccountSummary();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -248,12 +286,24 @@ export function ReportPdfView({ reportId, exportAuthToken }: ReportPdfViewProps)
               : false;
 
             if (
-              slideCount === 5 &&
+              slideCount > 0 &&
               svgCount > 0 &&
               slideWidthReady &&
               slideHeightReady &&
-              logosReady
+              (logos.length === 0 || logosReady)
             ) {
+              setSlidesRendered(true);
+              return;
+            }
+
+            if (slideCount > 0 && slideWidthReady && slideHeightReady) {
+              console.warn("report pdf view export readiness fallback used", {
+                reportId,
+                slideCount,
+                svgCount,
+                logos: logos.length,
+                logosReady,
+              });
               setSlidesRendered(true);
             }
           }, 80);
@@ -269,7 +319,7 @@ export function ReportPdfView({ reportId, exportAuthToken }: ReportPdfViewProps)
       active = false;
       window.cancelAnimationFrame(firstFrame);
     };
-  }, [blocks.length, error, fontsReady, loading, reportDetail?.logoUrl]);
+  }, [blocks.length, error, fontsReady, loading, reportDetail?.logoUrl, reportId]);
 
   const viewModel = useMemo(
     () =>
@@ -531,7 +581,9 @@ export function ReportPdfView({ reportId, exportAuthToken }: ReportPdfViewProps)
             model={viewModel}
             renderMode="export"
             branding={resolvedBranding}
+            report={reportDetail}
             templateId={selectedTemplateId}
+            watermarkText={showFreeWatermark ? "Reporte creado con measurableapp.com" : undefined}
           />
         </div>
       </main>

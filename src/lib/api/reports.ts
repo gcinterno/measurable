@@ -33,6 +33,8 @@ type BackendReport = {
   id?: string | number;
   report_id?: string | number;
   title?: string | null;
+  report_title?: string | null;
+  reportTitle?: string | null;
   name?: string | null;
   status?: string | null;
   created_at?: string | null;
@@ -48,6 +50,8 @@ type BackendReport = {
   brandLogoUrl?: string | null;
   logo_url?: string | null;
   logoUrl?: string | null;
+  integration_label?: string | null;
+  integrationLabel?: string | null;
   resolved_logo_url?: string | null;
   resolvedLogoUrl?: string | null;
   resolved_brand_name?: string | null;
@@ -68,6 +72,46 @@ type BackendReport = {
   } | null;
   report_sources?: BackendReportSource[] | null;
   reportSources?: BackendReportSource[] | null;
+  integration_metadata?: {
+    integration_type?: string | null;
+    integration_display_name?: string | null;
+    source_name?: string | null;
+    source_handle?: string | null;
+    social_network?: string | null;
+    channel?: string | null;
+  } | null;
+  integrationMetadata?: {
+    integration_type?: string | null;
+    integration_display_name?: string | null;
+    source_name?: string | null;
+    source_handle?: string | null;
+    social_network?: string | null;
+    channel?: string | null;
+  } | null;
+  integration_type?: string | null;
+  integrationType?: string | null;
+  integration_display_name?: string | null;
+  integrationDisplayName?: string | null;
+  source_name?: string | null;
+  sourceName?: string | null;
+  source_handle?: string | null;
+  sourceHandle?: string | null;
+  social_network?: string | null;
+  socialNetwork?: string | null;
+  channel?: string | null;
+  period_start?: string | null;
+  periodStart?: string | null;
+  period_end?: string | null;
+  periodEnd?: string | null;
+  template?: string | null;
+  source_type?: string | null;
+  sourceType?: string | null;
+  integration?: string | null;
+  type?: string | null;
+  report_type?: string | null;
+  reportType?: string | null;
+  page_name?: string | null;
+  pageName?: string | null;
   blocks?: BackendBlock[] | null;
 };
 
@@ -147,6 +191,8 @@ type BackendVersionViewResponse = {
   brandLogoUrl?: string | null;
   logo_url?: string | null;
   logoUrl?: string | null;
+  integration_label?: string | null;
+  integrationLabel?: string | null;
   resolved_logo_url?: string | null;
   resolvedLogoUrl?: string | null;
   resolved_brand_name?: string | null;
@@ -166,9 +212,93 @@ type BackendVersionViewResponse = {
   blocks?: BackendVersionViewBlock[] | null;
 };
 
+type ReportShareResponse = {
+  status?: string;
+  report_id?: string | number;
+  reportId?: string | number;
+  share_token?: string;
+  shareToken?: string;
+  share_url?: string;
+  shareUrl?: string;
+};
+
+type PublicSharedReportResponse = {
+  report?: BackendReport | null;
+  version?: BackendVersionViewResponse | null;
+  blocks?: BackendVersionViewBlock[] | null;
+  is_public_share?: boolean;
+  isPublicShare?: boolean;
+};
+
 type ReportsResponse =
   | BackendReport[]
   | { reports?: BackendReport[]; items?: BackendReport[]; data?: BackendReport[] };
+
+function normalizeIntegrationMetadata(report: BackendReport) {
+  const metadata = report.integration_metadata || report.integrationMetadata;
+
+  const integrationType =
+    metadata?.integration_type ||
+    report.integration_type ||
+    report.integrationType ||
+    undefined;
+  const integrationLabel =
+    report.integration_label ||
+    report.integrationLabel ||
+    metadata?.integration_display_name ||
+    report.integration_display_name ||
+    report.integrationDisplayName ||
+    undefined;
+  const integrationDisplayName =
+    metadata?.integration_display_name ||
+    report.integration_display_name ||
+    report.integrationDisplayName ||
+    integrationLabel ||
+    undefined;
+  const sourceName =
+    metadata?.source_name ||
+    report.source_name ||
+    report.sourceName ||
+    report.page_name ||
+    report.pageName ||
+    undefined;
+  const sourceHandle =
+    metadata?.source_handle ||
+    report.source_handle ||
+    report.sourceHandle ||
+    undefined;
+  const socialNetwork =
+    metadata?.social_network ||
+    report.social_network ||
+    report.socialNetwork ||
+    undefined;
+  const channel = metadata?.channel || report.channel || undefined;
+
+  if (
+    !integrationType &&
+    !integrationDisplayName &&
+    !sourceName &&
+    !sourceHandle &&
+    !socialNetwork &&
+    !channel
+  ) {
+    return undefined;
+  }
+
+  return {
+    integrationType: integrationType?.trim() || undefined,
+    integrationLabel: integrationLabel?.trim() || undefined,
+    integrationDisplayName: integrationDisplayName?.trim() || undefined,
+    sourceName: sourceName?.trim() || undefined,
+    sourceHandle: sourceHandle?.trim() || undefined,
+    socialNetwork: socialNetwork?.trim() || undefined,
+    channel: channel?.trim() || undefined,
+  };
+}
+
+function normalizeShareToken(token: string) {
+  return token.split("?")[0].split("#")[0].trim();
+}
 
 function normalizeReport(report: BackendReport, index: number): Report {
   const id = report.id ?? report.report_id ?? `report-${index}`;
@@ -176,22 +306,136 @@ function normalizeReport(report: BackendReport, index: number): Report {
     report.thumbnailUrl || report.thumbnail_url || undefined;
   const branding = extractReportBranding(report);
   const reportSources = normalizeReportSources(report.report_sources || report.reportSources);
+  const normalizedIntegrationMetadata = normalizeIntegrationMetadata(report);
+  const normalizedTitle =
+    report.report_title ||
+    report.reportTitle ||
+    report.title ||
+    report.name ||
+    `Reporte ${index + 1}`;
+  const normalizedSourceSummary =
+    formatReportSourceSummary(reportSources) ||
+    report.source_name ||
+    report.sourceName ||
+    report.integration_label ||
+    report.integrationLabel ||
+    normalizedIntegrationMetadata?.sourceName ||
+    "";
 
   return {
     id: String(id),
-    title: report.title || report.name || `Reporte ${index + 1}`,
+    title: normalizedTitle,
     status: report.status || "No status",
     createdAt: report.created_at || report.createdAt || "",
     thumbnailUrl: normalizedThumbnailUrl,
-    sourceSummary: formatReportSourceSummary(reportSources),
+    sourceSummary: normalizedSourceSummary,
     reportSources,
-    description: normalizeReportDescription(report.description),
+    integrationMetadata: normalizedIntegrationMetadata,
+    description: normalizeReportDescriptionWithPeriod(
+      report.description,
+      report.period_start || report.periodStart || null,
+      report.period_end || report.periodEnd || null
+    ),
     branding: {
       logoUrl: branding.logoUrl,
       brandName: branding.brandName,
       source: branding.source,
       brandNameSource: branding.brandNameSource,
     },
+    rawIntegrationHints: {
+      integrationLabel:
+        report.integration_label?.trim() ||
+        report.integrationLabel?.trim() ||
+        normalizedIntegrationMetadata?.integrationLabel ||
+        undefined,
+      integrationType:
+        report.integration_type?.trim() ||
+        report.integrationType?.trim() ||
+        undefined,
+      integrationDisplayName:
+        report.integration_display_name?.trim() ||
+        report.integrationDisplayName?.trim() ||
+        undefined,
+      sourceName:
+        report.source_name?.trim() ||
+        report.sourceName?.trim() ||
+        undefined,
+      sourceHandle:
+        report.source_handle?.trim() ||
+        report.sourceHandle?.trim() ||
+        undefined,
+      socialNetwork:
+        report.social_network?.trim() ||
+        report.socialNetwork?.trim() ||
+        undefined,
+      channel: report.channel?.trim() || undefined,
+      brandName:
+        report.brand_name?.trim() ||
+        report.brandName?.trim() ||
+        branding.brandName ||
+        undefined,
+      logoUrl:
+        report.logo_url?.trim() ||
+        report.logoUrl?.trim() ||
+        branding.logoUrl ||
+        undefined,
+      periodStart:
+        report.period_start?.trim() ||
+        report.periodStart?.trim() ||
+        undefined,
+      periodEnd:
+        report.period_end?.trim() ||
+        report.periodEnd?.trim() ||
+        undefined,
+      template: report.template?.trim() || undefined,
+      reportTitle:
+        report.report_title?.trim() ||
+        report.reportTitle?.trim() ||
+        normalizedTitle,
+      sourceType:
+        report.source_type?.trim() ||
+        report.sourceType?.trim() ||
+        undefined,
+      integration: report.integration?.trim() || undefined,
+      type: report.type?.trim() || undefined,
+      reportType:
+        report.report_type?.trim() ||
+        report.reportType?.trim() ||
+        undefined,
+      pageName:
+        report.page_name?.trim() ||
+        report.pageName?.trim() ||
+        undefined,
+    },
+    workspaceId:
+      report.workspace_id !== undefined && report.workspace_id !== null
+        ? String(report.workspace_id)
+        : report.workspaceId !== undefined && report.workspaceId !== null
+          ? String(report.workspaceId)
+          : undefined,
+    integrationType:
+      report.integration_type?.trim() ||
+      report.integrationType?.trim() ||
+      normalizedIntegrationMetadata?.integrationType ||
+      undefined,
+    integrationLabel:
+      report.integration_label?.trim() ||
+      report.integrationLabel?.trim() ||
+      normalizedIntegrationMetadata?.integrationLabel ||
+      normalizedIntegrationMetadata?.integrationDisplayName ||
+      undefined,
+    sourceName:
+      report.source_name?.trim() ||
+      report.sourceName?.trim() ||
+      normalizedIntegrationMetadata?.sourceName ||
+      undefined,
+    channel: report.channel?.trim() || normalizedIntegrationMetadata?.channel || undefined,
+    brandName: branding.brandName || report.brand_name?.trim() || report.brandName?.trim() || undefined,
+    logoUrl: branding.logoUrl || report.logo_url?.trim() || report.logoUrl?.trim() || undefined,
+    periodStart: report.period_start?.trim() || report.periodStart?.trim() || undefined,
+    periodEnd: report.period_end?.trim() || report.periodEnd?.trim() || undefined,
+    template: report.template?.trim() || undefined,
+    reportTitle: normalizedTitle,
   };
 }
 
@@ -228,6 +472,47 @@ function normalizeReportDescription(value: unknown) {
       until: typeof timeframe.until === "string" ? timeframe.until : undefined,
       key: typeof timeframe.key === "string" ? timeframe.key : undefined,
       preset: typeof timeframe.preset === "string" ? timeframe.preset : undefined,
+    },
+  };
+}
+
+function normalizeReportDescriptionWithPeriod(
+  value: unknown,
+  periodStart?: string | null,
+  periodEnd?: string | null
+) {
+  const description = normalizeReportDescription(value);
+
+  if (!description) {
+    if (!periodStart && !periodEnd) {
+      return null;
+    }
+
+    return {
+      timeframe: {
+        label: undefined,
+        since: periodStart || undefined,
+        until: periodEnd || undefined,
+        key: undefined,
+        preset: undefined,
+      },
+    };
+  }
+
+  const timeframe = description.timeframe || null;
+
+  if (timeframe?.since || timeframe?.until || (!periodStart && !periodEnd)) {
+    return description;
+  }
+
+  return {
+    ...description,
+    timeframe: {
+      label: timeframe?.label,
+      since: timeframe?.since || periodStart || undefined,
+      until: timeframe?.until || periodEnd || undefined,
+      key: timeframe?.key,
+      preset: timeframe?.preset,
     },
   };
 }
@@ -380,8 +665,23 @@ function formatReportSourceSummary(reportSources: ReportSource[]) {
   return labels.join(" + ");
 }
 
-export async function fetchReports(options?: { signal?: AbortSignal }) {
-  const finalUrl = apiUrl("/reports");
+export async function fetchReports(options?: {
+  signal?: AbortSignal;
+  integrationType?: string;
+  channel?: string;
+}) {
+  const searchParams = new URLSearchParams();
+
+  if (options?.integrationType) {
+    searchParams.set("integration_type", options.integrationType);
+  }
+
+  if (options?.channel) {
+    searchParams.set("channel", options.channel);
+  }
+
+  const endpoint = searchParams.size > 0 ? `/reports?${searchParams.toString()}` : "/reports";
+  const finalUrl = apiUrl(endpoint);
   const authHeaders = getAuthHeaders();
   const authMode = authHeaders?.Authorization ? "bearer" : "none";
   let lastError: Error | null = null;
@@ -394,7 +694,7 @@ export async function fetchReports(options?: { signal?: AbortSignal }) {
         authMode,
       });
 
-      const response = await apiFetch<ReportsResponse>("/reports", {
+      const response = await apiFetch<ReportsResponse>(endpoint, {
         cache: "no-store",
         signal: options?.signal,
       });
@@ -437,37 +737,82 @@ export async function fetchReports(options?: { signal?: AbortSignal }) {
 }
 
 export async function deleteReport(reportId: string) {
-  const endpoint = `/reports/${reportId}`;
-  const requestUrl = apiUrl(endpoint);
-  const authHeaders = getAuthHeaders();
+  if (!reportId?.trim()) {
+    throw new Error("Report id missing for delete");
+  }
 
-  console.log("DELETE_REPORT_REQUEST_PAYLOAD", {
-    endpoint,
-    method: "DELETE",
-    reportId,
-    requestUrl,
-    hasBearerToken: Boolean(authHeaders?.Authorization),
+  const attempts = [
+    {
+      endpoint: `/reports/${reportId}`,
+      method: "DELETE",
+    },
+    {
+      endpoint: `/reports/${reportId}/delete`,
+      method: "POST",
+    },
+  ] as const;
+  let lastError: unknown = null;
+
+  for (const attempt of attempts) {
+    const requestUrl = apiUrl(attempt.endpoint);
+    const authHeaders = getAuthHeaders();
+
+    console.log("DELETE_REPORT_REQUEST_PAYLOAD", {
+      endpoint: attempt.endpoint,
+      method: attempt.method,
+      reportId,
+      requestUrl,
+      hasBearerToken: Boolean(authHeaders?.Authorization),
+    });
+
+    try {
+      const response = await fetch(requestUrl, {
+        method: attempt.method,
+        headers: authHeaders,
+        cache: "no-store",
+        credentials: "include",
+      });
+      const rawResponseBody = await response.clone().text();
+
+      console.log("DELETE_REPORT_RESPONSE_STATUS", {
+        endpoint: attempt.endpoint,
+        ok: response.ok,
+        reportId,
+        status: response.status,
+        statusText: response.statusText,
+      });
+      console.log("DELETE_REPORT_RESPONSE_BODY", rawResponseBody || null);
+
+      await readApiResponseText(attempt.endpoint, response);
+      return;
+    } catch (error) {
+      lastError = error;
+      console.error("delete report request failed:", {
+        endpoint: attempt.endpoint,
+        method: attempt.method,
+        reportId,
+        error,
+      });
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Delete report failed");
+}
+
+export async function updateReportFolder(
+  reportId: string,
+  input: {
+    folderId: string | null;
+    folderName: string | null;
+  }
+) {
+  await apiFetch(`/reports/${reportId}/folder`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      folder_id: input.folderId,
+      folder_name: input.folderName,
+    }),
   });
-
-  const response = await fetch(requestUrl, {
-    method: "DELETE",
-    headers: authHeaders,
-    cache: "no-store",
-    credentials: "include",
-  });
-
-  const rawResponseBody = await response.clone().text();
-
-  console.log("DELETE_REPORT_RESPONSE_STATUS", {
-    endpoint,
-    ok: response.ok,
-    reportId,
-    status: response.status,
-    statusText: response.statusText,
-  });
-  console.log("DELETE_REPORT_RESPONSE_BODY", rawResponseBody || null);
-
-  await readApiResponseText(endpoint, response);
 }
 
 type ReportDetailResponse = BackendReport | { report?: BackendReport; data?: BackendReport };
@@ -1144,14 +1489,37 @@ function getFilenameFromDisposition(contentDisposition: string | null, fallback:
   return fallback;
 }
 
-export async function downloadReportPdf(reportId: string) {
-  const res = await fetch(apiUrl(`/reports/${reportId}/download/pdf`), {
+export async function downloadReportPdf(
+  reportId: string,
+  options?: {
+    template?: string;
+  }
+) {
+  console.info("[PDFExport][request]", {
+    reportId,
+    template: options?.template || null,
+  });
+
+  const url = new URL(apiUrl(`/reports/${reportId}/download/pdf`));
+
+  if (options?.template) {
+    url.searchParams.set("template", options.template);
+  }
+
+  url.searchParams.set("_ts", String(Date.now()));
+
+  const res = await fetch(url.toString(), {
     method: "GET",
     headers: getAuthHeaders(),
   });
 
   if (!res.ok) {
     const errorText = await res.text();
+    console.error("[PDFExport][failure]", {
+      reportId,
+      status: res.status,
+      errorText,
+    });
     throw new Error(errorText || "PDF download failed");
   }
 
@@ -1172,4 +1540,207 @@ export async function downloadReportPdf(reportId: string) {
   window.setTimeout(() => {
     window.URL.revokeObjectURL(objectUrl);
   }, 0);
+
+  console.info("[PDFExport][success]", {
+    reportId,
+    filename,
+    size: blob.size,
+  });
+
+  return {
+    filename,
+    size: blob.size,
+  };
+}
+
+export async function createReportShare(reportId: string) {
+  const response = await apiFetch<ReportShareResponse>(`/reports/${reportId}/share`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+
+  const shareUrl = response.share_url || response.shareUrl || "";
+
+  if (!shareUrl) {
+    throw new Error("Share URL missing");
+  }
+
+  return {
+    status: response.status || "ok",
+    reportId: String(response.report_id ?? response.reportId ?? reportId),
+    shareToken: response.share_token || response.shareToken || "",
+    shareUrl,
+  };
+}
+
+export async function getPublicSharedReport(token: string) {
+  const cleanToken = normalizeShareToken(token);
+  const endpoint = `/public/reports/${encodeURIComponent(cleanToken)}`;
+
+  console.info("[PUBLIC_SHARE_DEBUG][fetch]", {
+    tokenUsed: cleanToken,
+    endpointUsed: endpoint,
+  });
+
+  try {
+    const payload = await apiFetch<PublicSharedReportResponse>(endpoint, {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    console.info("[PUBLIC_SHARE_DEBUG][fetch]", {
+      tokenUsed: cleanToken,
+      endpointUsed: endpoint,
+      status: 200,
+    });
+
+    const report = payload.report;
+    const version = payload.version;
+
+    if (!report || !version) {
+      throw new Error("Public report payload incomplete");
+    }
+
+    const branding = extractReportBranding(report);
+    const versionBranding = extractReportBranding(version);
+
+    return {
+      report: {
+        ...normalizeReport(report, 0),
+        blocks: (report.blocks || []).map(normalizeBlock),
+        workspaceId: String(report.workspace_id ?? report.workspaceId ?? ""),
+        workspaceName: report.workspace_name || report.workspaceName || undefined,
+        description: normalizeReportDescriptionWithPeriod(
+          report.description,
+          report.period_start || report.periodStart || null,
+          report.period_end || report.periodEnd || null
+        ),
+        branding: {
+          logoUrl: branding.logoUrl,
+          brandName: branding.brandName,
+          source: branding.source,
+          brandNameSource: branding.brandNameSource,
+        },
+        logoUrl: branding.logoUrl,
+        brandName: branding.brandName,
+        integrationType:
+          report.integration_type?.trim() ||
+          report.integrationType?.trim() ||
+          report.integration_metadata?.integration_type?.trim() ||
+          report.integrationMetadata?.integration_type?.trim() ||
+          undefined,
+        integrationLabel:
+          report.integration_label?.trim() ||
+          report.integrationLabel?.trim() ||
+          report.integration_metadata?.integration_display_name?.trim() ||
+          report.integrationMetadata?.integration_display_name?.trim() ||
+          undefined,
+        sourceName:
+          report.source_name?.trim() ||
+          report.sourceName?.trim() ||
+          report.integration_metadata?.source_name?.trim() ||
+          report.integrationMetadata?.source_name?.trim() ||
+          undefined,
+        channel: report.channel?.trim() || report.integration_metadata?.channel?.trim() || undefined,
+        periodStart: report.period_start?.trim() || report.periodStart?.trim() || undefined,
+        periodEnd: report.period_end?.trim() || report.periodEnd?.trim() || undefined,
+        template: report.template?.trim() || undefined,
+        reportTitle:
+          report.report_title?.trim() ||
+          report.reportTitle?.trim() ||
+          report.title?.trim() ||
+          report.name?.trim() ||
+          undefined,
+      } satisfies ReportDetail,
+      reportVersion: {
+        locale: normalizeLocale(version.locale),
+        description: normalizeReportDescription(version.description),
+        branding: {
+          logoUrl: versionBranding.logoUrl,
+          brandName: versionBranding.brandName,
+          source: versionBranding.source,
+          brandNameSource: versionBranding.brandNameSource,
+        },
+        blocks: (payload.blocks || version.blocks || []).map((block, index) => ({
+          id: String(block.id ?? block.block_id ?? `public-version-block-${index}`),
+          type: block.type || "text",
+          data: parseBlockData(block.data_json),
+          rawDataJson: block.data_json || "",
+        })) satisfies ReportVersionBlock[],
+      } satisfies ReportVersionView,
+      isPublicShare: payload.is_public_share === true || payload.isPublicShare === true,
+    };
+  } catch (error) {
+    console.info("[PUBLIC_SHARE_DEBUG][fetch]", {
+      tokenUsed: cleanToken,
+      endpointUsed: endpoint,
+      status: error instanceof Error && "status" in error ? (error as { status?: number }).status ?? null : null,
+      code: error instanceof Error && "code" in error ? (error as { code?: string }).code ?? null : null,
+    });
+    throw error;
+  }
+}
+
+export async function downloadPublicSharedReportPdf(
+  token: string,
+  options?: {
+    template?: string;
+  }
+) {
+  console.info("[PublicSharedPDF][request]", {
+    token,
+    template: options?.template || null,
+  });
+
+  const url = new URL(apiUrl(`/public/reports/${token}/download/pdf`));
+
+  if (options?.template) {
+    url.searchParams.set("template", options.template);
+  }
+
+  url.searchParams.set("_ts", String(Date.now()));
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    console.error("[PublicSharedPDF][failure]", {
+      token,
+      status: res.status,
+      errorText,
+    });
+    throw new Error(errorText || "Public PDF download failed");
+  }
+
+  const blob = await res.blob();
+  const filename = getFilenameFromDisposition(
+    res.headers.get("content-disposition"),
+    "measurable-shared-report.pdf"
+  );
+  const objectUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  window.setTimeout(() => {
+    window.URL.revokeObjectURL(objectUrl);
+  }, 0);
+
+  console.info("[PublicSharedPDF][success]", {
+    token,
+    filename,
+    size: blob.size,
+  });
+
+  return {
+    filename,
+    size: blob.size,
+  };
 }

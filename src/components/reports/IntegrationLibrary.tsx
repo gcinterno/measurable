@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { useI18n } from "@/components/providers/LanguageProvider";
@@ -19,8 +19,10 @@ import {
   createPendingMetaOAuth,
   clearMetaOAuthDebugUrl,
   hasMetaConnectPrerequisites,
+  isMetaOAuthWindowMessage,
   markMetaRedirectStarted,
   normalizeMetaAuthUrl,
+  openMetaOAuthPopup,
   showMetaOAuthReadyBanner,
   storeMetaOAuthDebugUrl,
 } from "@/lib/integrations/meta-oauth";
@@ -198,8 +200,58 @@ export function IntegrationLibrary({
   );
   const activeWorkspaceId = workspace?.id || null;
   const connectInFlightRef = useRef(false);
+  const popupPollRef = useRef<number | null>(null);
+  const popupTimeoutRef = useRef<number | null>(null);
   const maxSources = 2;
   const isReportFlowMode = mode === "report-flow";
+
+  const stopPopupPolling = useCallback(() => {
+    if (popupPollRef.current !== null && typeof window !== "undefined") {
+      window.clearInterval(popupPollRef.current);
+      popupPollRef.current = null;
+    }
+    if (popupTimeoutRef.current !== null && typeof window !== "undefined") {
+      window.clearTimeout(popupTimeoutRef.current);
+      popupTimeoutRef.current = null;
+    }
+  }, []);
+
+  const refreshMetaState = useCallback(async () => {
+    if (!embedded) {
+      return false;
+    }
+
+    let resolvedIntegrationId = metaIntegrationId;
+
+    if (!resolvedIntegrationId) {
+      const connectionStatus = await fetchIntegrationsConnectionStatus();
+
+      if (!connectionStatus.metaConnected || !connectionStatus.integrationId) {
+        setMetaCounts({
+          facebook_pages: 0,
+          instagram_business: 0,
+        });
+        setMetaFlowState("not_connected");
+        return false;
+      }
+
+      resolvedIntegrationId = connectionStatus.integrationId;
+      setMetaIntegrationId(connectionStatus.integrationId);
+    }
+
+    const [pages, instagramAccounts] = await Promise.all([
+      fetchMetaPages(resolvedIntegrationId, activeWorkspaceId),
+      fetchMetaInstagramAccounts(resolvedIntegrationId, activeWorkspaceId),
+    ]);
+
+    setMetaCounts({
+      facebook_pages: pages.length,
+      instagram_business: instagramAccounts.length,
+    });
+    setMetaFlowState("connected");
+
+    return true;
+  }, [activeWorkspaceId, embedded, metaIntegrationId]);
 
   useEffect(() => {
     setCurrentSelectedSources(selectedIntegrationKeys.filter(isMetaFrontendIntegrationKey));
@@ -304,6 +356,49 @@ export function IntegrationLibrary({
     };
   }, [activeWorkspaceId, embedded, metaIntegrationId]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    async function handleMetaWindowMessage(event: MessageEvent) {
+      if (event.origin !== window.location.origin || !isMetaOAuthWindowMessage(event.data)) {
+        return;
+      }
+
+      stopPopupPolling();
+      clearPendingMetaOAuth();
+      connectInFlightRef.current = false;
+      setConnectingIntegrationKey(null);
+
+      if (event.data.type === "MEASURABLE_META_CONNECT_SUCCESS") {
+        setConnectError("");
+
+        if (event.data.integrationId) {
+          setMetaIntegrationId(event.data.integrationId);
+        }
+
+        try {
+          await refreshMetaState();
+        } catch (error) {
+          console.error("integration library popup refresh error:", error);
+          setConnectError("La conexión terminó, pero no pudimos refrescar el estado.");
+        }
+
+        return;
+      }
+
+      setConnectError(event.data.message || "No se pudo completar la conexión con Meta.");
+    }
+
+    window.addEventListener("message", handleMetaWindowMessage);
+
+    return () => {
+      stopPopupPolling();
+      window.removeEventListener("message", handleMetaWindowMessage);
+    };
+  }, [refreshMetaState, stopPopupPolling]);
+
   const metaUi = useMemo(() => {
     switch (metaFlowState) {
       case "connected":
@@ -334,6 +429,8 @@ export function IntegrationLibrary({
       });
       return;
     }
+
+    let popupStarted = false;
 
     try {
       connectInFlightRef.current = true;
@@ -426,20 +523,60 @@ export function IntegrationLibrary({
         authUrl,
         source: integration.integrationKey,
         route: "IntegrationLibrary",
+        transport: "popup",
       });
       storeMetaOAuthDebugUrl(authUrl);
       await showMetaOAuthReadyBanner();
 
       if (typeof window !== "undefined") {
         markMetaRedirectStarted();
-        window.location.href = authUrl;
+        const popup = openMetaOAuthPopup(authUrl);
+
+        if (!popup) {
+          window.location.href = authUrl;
+          return;
+        }
+
+        popupStarted = true;
+        stopPopupPolling();
+        popupTimeoutRef.current = window.setTimeout(() => {
+          connectInFlightRef.current = false;
+          setConnectingIntegrationKey(null);
+          setConnectError(
+            "Si terminaste la conexión, ya puedes cerrar la pestaña de Meta."
+          );
+        }, 90000);
+        popupPollRef.current = window.setInterval(async () => {
+          if (!popup.closed) {
+            return;
+          }
+
+          stopPopupPolling();
+          clearPendingMetaOAuth();
+          connectInFlightRef.current = false;
+          setConnectingIntegrationKey(null);
+
+          try {
+            const connectedAfterClose = await refreshMetaState();
+            if (connectedAfterClose) {
+              setConnectError("");
+              return;
+            }
+          } catch (error) {
+            console.error("integration library popup closed refresh error:", error);
+          }
+
+          setConnectError("La ventana de conexión se cerró antes de completar la autorización.");
+        }, 2500);
       }
     } catch (error) {
       console.error("direct integration connect error:", error);
       setConnectError("We could not start the Facebook Pages connection. Try again.");
     } finally {
-      connectInFlightRef.current = false;
-      setConnectingIntegrationKey(null);
+      if (!popupStarted) {
+        connectInFlightRef.current = false;
+        setConnectingIntegrationKey(null);
+      }
     }
   }
 

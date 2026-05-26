@@ -7,14 +7,7 @@ import { UserSuggestionModal } from "@/components/suggestions/UserSuggestionModa
 import { ApiError } from "@/lib/api";
 import { sendAssistantMessage } from "@/lib/api/assistant";
 import { getToken } from "@/lib/auth/session";
-import { formatDisplayNumber } from "@/lib/formatters";
-import { getIntegrationReportContext } from "@/lib/integrations/session";
-import {
-  getReportChatContext,
-  type ReportChatContext,
-} from "@/lib/reports/chat-context";
 import { usePreferencesStore } from "@/lib/store/preferences-store";
-import { getActiveWorkspaceId } from "@/lib/workspace/session";
 
 type ChatMessage = {
   id: string;
@@ -254,45 +247,24 @@ function AssistantTypingBubble({ darkMode }: { darkMode: boolean }) {
           : "bg-white text-slate-700 ring-1 ring-slate-200"
       }`}
     >
-      <div className="flex items-center gap-1.5">
-        {[0, 1, 2].map((dot) => (
-          <span
-            key={dot}
-            className={`h-2 w-2 rounded-full ${
-              darkMode ? "bg-slate-300/80" : "bg-slate-400/80"
-            } animate-[pulse_1.2s_ease-in-out_infinite]`}
-            style={{ animationDelay: `${dot * 0.18}s` }}
-          />
-        ))}
+      <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-1.5">
+          {[0, 1, 2].map((dot) => (
+            <span
+              key={dot}
+              className={`h-2 w-2 rounded-full ${
+                darkMode ? "bg-slate-300/80" : "bg-slate-400/80"
+              } animate-[pulse_1.2s_ease-in-out_infinite]`}
+              style={{ animationDelay: `${dot * 0.18}s` }}
+            />
+          ))}
+        </div>
+        <span className={`text-xs font-medium ${darkMode ? "text-slate-300" : "text-slate-500"}`}>
+          Analyzing report data...
+        </span>
       </div>
     </div>
   );
-}
-
-function buildAssistantRequestMessage(
-  question: string,
-  context: ReportChatContext | null
-) {
-  if (!context) {
-    return question;
-  }
-
-  const statsText =
-    context.stats.length > 0
-      ? context.stats
-          .slice(0, 3)
-          .map((stat) => `${stat.label}: ${formatDisplayNumber(stat.value)}`)
-          .join(" | ")
-      : "No visible KPIs loaded.";
-
-  return [
-    `Open report context: ${context.title}.`,
-    context.summary ? `Visible summary: ${context.summary}` : "",
-    `Visible KPIs: ${statsText}.`,
-    `User question: ${question}`,
-  ]
-    .filter(Boolean)
-    .join(" ");
 }
 
 function getCurrentRoute(pathname: string, searchParams: URLSearchParams) {
@@ -326,7 +298,7 @@ function getAssistantErrorMessage(error: unknown) {
     }
   }
 
-  return "No se pudo obtener respuesta del assistant.";
+  return "I couldn’t analyze this report right now. Please try again.";
 }
 
 export function AppAssistantBubble() {
@@ -342,25 +314,17 @@ export function AppAssistantBubble() {
   const [visiblePrompts, setVisiblePrompts] = useState<string[]>([]);
   const theme = usePreferencesStore((state) => state.theme);
   const darkMode = theme === "dark";
-  const context = getReportChatContext();
-  const integrationContext = getIntegrationReportContext();
-  const introMessage = "Lets chat with your data. Ask me anything";
+  const introMessage =
+    "Ask me about trends, metrics, recommendations or external data related to this report.";
   const introContent = useMemo(() => renderMarkdown(introMessage), [introMessage]);
   const currentRoute = getCurrentRoute(pathname || "/", new URLSearchParams(searchParams.toString()));
   const routeReportId = getRouteReportId(pathname || "/", new URLSearchParams(searchParams.toString()));
-  const activeWorkspaceId = getActiveWorkspaceId() || integrationContext?.workspaceId || "";
-  const reportId = context?.reportId || routeReportId;
-  const datasetId = integrationContext?.datasetId || "";
-  const pageContext = useMemo(
-    () => ({
-      report_title: context?.title || "",
-      report_summary: context?.summary || "",
-      visible_stats: context?.stats || [],
-      integration_source: integrationContext?.source || "",
-      pathname: pathname || "/",
-    }),
-    [context?.stats, context?.summary, context?.title, integrationContext?.source, pathname]
-  );
+  const reportId = routeReportId;
+
+  useEffect(() => {
+    setConversationId("");
+    setMessages([]);
+  }, [reportId, currentRoute]);
 
   useEffect(() => {
     if (!open) {
@@ -405,19 +369,23 @@ export function AppAssistantBubble() {
     try {
       setSending(true);
       const response = await sendAssistantMessage({
-        message: buildAssistantRequestMessage(trimmed, context),
-        conversationId: conversationId || undefined,
-        workspaceId: activeWorkspaceId || undefined,
+        message: trimmed,
         reportId: reportId || undefined,
-        datasetId: datasetId || undefined,
-        currentRoute,
-        pageContext,
       });
       const assistantId = `assistant-${counter.current}`;
       counter.current += 1;
 
       if (response.conversationId) {
         setConversationId(response.conversationId);
+      }
+
+      if (process.env.NODE_ENV !== "production") {
+        console.info("AI_CHAT_STATE", {
+          conversationIdCurrent: conversationId || null,
+          conversationIdNext: response.conversationId || null,
+          reportId: reportId || null,
+          currentRoute,
+        });
       }
 
       setMessages((current) => [
@@ -467,7 +435,7 @@ export function AppAssistantBubble() {
             <div>
               <p className="text-sm font-semibold">AI Assistant</p>
               <p className="text-xs text-slate-300">
-                {context ? "Using the open report context" : "Available throughout the app"}
+                {reportId ? "Using the open report context" : "Available throughout the app"}
               </p>
             </div>
             <button
@@ -539,7 +507,7 @@ export function AppAssistantBubble() {
 
             {sending ? <AssistantTypingBubble darkMode={darkMode} /> : null}
 
-            {context && messages.length === 0 ? (
+            {reportId && messages.length === 0 ? (
               <div className="flex flex-wrap gap-2">
                 {visiblePrompts.map((prompt) => (
                   <button
@@ -575,8 +543,9 @@ export function AppAssistantBubble() {
               <textarea
                 value={question}
                 onChange={(event) => setQuestion(event.target.value)}
-                placeholder="Ask something..."
+                placeholder="Ask about this report..."
                 rows={3}
+                disabled={sending}
                 className={`min-h-[84px] flex-1 resize-none rounded-2xl px-4 py-3 text-sm outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100 ${
                   darkMode
                     ? "border border-white/10 bg-white/5 text-white placeholder:text-slate-400"
@@ -585,10 +554,10 @@ export function AppAssistantBubble() {
               />
               <button
                 type="submit"
-                disabled={sending}
-                className="inline-flex h-11 items-center justify-center rounded-2xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+                disabled={sending || !question.trim()}
+                className="inline-flex h-11 items-center justify-center rounded-2xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
               >
-                Send
+                {sending ? "Sending..." : "Send"}
               </button>
             </div>
           </form>
@@ -607,8 +576,14 @@ export function AppAssistantBubble() {
       >
         <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 stroke-current">
           <path
-            d="M12 19V5M7 10l5-5 5 5"
-            strokeWidth="2"
+            d="M9 14.5h6M9.75 17h4.5M8.75 10.25a3.25 3.25 0 1 1 6.5 0c0 1.24-.54 1.97-1.25 2.78-.64.73-1.25 1.42-1.25 2.47h-2c0-1.05-.61-1.74-1.25-2.47-.71-.81-1.25-1.54-1.25-2.78Z"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M12 3.75v1.5M17.13 5.87l-1.06 1.06M18.75 10.25h-1.5M6.87 5.87l1.06 1.06M5.25 10.25h1.5"
+            strokeWidth="1.7"
             strokeLinecap="round"
             strokeLinejoin="round"
           />

@@ -4,6 +4,8 @@ import { useState } from "react";
 
 import type { ExecutiveDarkSeriesPoint } from "@/components/reports/report-view.helpers";
 import { MEASURABLE_BRAND_LOGO_URL } from "@/lib/branding";
+import { API_URL } from "@/lib/api/config";
+import { resolveAssetUrl } from "@/lib/reports/branding";
 import { getLogoContentAspectRatio } from "@/lib/reports/logo";
 import { formatNumber } from "@/lib/formatters";
 
@@ -725,19 +727,92 @@ export function MetricDailyChart({
 
 export function CoverLogo({
   logoDataUrl,
+  workspaceId,
   dark = true,
 }: {
   logoDataUrl: string | null;
+  workspaceId?: string | null;
   dark?: boolean;
 }) {
-  const resolvedLogoUrl = logoDataUrl?.trim() || MEASURABLE_BRAND_LOGO_URL;
+  const rawLogoUrl = logoDataUrl?.trim() || "";
+  const resolvedLogoUrl =
+    resolveAssetUrl(rawLogoUrl, API_URL, { workspaceId }) || MEASURABLE_BRAND_LOGO_URL;
   const [logoRatio, setLogoRatio] = useState(1);
+  const [logoFailed, setLogoFailed] = useState(false);
+  const [logoAspectFallback, setLogoAspectFallback] = useState(false);
   const isSquareLogo = logoRatio >= 0.72 && logoRatio <= 1.32;
   const isHorizontalLogo = logoRatio > 1.32;
-  const frameWidth = isSquareLogo ? 1440 : isHorizontalLogo ? 1890 : 1530;
-  const frameHeight = isSquareLogo ? 1440 : isHorizontalLogo ? 810 : 1440;
-  const imageWidth = isSquareLogo ? 1440 : isHorizontalLogo ? 1890 : 1530;
-  const imageHeight = isSquareLogo ? 1440 : isHorizontalLogo ? 810 : 1440;
+  const frameWidth = logoAspectFallback
+    ? 1440
+    : isSquareLogo
+      ? 1440
+      : isHorizontalLogo
+        ? 1890
+        : 1530;
+  const frameHeight = logoAspectFallback
+    ? 1440
+    : isSquareLogo
+      ? 1440
+      : isHorizontalLogo
+        ? 810
+        : 1440;
+  const imageWidth = logoAspectFallback
+    ? 1440
+    : isSquareLogo
+      ? 1440
+      : isHorizontalLogo
+        ? 1890
+        : 1530;
+  const imageHeight = logoAspectFallback
+    ? 1440
+    : isSquareLogo
+      ? 1440
+      : isHorizontalLogo
+        ? 810
+        : 1440;
+
+  if (logoFailed) {
+    return (
+      <div
+        className="pointer-events-none absolute right-0 top-1/2 flex w-[46%] -translate-y-1/2 items-center justify-end"
+      >
+        <div
+          className={`flex items-center justify-center rounded-[40px] border p-10 ${
+            dark
+              ? "border-white/12 bg-transparent shadow-none"
+              : "border-slate-200 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(248,250,252,0.98))] shadow-[0_18px_40px_rgba(37,99,235,0.10)]"
+          }`}
+          style={{
+            width: `${frameWidth}px`,
+            height: `${frameHeight}px`,
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={SLIDE_HEADER_FALLBACK_LOGO_URL}
+            alt="Brand logo"
+            data-report-logo="true"
+            loading="eager"
+            decoding="sync"
+            fetchPriority="high"
+            className="block h-full w-full object-contain object-center"
+            style={{
+              width: "100%",
+              height: "100%",
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    console.debug("[report-logo]", {
+      rawLogoUrl,
+      resolvedLogoUrl,
+      workspaceId: workspaceId || null,
+    });
+  }
 
   return (
     <div
@@ -746,7 +821,7 @@ export function CoverLogo({
       <div
         className={`flex items-center justify-center rounded-[40px] border p-10 ${
           dark
-            ? "border-white/12 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(241,245,249,0.92))] shadow-[0_30px_80px_rgba(2,6,23,0.28)]"
+            ? "border-white/12 bg-transparent shadow-none"
             : "border-slate-200 bg-[linear-gradient(135deg,rgba(255,255,255,0.98),rgba(248,250,252,0.98))] shadow-[0_18px_40px_rgba(37,99,235,0.10)]"
         }`}
         style={{
@@ -766,10 +841,26 @@ export function CoverLogo({
           style={{
             width: `${imageWidth}px`,
             height: `${imageHeight}px`,
+            maxWidth: "100%",
+            maxHeight: "100%",
+            objectFit: "contain",
           }}
-          onLoad={(event) =>
-            setLogoRatio(getLogoContentAspectRatio(event.currentTarget))
-          }
+          onLoad={(event) => {
+            try {
+              setLogoFailed(false);
+              const ratio = getLogoContentAspectRatio(event.currentTarget);
+              setLogoAspectFallback(false);
+              setLogoRatio(Number.isFinite(ratio) && ratio > 0 ? ratio : 1);
+            } catch {
+              setLogoAspectFallback(true);
+              setLogoRatio(1);
+            }
+          }}
+          onError={() => {
+            setLogoFailed(true);
+            setLogoAspectFallback(true);
+            setLogoRatio(1);
+          }}
         />
       </div>
     </div>
@@ -779,25 +870,31 @@ export function CoverLogo({
 export function SlideHeaderLogo({
   logoUrl,
   brandName,
+  workspaceId,
   slideNumber,
   dark = true,
 }: {
   logoUrl: string | null;
   brandName?: string;
+  workspaceId?: string | null;
   slideNumber?: string;
   dark?: boolean;
 }) {
-  const requestedLogoUrl = logoUrl?.trim();
+  const rawLogoUrl = logoUrl?.trim() || "";
+  const requestedLogoUrl = resolveAssetUrl(rawLogoUrl, API_URL, { workspaceId });
   const resolvedLogoUrl =
     !requestedLogoUrl || requestedLogoUrl === MEASURABLE_BRAND_LOGO_URL
       ? SLIDE_HEADER_FALLBACK_LOGO_URL
       : requestedLogoUrl;
+  const [logoFailed, setLogoFailed] = useState(false);
   const usesWhiteFallbackLogo = resolvedLogoUrl === SLIDE_HEADER_FALLBACK_LOGO_URL;
 
   if (process.env.NODE_ENV === "development") {
-    console.log("[5-slide branding render]", {
+    console.debug("[report-logo]", {
       slideNumber,
-      logoUrl: resolvedLogoUrl,
+      rawLogoUrl,
+      resolvedLogoUrl,
+      workspaceId: workspaceId || null,
       brandName,
     });
   }
@@ -812,15 +909,18 @@ export function SlideHeaderLogo({
           : "border-slate-200 bg-white shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
       }`}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={resolvedLogoUrl}
-        alt={brandName || "Brand logo"}
-        data-report-logo="true"
-        loading="eager"
-        decoding="sync"
-        className="h-full w-full object-contain"
-      />
+      {!logoFailed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={resolvedLogoUrl}
+          alt={brandName || "Brand logo"}
+          data-report-logo="true"
+          loading="eager"
+          decoding="sync"
+          className="h-full w-full object-contain"
+          onError={() => setLogoFailed(true)}
+        />
+      ) : null}
     </div>
   );
 }

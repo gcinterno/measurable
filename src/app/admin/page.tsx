@@ -5,7 +5,9 @@ import { useEffect, useState } from "react";
 import { AdminPageShell } from "@/components/admin/AdminPageShell";
 import {
   type AdminSuggestion,
+  type AdminWishlistLead,
   fetchAdminMetrics,
+  getAdminWishlistLeads,
   getAdminSuggestions,
   type AdminDistributionItem,
   type AdminMetricGrowthKey,
@@ -777,11 +779,107 @@ function AdminSuggestionsSection({
   );
 }
 
+function AdminWishlistSection({
+  leads,
+  loading,
+  error,
+}: {
+  leads: AdminWishlistLead[];
+  loading: boolean;
+  error: string;
+}) {
+  return (
+    <section className="mt-6 rounded-[24px] border border-[var(--border-soft)] bg-[var(--surface)] p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)] sm:p-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--measurable-blue)]">
+            Feedback
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
+            Sugerencias / Wishlist
+          </h2>
+          <p className="mt-2 text-sm text-[var(--text-secondary)]">
+            Leads capturados desde la página de upgrade y wishlist.
+          </p>
+        </div>
+        <span className="inline-flex w-fit rounded-full border border-[var(--border-soft)] bg-[var(--surface-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--text-secondary)]">
+          {leads.length} total
+        </span>
+      </div>
+
+      {loading ? (
+        <div className="mt-5 space-y-3">
+          {Array.from({ length: 3 }, (_, index) => (
+            <div key={index} className="h-24 animate-pulse rounded-[18px] bg-[var(--surface-soft)]" />
+          ))}
+        </div>
+      ) : error ? (
+        <div className="mt-5 rounded-[18px] border border-red-100 bg-red-50 px-5 py-4">
+          <p className="text-sm text-red-700">{error}</p>
+        </div>
+      ) : leads.length === 0 ? (
+        <div className="mt-5 rounded-[18px] border border-dashed border-[var(--border-soft)] bg-[var(--surface-soft)] px-5 py-8 text-center">
+          <p className="text-sm font-semibold text-[var(--text-primary)]">
+            Aún no hay registros en wishlist.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-5 overflow-hidden rounded-[20px] border border-[var(--border-soft)]">
+          <div className="hidden grid-cols-[minmax(120px,0.9fr)_minmax(180px,1fr)_minmax(130px,0.8fr)_minmax(220px,1.3fr)_minmax(110px,0.75fr)_minmax(130px,0.8fr)] gap-4 border-b border-[var(--border-soft)] bg-[var(--surface-soft)] px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--text-secondary)] xl:grid">
+            <span>Nombre</span>
+            <span>Email</span>
+            <span>Empresa</span>
+            <span>Mensaje</span>
+            <span>Source</span>
+            <span>Fecha</span>
+          </div>
+          <div className="divide-y divide-[var(--border-soft)]">
+            {leads.map((lead) => (
+              <article
+                key={lead.id}
+                className="grid gap-3 px-4 py-4 text-sm xl:grid-cols-[minmax(120px,0.9fr)_minmax(180px,1fr)_minmax(130px,0.8fr)_minmax(220px,1.3fr)_minmax(110px,0.75fr)_minmax(130px,0.8fr)] xl:gap-4"
+              >
+                <p className="text-[var(--text-primary)]">
+                  <span className="mr-2 font-semibold xl:hidden">Nombre:</span>
+                  {lead.name || lead.user || "—"}
+                </p>
+                <p className="break-all text-[var(--text-secondary)]">
+                  <span className="mr-2 font-semibold text-[var(--text-primary)] xl:hidden">Email:</span>
+                  {lead.email || "—"}
+                </p>
+                <p className="text-[var(--text-secondary)]">
+                  <span className="mr-2 font-semibold text-[var(--text-primary)] xl:hidden">Empresa:</span>
+                  {lead.company || lead.workspace || "—"}
+                </p>
+                <p className="whitespace-pre-wrap break-words leading-6 text-[var(--text-primary)]">
+                  <span className="mr-2 font-semibold xl:hidden">Mensaje:</span>
+                  {lead.message || "—"}
+                </p>
+                <p className="text-[var(--text-secondary)]">
+                  <span className="mr-2 font-semibold text-[var(--text-primary)] xl:hidden">Source:</span>
+                  {lead.source || "—"}
+                </p>
+                <p className="text-[var(--text-secondary)]">
+                  <span className="mr-2 font-semibold text-[var(--text-primary)] xl:hidden">Fecha:</span>
+                  {formatSuggestionDate(lead.createdAt)}
+                </p>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function AdminOverviewPage() {
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
   const [suggestions, setSuggestions] = useState<AdminSuggestion[]>([]);
+  const [wishlistLeads, setWishlistLeads] = useState<AdminWishlistLead[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(true);
   const [suggestionsError, setSuggestionsError] = useState("");
+  const [wishlistLoading, setWishlistLoading] = useState(true);
+  const [wishlistError, setWishlistError] = useState("");
   const [updatingSuggestionId, setUpdatingSuggestionId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -871,6 +969,43 @@ export default function AdminOverviewPage() {
     }
 
     void loadSuggestions();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadWishlist() {
+      setWishlistLoading(true);
+      setWishlistError("");
+
+      try {
+        const nextLeads = await getAdminWishlistLeads();
+
+        if (!active) {
+          return;
+        }
+
+        setWishlistLeads(nextLeads);
+      } catch (loadError) {
+        console.error("admin wishlist load error:", loadError);
+
+        if (!active) {
+          return;
+        }
+
+        setWishlistError("No pudimos cargar los registros de wishlist.");
+      } finally {
+        if (active) {
+          setWishlistLoading(false);
+        }
+      }
+    }
+
+    void loadWishlist();
 
     return () => {
       active = false;
@@ -1120,6 +1255,12 @@ export default function AdminOverviewPage() {
         onUpdateStatus={(suggestionId, status) =>
           void handleUpdateSuggestionStatus(suggestionId, status)
         }
+      />
+
+      <AdminWishlistSection
+        leads={wishlistLeads}
+        loading={wishlistLoading}
+        error={wishlistError}
       />
 
       {loading ? (

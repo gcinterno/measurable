@@ -6,6 +6,7 @@ type ApiErrorOptions = {
   endpoint: string;
   status?: number;
   code?: string;
+  upgradeUrl?: string;
   isAuthError?: boolean;
   isAbortError?: boolean;
 };
@@ -14,6 +15,7 @@ export class ApiError extends Error {
   endpoint: string;
   status?: number;
   code?: string;
+  upgradeUrl?: string;
   isAuthError: boolean;
   isAbortError: boolean;
 
@@ -23,6 +25,7 @@ export class ApiError extends Error {
     this.endpoint = options.endpoint;
     this.status = options.status;
     this.code = options.code;
+    this.upgradeUrl = options.upgradeUrl;
     this.isAuthError = Boolean(options.isAuthError);
     this.isAbortError = Boolean(options.isAbortError);
   }
@@ -37,10 +40,12 @@ type BackendErrorPayload = {
     | {
         code?: string;
         message?: string;
+        upgrade_url?: string;
       }
     | null;
   code?: string;
   message?: string;
+  upgrade_url?: string;
 };
 
 const AUTH_ERROR_CODES = new Set([
@@ -57,6 +62,7 @@ const LIMIT_ERROR_CODES = new Set([
   "monthly_report_limit_reached",
   "slide_limit_exceeded",
   "storage_limit_reached",
+  "FREE_REPORT_LIMIT_REACHED",
 ]);
 
 function parseJsonSafely(rawText: string) {
@@ -97,6 +103,18 @@ function getErrorMessage(payload: BackendErrorPayload | null) {
   }
 
   return payload.message;
+}
+
+function getUpgradeUrl(payload: BackendErrorPayload | null) {
+  if (!payload) {
+    return undefined;
+  }
+
+  if (typeof payload.detail === "object" && payload.detail?.upgrade_url) {
+    return payload.detail.upgrade_url;
+  }
+
+  return payload.upgrade_url;
 }
 
 function isAuthFailureStatus(status: number) {
@@ -206,6 +224,7 @@ export async function readApiResponseText(
       endpoint,
       status: response.status,
       code: errorCode,
+      upgradeUrl: getUpgradeUrl(payload),
       isAuthError: authFailure,
     });
   }

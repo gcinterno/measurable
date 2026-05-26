@@ -35,7 +35,14 @@ export function ClosingSlide({
         meta={model.meta}
         footer={<FooterMeta text={model.footerText} />}
         templateId={templateId}
-        rightSlot={<CoverLogo logoDataUrl={model.branding.logoUrl} dark={!isLightTemplate(templateId)} />}
+        rightSlot={
+          <CoverLogo
+            logoDataUrl={model.branding.logoUrl}
+            workspaceId={model.branding.workspaceId}
+            dark={!isLightTemplate(templateId)}
+            exportMode={renderMode === "export"}
+          />
+        }
       />
     </SlideCanvas>
   );

@@ -156,7 +156,7 @@ export function ReportViewer({ reportId }: ReportViewerProps) {
     });
 
     if (!planCapabilities.canExportPptx) {
-      setExportError("PPTX export is available on Core and Advanced plans.");
+      setExportError("PPTX export is available on Starter, Pro, and Advanced plans.");
       return;
     }
 

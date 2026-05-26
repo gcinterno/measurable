@@ -21,33 +21,45 @@ export function getLogoContentAspectRatio(image: HTMLImageElement) {
   canvas.width = canvasWidth;
   canvas.height = canvasHeight;
   context.clearRect(0, 0, canvasWidth, canvasHeight);
-  context.drawImage(image, 0, 0, canvasWidth, canvasHeight);
+  try {
+    context.drawImage(image, 0, 0, canvasWidth, canvasHeight);
 
-  const imageData = context.getImageData(0, 0, canvasWidth, canvasHeight).data;
-  let minX = canvasWidth;
-  let minY = canvasHeight;
-  let maxX = -1;
-  let maxY = -1;
+    const imageData = context.getImageData(0, 0, canvasWidth, canvasHeight).data;
+    let minX = canvasWidth;
+    let minY = canvasHeight;
+    let maxX = -1;
+    let maxY = -1;
 
-  for (let y = 0; y < canvasHeight; y += 1) {
-    for (let x = 0; x < canvasWidth; x += 1) {
-      const alpha = imageData[(y * canvasWidth + x) * 4 + 3];
+    for (let y = 0; y < canvasHeight; y += 1) {
+      for (let x = 0; x < canvasWidth; x += 1) {
+        const alpha = imageData[(y * canvasWidth + x) * 4 + 3];
 
-      if (alpha > 20) {
-        minX = Math.min(minX, x);
-        minY = Math.min(minY, y);
-        maxX = Math.max(maxX, x);
-        maxY = Math.max(maxY, y);
+        if (alpha > 20) {
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+        }
       }
     }
+
+    if (maxX === -1 || maxY === -1) {
+      return naturalRatio;
+    }
+
+    const contentWidth = Math.max(1, maxX - minX + 1);
+    const contentHeight = Math.max(1, maxY - minY + 1);
+
+    return contentWidth / contentHeight;
+  } catch (error) {
+    console.warn("[LogoAspectRatio][fallback]", {
+      reason: error instanceof Error ? error.name : "unknown",
+      message: error instanceof Error ? error.message : String(error),
+      naturalWidth: image?.naturalWidth,
+      naturalHeight: image?.naturalHeight,
+      src: image?.src,
+    });
+
+    return naturalRatio || 1;
   }
-
-  if (maxX === -1 || maxY === -1) {
-    return naturalRatio;
-  }
-
-  const contentWidth = Math.max(1, maxX - minX + 1);
-  const contentHeight = Math.max(1, maxY - minY + 1);
-
-  return contentWidth / contentHeight;
 }

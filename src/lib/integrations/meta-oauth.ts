@@ -1,22 +1,42 @@
 "use client";
 
-const META_OAUTH_READY_BANNER_ID = "meta-oauth-ready-banner";
 const META_OAUTH_DEBUG_URL_KEY = "metaOAuthDebugUrl";
 const META_OAUTH_PENDING_KEY = "metaOAuthPending";
 const META_OAUTH_PENDING_FLAG_KEY = "metaOAuthPendingFlag";
 const META_OAUTH_MAX_AGE_MS = 10 * 60 * 1000;
 const META_OAUTH_MIN_RETURN_DELAY_MS = 1500;
 const META_OAUTH_MAX_AUTO_RETRIES = 1;
+export const META_OAUTH_POPUP_NAME = "measurable_meta_oauth";
+export const META_OAUTH_POPUP_FEATURES = "width=720,height=780";
+export const META_OAUTH_CONNECT_SUCCESS = "MEASURABLE_META_CONNECT_SUCCESS";
+export const META_OAUTH_CONNECT_ERROR = "MEASURABLE_META_CONNECT_ERROR";
+
+type MetaOAuthTransport = "same_tab" | "popup";
 
 type PendingMetaOAuth = {
   authUrl: string;
   oauthState: string;
   source: string;
   route: string;
+  transport: MetaOAuthTransport;
   createdAt: number;
   lastRedirectAt: number;
   retryCount: number;
 };
+
+export type MetaOAuthWindowMessage =
+  | {
+      type: typeof META_OAUTH_CONNECT_SUCCESS;
+      provider: "meta";
+      integrationId?: string;
+      pagesCount?: number;
+      redirectTo?: string;
+    }
+  | {
+      type: typeof META_OAUTH_CONNECT_ERROR;
+      provider: "meta";
+      message: string;
+    };
 
 function readPendingMetaOAuth() {
   if (typeof window === "undefined") {
@@ -128,12 +148,14 @@ export function createPendingMetaOAuth(input: {
   authUrl: string;
   source: string;
   route: string;
+  transport?: MetaOAuthTransport;
 }) {
   const nextValue = {
     authUrl: input.authUrl,
     oauthState: getMetaOAuthState(input.authUrl),
     source: input.source,
     route: input.route,
+    transport: input.transport || "same_tab",
     createdAt: Date.now(),
     lastRedirectAt: 0,
     retryCount: 0,
@@ -146,6 +168,7 @@ export function createPendingMetaOAuth(input: {
     route: input.route,
     auth_url: input.authUrl,
     oauth_state: nextValue.oauthState || null,
+    transport: nextValue.transport,
   });
 }
 
@@ -168,6 +191,7 @@ export function markMetaRedirectStarted() {
     route: nextValue.route,
     auth_url: nextValue.authUrl,
     oauth_state: nextValue.oauthState || null,
+    transport: nextValue.transport,
     retry_count: nextValue.retryCount,
   });
 }
@@ -197,6 +221,10 @@ export function consumePendingMetaOAuthForRetry(input: {
 
   if (isPendingMetaOAuthExpired(currentValue)) {
     clearPendingMetaOAuth();
+    return null;
+  }
+
+  if (currentValue.transport === "popup") {
     return null;
   }
 
@@ -243,4 +271,42 @@ export function consumePendingMetaOAuthForRetry(input: {
 
 export async function showMetaOAuthReadyBanner() {
   return Promise.resolve();
+}
+
+export function openMetaOAuthPopup(authUrl: string) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.open(authUrl, META_OAUTH_POPUP_NAME, META_OAUTH_POPUP_FEATURES);
+}
+
+export function isMetaOAuthWindowMessage(
+  data: unknown
+): data is MetaOAuthWindowMessage {
+  if (!data || typeof data !== "object") {
+    return false;
+  }
+
+  const candidate = data as { type?: string; provider?: string };
+
+  return (
+    candidate.provider === "meta" &&
+    (candidate.type === META_OAUTH_CONNECT_SUCCESS ||
+      candidate.type === META_OAUTH_CONNECT_ERROR)
+  );
+}
+
+export function postMetaOAuthMessageToOpener(message: MetaOAuthWindowMessage) {
+  if (typeof window === "undefined" || !window.opener) {
+    return false;
+  }
+
+  try {
+    window.opener.postMessage(message, window.location.origin);
+    return true;
+  } catch (error) {
+    console.error("meta oauth opener postMessage error:", error);
+    return false;
+  }
 }

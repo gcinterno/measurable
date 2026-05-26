@@ -10,12 +10,10 @@ import { QuickActionCard } from "@/components/dashboard/QuickActionCard";
 import { RecentReportCard } from "@/components/dashboard/RecentReportCard";
 import { IntegrationDropzoneCard } from "@/components/reports/IntegrationDropzoneCard";
 import { ApiError, isAbortError, isAuthError } from "@/lib/api";
-import { fetchIntegrationsConnectionStatus } from "@/lib/api/integrations";
 import { fetchCurrentUser } from "@/lib/api/me";
 import { fetchReports } from "@/lib/api/reports";
 import {
   integrationCatalog,
-  META_FRONTEND_INTEGRATION_KEYS,
 } from "@/lib/integrations/catalog";
 import { useAuthStore } from "@/lib/store/auth-store";
 import type { User } from "@/types/auth";
@@ -32,8 +30,6 @@ export default function DashboardPage() {
   const authUser = useAuthStore((state) => state.user);
   const [user, setUser] = useState<User | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
-  const [reportsTotal, setReportsTotal] = useState(0);
-  const [connectedIntegrationsCount, setConnectedIntegrationsCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reportsAvailable, setReportsAvailable] = useState(true);
@@ -42,7 +38,6 @@ export default function DashboardPage() {
 
   const refreshRecentReports = useCallback(async () => {
     const nextReports = await fetchReports();
-    setReportsTotal(nextReports.length);
     setReports(nextReports.slice(0, 5));
     setReportsAvailable(true);
   }, []);
@@ -109,10 +104,9 @@ export default function DashboardPage() {
         setLoading(true);
         setError("");
 
-        const [userResult, reportsResult, integrationsResult] = await Promise.allSettled([
+        const [userResult, reportsResult] = await Promise.allSettled([
           fetchCurrentUser({ signal: controller.signal }),
           fetchReports({ signal: controller.signal }),
-          fetchIntegrationsConnectionStatus(),
         ]);
 
         if (!active) {
@@ -131,15 +125,8 @@ export default function DashboardPage() {
         const nextReportsAvailable = reportsResult.status === "fulfilled";
 
         setUser(nextUser || authUser || null);
-        setReportsTotal(nextReports.length);
         setReports(nextReports.slice(0, 5));
         setReportsAvailable(nextReportsAvailable);
-        setConnectedIntegrationsCount(
-          integrationsResult.status === "fulfilled" &&
-            integrationsResult.value.metaConnected
-            ? META_FRONTEND_INTEGRATION_KEYS.length
-            : 0
-        );
 
         const hasUserContext = Boolean(nextUser || authUser);
 
@@ -211,7 +198,7 @@ export default function DashboardPage() {
             onClick={() => setReloadKey((current) => current + 1)}
             className="brand-button-secondary mt-5 inline-flex px-4 py-2.5 text-sm font-semibold"
           >
-            {messages.common.tryAgain}
+            {messages.reports.tryAgain}
           </button>
         </section>
       </AppShell>
@@ -219,25 +206,6 @@ export default function DashboardPage() {
   }
 
   const userName = user?.name || "team";
-  const dashboardStats = [
-    {
-      label: "Reportes creados",
-      value: String(reportsTotal),
-      description: "Total generado en esta cuenta.",
-    },
-    {
-      label: "Reportes disponibles",
-      value: String(reportsAvailable ? reportsTotal : 0),
-      description: reportsAvailable
-        ? "Listos para revisar desde la biblioteca."
-        : "No disponibles temporalmente.",
-    },
-    {
-      label: "Integraciones conectadas",
-      value: `${connectedIntegrationsCount}/${integrationCatalog.length}`,
-      description: "Conectadas del total de la plataforma.",
-    },
-  ];
   const quickActions = [
     {
       title: messages.dashboard.quickActionNewReportTitle,
@@ -283,25 +251,6 @@ export default function DashboardPage() {
           <h1 className="text-3xl font-semibold tracking-tight text-[var(--text-primary)] sm:text-5xl">
             Hola, {userName}!
           </h1>
-        </section>
-
-        <section className="grid gap-3 md:grid-cols-3">
-          {dashboardStats.map((stat) => (
-            <div
-              key={stat.label}
-              className="rounded-[24px] border border-[var(--border-soft)] bg-[var(--surface)] p-5 shadow-[0_14px_34px_rgba(7,17,31,0.06)]"
-            >
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                {stat.label}
-              </p>
-              <p className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-[var(--text-primary)]">
-                {stat.value}
-              </p>
-              <p className="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
-                {stat.description}
-              </p>
-            </div>
-          ))}
         </section>
 
         <IntegrationDropzoneCard />

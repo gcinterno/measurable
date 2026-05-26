@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef } from "react";
 
 import { useI18n } from "@/components/providers/LanguageProvider";
@@ -12,25 +13,49 @@ type ReportFolder = {
 type ReportActionsMenuProps = {
   open: boolean;
   deleting: boolean;
+  pdfLoading?: boolean;
+  shareLoading?: boolean;
+  savingFolder?: boolean;
   folders: ReportFolder[];
   folderId: string;
+  pendingFolderId: string;
+  quickActionFeedback?: string;
+  quickActionError?: string;
+  viewHref?: string;
+  saveFeedback?: string;
+  saveError?: string;
   onToggle: () => void;
   onClose: () => void;
-  onMoveToFolder: (folderId: string) => void;
+  onDownloadPdf?: () => void;
+  onShare?: () => void;
+  onPendingFolderChange: (folderId: string) => void;
+  onSaveFolder: () => void;
   onDelete: () => void;
 };
 
 export function ReportActionsMenu({
   open,
   deleting,
+  pdfLoading = false,
+  shareLoading = false,
+  savingFolder = false,
   folders,
   folderId,
+  pendingFolderId,
+  quickActionFeedback,
+  quickActionError,
+  viewHref,
+  saveFeedback,
+  saveError,
   onToggle,
   onClose,
-  onMoveToFolder,
+  onDownloadPdf,
+  onShare,
+  onPendingFolderChange,
+  onSaveFolder,
   onDelete,
 }: ReportActionsMenuProps) {
-  const { messages } = useI18n();
+  const { language, messages } = useI18n();
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -74,12 +99,50 @@ export function ReportActionsMenu({
 
       {open ? (
         <div className="absolute right-0 top-[calc(100%+10px)] z-30 w-64 rounded-2xl border border-slate-200 bg-white p-3 shadow-lg">
+          <div className="space-y-1 pb-3">
+            {viewHref ? (
+              <Link
+                href={viewHref}
+                onClick={onClose}
+                className="flex w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              >
+                {language === "es" ? "Ver reporte" : "View report"}
+              </Link>
+            ) : null}
+            {onDownloadPdf ? (
+              <button
+                type="button"
+                onClick={onDownloadPdf}
+                disabled={pdfLoading}
+                className="flex w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {pdfLoading ? "Preparing PDF..." : messages.reports.downloadPdf}
+              </button>
+            ) : null}
+            {onShare ? (
+              <button
+                type="button"
+                onClick={onShare}
+                disabled={shareLoading}
+                className="flex w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {shareLoading ? messages.common.generating : messages.common.share}
+              </button>
+            ) : null}
+          </div>
+          {quickActionFeedback ? (
+            <p className="pb-3 text-xs font-medium text-emerald-600">{quickActionFeedback}</p>
+          ) : null}
+          {quickActionError ? (
+            <p className="pb-3 text-xs font-medium text-red-600">{quickActionError}</p>
+          ) : null}
+          <div className="border-t border-slate-100 pt-3">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
             {messages.reports.addToFolder}
           </p>
           <select
-            value={folderId}
-            onChange={(event) => onMoveToFolder(event.target.value)}
+            value={pendingFolderId}
+            onChange={(event) => onPendingFolderChange(event.target.value)}
             className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
           >
             <option value="">{messages.common.noFolder}</option>
@@ -89,6 +152,29 @@ export function ReportActionsMenu({
               </option>
             ))}
           </select>
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+            >
+              {messages.common.cancel}
+            </button>
+            <button
+              type="button"
+              onClick={onSaveFolder}
+              disabled={savingFolder || pendingFolderId === folderId}
+              className="rounded-xl bg-slate-950 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {savingFolder ? "Saving..." : messages.common.save}
+            </button>
+          </div>
+          {saveFeedback ? (
+            <p className="mt-2 text-xs font-medium text-emerald-600">{saveFeedback}</p>
+          ) : null}
+          {saveError ? (
+            <p className="mt-2 text-xs font-medium text-red-600">{saveError}</p>
+          ) : null}
           <div className="mt-3 border-t border-slate-100 pt-3">
             <button
               type="button"
@@ -98,6 +184,7 @@ export function ReportActionsMenu({
             >
               {deleting ? messages.common.deletingReport : messages.common.deleteReport}
             </button>
+          </div>
           </div>
         </div>
       ) : null}

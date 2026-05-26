@@ -1,9 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { useI18n } from "@/components/providers/LanguageProvider";
+import { fetchAccountSummary } from "@/lib/api/account";
 import { logoutUser } from "@/lib/api/auth";
+import { isAbortError, isAuthError } from "@/lib/api";
 import { startLogoutInProgress } from "@/lib/auth/session";
 import { usePreferencesStore } from "@/lib/store/preferences-store";
 import { useAuthStore } from "@/lib/store/auth-store";
@@ -13,12 +16,19 @@ export function TopBar() {
   const router = useRouter();
   const { messages } = useI18n();
   const preferenceBrandName = usePreferencesStore((state) => state.brandName);
+  const preferenceDisplayName = usePreferencesStore((state) => state.displayName);
   const preferenceLogoUrl = usePreferencesStore((state) => state.logoDataUrl);
+  const updatePreferences = usePreferencesStore((state) => state.updatePreferences);
   const theme = usePreferencesStore((state) => state.theme);
   const logout = useAuthStore((state) => state.logout);
   const { workspace } = useActiveWorkspace();
+  const [accountDisplayName, setAccountDisplayName] = useState("");
   const brandName =
-    workspace?.branding?.brandName || workspace?.name || preferenceBrandName;
+    accountDisplayName ||
+    preferenceDisplayName ||
+    workspace?.branding?.brandName ||
+    workspace?.name ||
+    preferenceBrandName;
   const logoDataUrl = workspace?.branding?.logoUrl || preferenceLogoUrl;
   const darkMode = theme === "dark";
   const initials = brandName
@@ -27,6 +37,39 @@ export function TopBar() {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() || "")
     .join("");
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+
+    async function loadAccountSummary() {
+      try {
+        const summary = await fetchAccountSummary({
+          signal: controller.signal,
+        });
+
+        if (!active) {
+          return;
+        }
+
+        setAccountDisplayName(summary.accountDisplayNameEffective);
+        updatePreferences({
+          displayName: summary.accountDisplayNameEffective,
+        });
+      } catch (error) {
+        if (!isAbortError(error) && !isAuthError(error)) {
+          console.error("top bar account summary error:", error);
+        }
+      }
+    }
+
+    void loadAccountSummary();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [updatePreferences]);
 
   async function handleLogout() {
     startLogoutInProgress();
@@ -57,7 +100,7 @@ export function TopBar() {
             <img
               src={darkMode ? "/brand/measurable-logo-white.svg" : "/brand/measurable-logo-black.svg"}
               alt="Measurable"
-              className="h-8 w-auto object-contain"
+              className="h-16 w-auto object-contain"
             />
           </div>
           <p className="hidden text-xs font-semibold uppercase tracking-[0.22em] text-[var(--measurable-blue)] sm:block">

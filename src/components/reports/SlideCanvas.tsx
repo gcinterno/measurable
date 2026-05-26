@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { getTemplateTone } from "@/components/reports/slides/template";
 import type { ReportTemplateId } from "@/lib/reports/template-selection";
@@ -8,6 +8,19 @@ import {
   REPORT_SLIDE_THEME,
   type ReportRenderMode,
 } from "@/lib/reports/theme";
+
+const PDF_EXPORT_CONTENT_WIDTH = REPORT_SLIDE_THEME.slide.surfaceWidth;
+const PDF_EXPORT_CONTENT_HEIGHT = REPORT_SLIDE_THEME.slide.surfaceHeight;
+
+function getExportSlideNumber(index: string) {
+  const parsed = Number.parseInt(index, 10);
+
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return String(parsed);
+  }
+
+  return index.replace(/^0+/, "") || index;
+}
 
 type SlideCanvasProps = {
   index: string;
@@ -17,6 +30,7 @@ type SlideCanvasProps = {
   children: ReactNode;
   renderMode?: ReportRenderMode;
   templateId?: ReportTemplateId;
+  watermarkText?: string;
 };
 
 function ModernDotMatrix() {
@@ -189,9 +203,12 @@ export function SlideCanvas({
   children,
   renderMode = "preview",
   templateId = "executive",
+  watermarkText,
 }: SlideCanvasProps) {
   const hasHeaderCopy = Boolean(eyebrow || title);
   const isExportMode = renderMode === "export";
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const frameRef = useRef<HTMLDivElement | null>(null);
   const tone = getTemplateTone(templateId);
   const slideClassName = isExportMode ? "report-pdf-slide" : "report-preview-slide";
   const frameClassName = isExportMode
@@ -201,11 +218,37 @@ export function SlideCanvas({
     ? `overflow-hidden ${tone.shellBase}`
     : `mx-auto max-w-none overflow-hidden border ${tone.dark ? REPORT_SLIDE_THEME.colors.shellBorder : "border-slate-200"} ${REPORT_SLIDE_THEME.radius.innerFrame} ${tone.shellBase} ${REPORT_SLIDE_THEME.effects.innerShadow}`;
   const shellWidth = isExportMode
-    ? REPORT_SLIDE_THEME.slide.width
+    ? PDF_EXPORT_CONTENT_WIDTH
     : REPORT_SLIDE_THEME.slide.surfaceWidth;
   const shellHeight = isExportMode
-    ? REPORT_SLIDE_THEME.slide.height
+    ? PDF_EXPORT_CONTENT_HEIGHT
     : REPORT_SLIDE_THEME.slide.surfaceHeight;
+
+  useEffect(() => {
+    if (!isExportMode) {
+      return;
+    }
+
+    const raf = window.requestAnimationFrame(() => {
+      const section = sectionRef.current;
+      const frame = frameRef.current;
+
+      console.info("[PDF_EXPORT_VISUAL_AUDIT][slide]", {
+        index,
+        title,
+        pageWidth: section?.offsetWidth ?? null,
+        pageHeight: section?.offsetHeight ?? null,
+        frameWidth: frame?.offsetWidth ?? null,
+        frameHeight: frame?.offsetHeight ?? null,
+        slideWidth: frame?.scrollWidth ?? null,
+        slideHeight: frame?.scrollHeight ?? null,
+        scrollWidth: section?.scrollWidth ?? null,
+        scrollHeight: section?.scrollHeight ?? null,
+      });
+    });
+
+    return () => window.cancelAnimationFrame(raf);
+  }, [index, isExportMode, title]);
 
   console.info("[AUDIT_RENDER_PATH][SlideCanvas]", {
     index,
@@ -219,7 +262,10 @@ export function SlideCanvas({
 
   return (
     <section
-      data-report-slide={index}
+      ref={sectionRef}
+      data-report-slide={isExportMode ? "true" : index}
+      data-slide-number={getExportSlideNumber(index)}
+      data-pdf-page={isExportMode ? "true" : undefined}
       className={frameClassName}
       style={{
         width: REPORT_SLIDE_THEME.slide.width,
@@ -235,15 +281,18 @@ export function SlideCanvas({
       }}
     >
       <div
+        ref={frameRef}
+        data-pdf-slide-frame={isExportMode ? "true" : undefined}
         className={shellClassName}
-        style={{
-          width: shellWidth,
-          height: shellHeight,
-          boxSizing: "border-box",
-          margin: isExportMode ? 0 : "0 auto",
-          borderRadius: isExportMode ? 0 : undefined,
-        }}
-      >
+      style={{
+        width: shellWidth,
+        height: shellHeight,
+        boxSizing: "border-box",
+        margin: isExportMode ? 0 : "0 auto",
+        borderRadius: isExportMode ? 0 : undefined,
+        transform: undefined,
+      }}
+    >
         <div
           className={`relative flex h-full flex-col ${tone.shellBackground} ${REPORT_SLIDE_THEME.spacing.innerPadding} ${tone.body}`}
           style={{
@@ -252,6 +301,11 @@ export function SlideCanvas({
         >
           <div className={`pointer-events-none absolute inset-0 ${tone.overlay}`} />
           <div className={`pointer-events-none absolute inset-x-10 top-0 h-px ${tone.topLine}`} />
+          {watermarkText ? (
+            <div className="pointer-events-none absolute bottom-8 right-10 z-10 rounded-full border border-white/10 bg-slate-950/70 px-3 py-1.5 text-[11px] font-medium tracking-[0.04em] text-white/85 backdrop-blur">
+              {watermarkText}
+            </div>
+          ) : null}
           {templateId === "modern" ? <ModernTemplateArtwork /> : null}
           <div
             className={`relative z-10 flex items-start ${

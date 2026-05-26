@@ -4,7 +4,7 @@ import Image from "next/image";
 
 import { useI18n } from "@/components/providers/LanguageProvider";
 
-type IntegrationStatus = "Available" | "Connected" | "Coming soon";
+type IntegrationStatus = "Available" | "Connected" | "Coming soon" | "Checking";
 
 type IntegrationCardProps = {
   name: string;
@@ -28,6 +28,8 @@ function getBadgeClasses(status: IntegrationStatus) {
       return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
     case "Available":
       return "bg-sky-50 text-sky-700 ring-1 ring-sky-100";
+    case "Checking":
+      return "bg-slate-100 text-slate-600 ring-1 ring-slate-200";
     case "Coming soon":
     default:
       return "bg-slate-100 text-slate-600 ring-1 ring-slate-200";
@@ -53,6 +55,8 @@ export function IntegrationCard({
   const translatedStatus =
     status === "Connected"
       ? messages.integrationsPage.connected
+      : status === "Checking"
+        ? "Checking"
       : status === "Available"
         ? messages.integrationsPage.available
         : messages.integrationsPage.comingSoon;
@@ -90,12 +94,12 @@ export function IntegrationCard({
               blockedComingSoon
                 ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-70 blur-[0.2px]"
                 : status === "Connected"
-                  ? "bg-slate-950 !text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                  : "border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                  ? "!border-[#081327] !bg-[#081327] !text-white hover:!bg-[#0d1d39] disabled:cursor-not-allowed disabled:!border-slate-300 disabled:!bg-slate-300"
+                  : "!border-[#081327] !bg-[#081327] !text-white hover:!bg-[#0d1d39] disabled:cursor-not-allowed disabled:!border-slate-200 disabled:!bg-slate-100 disabled:!text-slate-400"
             }`}
           >
             {loading ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/35 border-t-white" />
             ) : null}
             {loading
               ? messages.integrationsPage.connecting

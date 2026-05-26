@@ -24,8 +24,8 @@ export function AppShell({ children }: AppShellProps) {
   const user = useAuthStore((state) => state.user);
   const setUser = useAuthStore((state) => state.setUser);
   const { messages } = useI18n();
-  const showBillingNav = false;
-  const showPlansNav = false;
+  const showBillingNav = true;
+  const showPlansNav = true;
 
   useEffect(() => {
     let active = true;
@@ -76,7 +76,7 @@ export function AppShell({ children }: AppShellProps) {
       : []),
     ...(!FEATURES.ENABLE_APP_REVIEW_MODE && showPlansNav
       ? [
-          { label: messages.nav.plans, href: "/plans", icon: "plans", match: "exact" },
+          { label: messages.nav.plans, href: "/pricing", icon: "plans", match: "exact" },
         ]
       : []),
     { label: messages.nav.settings, href: "/settings", icon: "settings", match: "exact" },

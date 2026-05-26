@@ -10,6 +10,7 @@ export type BaseSlideFrameProps = {
   title: string;
   renderMode: ReportRenderMode;
   templateId: ReportTemplateId;
+  reportId?: string;
 };
 
 export type SlideComponentProps<TModel> = BaseSlideFrameProps & {
@@ -17,12 +18,14 @@ export type SlideComponentProps<TModel> = BaseSlideFrameProps & {
 };
 
 export type CoverSlideModel = {
+  reportHeading?: string;
   reportTitle: string;
   subtitle: string;
   meta: string;
   branding: {
     logoUrl: string | null;
     brandName: string;
+    workspaceId?: string | null;
   };
 };
 
@@ -35,6 +38,7 @@ export type ReachSlideCardModel = {
 export type SlideBrandingModel = {
   logoUrl: string | null;
   brandName: string;
+  workspaceId?: string | null;
 };
 
 export type ReachSlideModel = {

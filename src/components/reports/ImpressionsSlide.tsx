@@ -24,6 +24,7 @@ type ImpressionsSlideProps = {
   branding: {
     logoUrl: string | null;
     brandName: string;
+    workspaceId?: string | null;
   };
   reach_total: number;
   timeframe_since?: string;
@@ -620,6 +621,7 @@ export function ImpressionsSlide({
           <SlideHeaderLogo
             logoUrl={branding.logoUrl}
             brandName={branding.brandName}
+            workspaceId={branding.workspaceId}
             slideNumber="03"
             dark={tone.dark}
           />

@@ -127,9 +127,29 @@ export function UserSuggestionModal({ open, onClose }: UserSuggestionModalProps)
           <button
             type="submit"
             disabled={submitting || !message.trim()}
-            className="inline-flex h-11 w-full items-center justify-center rounded-2xl bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 px-4 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting ? "Enviando..." : "Enviar recomendación"}
+            {submitting ? (
+              "Enviando..."
+            ) : (
+              <>
+                <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 stroke-current">
+                  <path
+                    d="M4 12 19 5l-4.5 14-3.2-4.3L4 12Z"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M19 5 11.3 14.7"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span>Enviar recomendación</span>
+              </>
+            )}
           </button>
         </div>
       </form>

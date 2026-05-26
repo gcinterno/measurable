@@ -101,25 +101,54 @@ const pricing = [
     price: "$0",
     subtitle: "For trying the workflow",
     featured: false,
-    items: ["Limited reports", "Basic templates", "Core exports"],
-  },
-  {
-    name: "Pro",
-    price: "$49",
-    subtitle: "For growing teams",
-    featured: true,
+    cta: "Get Started for Free",
     items: [
-      "More reports",
-      ...(FEATURES.ENABLE_PPTX_EXPORT ? ["PPTX export"] : []),
-      "More templates",
+      "10 Reports / month temporarily",
+      "5 Slides per report",
+      "Single Platform Reports",
+      "Measurable Watermark",
+      "Export PDF",
+      "No credit card required",
     ],
   },
   {
-    name: "Premium",
-    price: "$149",
+    name: "Starter",
+    price: "$19",
+    subtitle: "For growing teams",
+    featured: true,
+    cta: "Get Started with Starter",
+    items: ["10 Reports / month", "10 Slides per report", "2 - 3 Platform Reports", "Personalized Branding", "Export PDF"],
+  },
+  {
+    name: "Pro",
+    price: "$39",
+    subtitle: "Recommended for growing agencies",
+    featured: false,
+    recommended: true,
+    cta: "Get Started with Pro",
+    items: [
+      "30 Reports / month",
+      "15 Slides per report",
+      "Multi-Platform Reports",
+      "Personalized Branding",
+      "Export PDF",
+      "3 Automated Scheduled Reports",
+    ],
+  },
+  {
+    name: "Advanced",
+    price: "$99",
     subtitle: "For scaling agencies",
     featured: false,
-    items: ["Unlimited reports", "All templates", "Integrations + automation"],
+    cta: "Get Started with Advanced",
+    items: [
+      "Unlimited Reports / month",
+      "30 Slides per report",
+      "Multi-Platform Reports",
+      "Personalized Branding",
+      "Export PDF",
+      "Unlimited Automated Scheduled Reports",
+    ],
   },
 ] as const;
 
@@ -662,66 +691,69 @@ function PricingSection() {
         </h2>
       </div>
 
-      <div className="mt-8 grid gap-4 xl:grid-cols-3">
+      <div className="mt-8 grid gap-4 xl:grid-cols-4">
         {pricing.map((plan) => (
           <article
             key={plan.name}
-            className={`rounded-[16px] border p-6 shadow-[0_12px_28px_rgba(7,17,31,0.05)] ${
-              plan.featured
-                ? "border-[var(--navy-900)] bg-[linear-gradient(145deg,var(--navy-950)_0%,var(--navy-900)_48%,var(--measurable-blue)_100%)] text-white"
-                : "border-[var(--border-soft)] bg-white text-[var(--text-primary)]"
-            }`}
+            className="relative overflow-hidden rounded-[20px] border border-[var(--border-soft)] bg-white shadow-[0_12px_28px_rgba(7,17,31,0.05)]"
           >
-            <p
-              className={`text-[11px] font-semibold uppercase tracking-[0.28em] ${
-                plan.featured ? "text-[var(--accent-cyan)]" : "text-[var(--text-muted)]"
+            {plan.recommended ? (
+              <div className="absolute right-4 top-4 rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-white">
+                Recommended
+              </div>
+            ) : null}
+            <div
+              className={`border-b px-6 py-6 ${
+                plan.name === "Free"
+                  ? "bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)]"
+                  : "bg-[linear-gradient(135deg,#1749ff_0%,#0f67ff_52%,#60a5fa_100%)] text-white"
               }`}
             >
-              {plan.name}
-            </p>
-            <div className="mt-5 flex items-end gap-2">
-              <p className="text-5xl font-semibold tracking-[-0.05em]">
-                {plan.price}
+              <p
+                className={`text-[11px] font-semibold uppercase tracking-[0.28em] ${
+                  plan.name === "Free" ? "text-[var(--text-muted)]" : "text-blue-100"
+                }`}
+              >
+                {plan.name}
               </p>
-              <p className={plan.featured ? "text-slate-200" : "text-[var(--text-secondary)]"}>
-                /month
+              <div className="mt-5 flex items-end gap-2">
+                <p className="text-5xl font-semibold tracking-[-0.05em]">{plan.price}</p>
+                <p className={plan.name === "Free" ? "text-[var(--text-secondary)]" : "text-blue-100"}>
+                  /month
+                </p>
+              </div>
+              <p className={`mt-3 text-sm ${plan.name === "Free" ? "text-[var(--text-secondary)]" : "text-blue-50"}`}>
+                {plan.subtitle}
               </p>
             </div>
-            <p className={`mt-3 text-sm ${plan.featured ? "text-slate-200" : "text-[var(--text-secondary)]"}`}>
-              {plan.subtitle}
-            </p>
 
-            <div className="mt-6 space-y-3">
-              {plan.items.map((item) => (
-                <div
-                  key={item}
-                  className={`rounded-2xl px-4 py-3 text-sm ${
-                    plan.featured
-                      ? "border border-white/10 bg-white/8 text-slate-100"
-                      : "border border-[var(--border-soft)] bg-[var(--surface-soft)] text-[var(--text-secondary)]"
-                  }`}
-                >
-                  {item}
-                </div>
-              ))}
-            </div>
+            <div className="space-y-4 p-6">
+              <div className="space-y-3">
+                {plan.items.map((item) => (
+                  <div
+                    key={item}
+                    className="flex items-start gap-3 rounded-2xl border border-[var(--border-soft)] bg-[var(--surface-soft)] px-4 py-3 text-sm text-[var(--text-secondary)]"
+                  >
+                    <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                      <svg viewBox="0 0 20 20" fill="none" className="h-3.5 w-3.5 stroke-current">
+                        <path d="M4.75 10.5 8 13.75l7.25-7.5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
 
-            <div className="mt-6">
-              {plan.featured ? (
-                <Link
-                  href="/login"
-                  className="inline-flex w-full items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-[var(--text-primary)] transition hover:bg-[var(--surface-soft)]"
-                >
-                  Start free
-                </Link>
-              ) : (
-                <Link
-                  href="/login"
-                  className="brand-button-primary inline-flex w-full items-center justify-center px-5 py-3 text-sm font-semibold"
-                >
-                  Start free
-                </Link>
-              )}
+              <Link
+                href="/login"
+                className={`inline-flex w-full items-center justify-center rounded-2xl px-5 py-3 text-sm font-semibold transition ${
+                  plan.name === "Free"
+                    ? "border border-[var(--border-soft)] bg-white text-[var(--text-primary)] hover:bg-[var(--surface-soft)]"
+                    : "brand-button-primary"
+                }`}
+              >
+                {plan.cta}
+              </Link>
             </div>
           </article>
         ))}

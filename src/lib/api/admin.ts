@@ -167,6 +167,18 @@ export type AdminSuggestion = {
   status: AdminSuggestionStatus;
 };
 
+export type AdminWishlistLead = {
+  id: string;
+  name: string;
+  email: string;
+  company: string;
+  message: string;
+  source: string;
+  createdAt: string;
+  user: string;
+  workspace: string;
+};
+
 function getNumber(value: unknown) {
   return typeof value === "number"
     ? value
@@ -322,6 +334,53 @@ function normalizeAdminSuggestions(value: unknown) {
 
       return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
     }) satisfies AdminSuggestion[];
+}
+
+function normalizeAdminWishlistLeads(value: unknown) {
+  return getArray<Record<string, unknown>>(value)
+    .map((item, index) => {
+      const userSource =
+        (item.user as Record<string, unknown> | undefined) ||
+        (item.author as Record<string, unknown> | undefined) ||
+        {};
+      const workspaceSource =
+        (item.workspace as Record<string, unknown> | undefined) || {};
+
+      return {
+        id: getString(item.id || item._id, `wishlist-${index}`),
+        name: getString(item.name || item.full_name || item.fullName),
+        email: getString(item.email || item.user_email || item.userEmail),
+        company: getString(item.company || item.organization || item.workspace_name),
+        message: getString(item.message || item.text || item.body),
+        source: getString(item.source, "upgrade_page"),
+        createdAt: getString(item.created_at || item.createdAt || item.date),
+        user: getString(
+          item.user_email ||
+            item.userEmail ||
+            item.user_name ||
+            item.userName ||
+            userSource.email ||
+            userSource.name,
+          ""
+        ),
+        workspace: getString(
+          item.workspace_name ||
+            item.workspaceName ||
+            item.workspace_id ||
+            item.workspaceId ||
+            workspaceSource.name ||
+            workspaceSource.id,
+          ""
+        ),
+      };
+    })
+    .filter((item) => item.name || item.email || item.message)
+    .sort((left, right) => {
+      const leftTime = new Date(left.createdAt).getTime();
+      const rightTime = new Date(right.createdAt).getTime();
+
+      return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
+    }) satisfies AdminWishlistLead[];
 }
 
 export async function fetchAdminMetrics(input: FetchAdminMetricsInput = {}) {
@@ -586,6 +645,19 @@ export async function getAdminSuggestions() {
       );
 
   return normalizeAdminSuggestions(list);
+}
+
+export async function getAdminWishlistLeads() {
+  const payload = await apiFetch<Record<string, unknown> | Array<Record<string, unknown>>>(
+    "/admin/wishlist"
+  );
+  const list = Array.isArray(payload)
+    ? payload
+    : getArray<Record<string, unknown>>(
+        payload.data || payload.wishlist || payload.items || payload.results
+      );
+
+  return normalizeAdminWishlistLeads(list);
 }
 
 export async function updateSuggestionStatus(

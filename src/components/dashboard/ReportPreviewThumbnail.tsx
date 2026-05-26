@@ -4,9 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/components/providers/LanguageProvider";
 import { CoverSlide } from "@/components/reports/slides/CoverSlide";
+import { MEASURABLE_BRAND_LOGO_URL } from "@/lib/branding";
+import { fetchReportDetail } from "@/lib/api/reports";
 import { resolveReportBranding } from "@/lib/reports/branding";
 import { getCoverThumbnailMeta, getCoverThumbnailSubtitle } from "@/lib/reports/cover-thumbnail";
-import { getReportBrandingSnapshot } from "@/lib/reports/branding-snapshots";
+import {
+  getReportBrandingSnapshot,
+  saveReportBrandingSnapshot,
+} from "@/lib/reports/branding-snapshots";
 import {
   getStoredReportTemplateSelection,
   type ReportTemplateId,
@@ -24,10 +29,15 @@ const THUMBNAIL_HEIGHT = REPORT_SLIDE_THEME.slide.height;
 export function ReportPreviewThumbnail({ report }: ReportPreviewThumbnailProps) {
   const { language } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [templateId, setTemplateId] = useState<ReportTemplateId>("executive");
   const [containerWidth, setContainerWidth] = useState(0);
+  const [brandingOverride, setBrandingOverride] = useState<Report["branding"] | null>(null);
   const reportTimeframe: ReportDescriptionTimeframe | null =
     report.description?.timeframe || null;
+  const brandingSnapshot = useMemo(() => getReportBrandingSnapshot(report.id), [report.id]);
+  const templateId = useMemo<ReportTemplateId>(
+    () => getStoredReportTemplateSelection(report.id),
+    [report.id]
+  );
 
   // LEGACY: this thumbnail still renders CoverSlide directly for dashboard cards.
   // Source of truth for branding resolution is resolveReportBranding() used by the 5-slide renderer.
@@ -36,13 +46,13 @@ export function ReportPreviewThumbnail({ report }: ReportPreviewThumbnailProps) 
       resolveReportBranding(
         {
           id: report.id,
-          branding: report.branding,
+          branding: brandingOverride || report.branding,
         },
         {
-          branding: getReportBrandingSnapshot(report.id),
+          branding: brandingSnapshot,
         }
       ),
-    [report.branding, report.id]
+    [brandingOverride, brandingSnapshot, report.branding, report.id]
   );
   const slideModel = useMemo(
     () => ({
@@ -59,8 +69,54 @@ export function ReportPreviewThumbnail({ report }: ReportPreviewThumbnailProps) 
   const slideScale = containerWidth > 0 ? containerWidth / THUMBNAIL_WIDTH : 0;
 
   useEffect(() => {
-    setTemplateId(getStoredReportTemplateSelection(report.id));
-  }, [report.id]);
+    if (
+      brandingOverride ||
+      report.branding?.logoUrl ||
+      brandingSnapshot?.logoUrl ||
+      resolvedBranding.logoUrl !== MEASURABLE_BRAND_LOGO_URL
+    ) {
+      return;
+    }
+
+    let active = true;
+
+    async function loadBrandingFromDetail() {
+      try {
+        const detail = await fetchReportDetail(report.id);
+
+        if (!active || !detail?.branding?.logoUrl) {
+          return;
+        }
+
+        setBrandingOverride(detail.branding);
+        saveReportBrandingSnapshot(report.id, {
+          logoUrl: detail.branding.logoUrl,
+          source: detail.branding.source || "reportDetail.branding.logoUrl",
+        });
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        console.error("report preview branding fallback error:", {
+          reportId: report.id,
+          error,
+        });
+      }
+    }
+
+    void loadBrandingFromDetail();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    brandingOverride,
+    brandingSnapshot?.logoUrl,
+    report.branding?.logoUrl,
+    report.id,
+    resolvedBranding.logoUrl,
+  ]);
 
   useEffect(() => {
     if (!containerRef.current || typeof ResizeObserver === "undefined") {

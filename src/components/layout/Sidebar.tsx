@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { PlanLimitsSummary } from "@/components/workspace/PlanLimitsSummary";
 import { useI18n } from "@/components/providers/LanguageProvider";
-import { FEATURES } from "@/config/features";
+import { fetchAccountSummary, type AccountSummary } from "@/lib/api/account";
 import { logoutUser } from "@/lib/api/auth";
 import { startLogoutInProgress } from "@/lib/auth/session";
 import { useAuthStore } from "@/lib/store/auth-store";
@@ -116,13 +116,104 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
   const router = useRouter();
   const { messages } = useI18n();
   const showPlanSummary = false;
-  const showUpgradePlanButton = false;
   const logout = useAuthStore((state) => state.logout);
   const { workspace, reportsUsedThisMonth } = useActiveWorkspace({
     includeReportsUsage: true,
   });
   const [collapsed, setCollapsed] = useState(false);
+  const [accountSummary, setAccountSummary] = useState<AccountSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(true);
   const isCollapsed = !mobile && collapsed;
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+
+    async function loadAccountSummary() {
+      try {
+        setSummaryLoading(true);
+        const summary = await fetchAccountSummary({
+          signal: controller.signal,
+        });
+
+        if (!active) {
+          return;
+        }
+
+        setAccountSummary(summary);
+      } catch (error) {
+        if (!active || controller.signal.aborted) {
+          return;
+        }
+
+        console.error("sidebar account summary load error:", error);
+        setAccountSummary(null);
+      } finally {
+        if (active) {
+          setSummaryLoading(false);
+        }
+      }
+    }
+
+    void loadAccountSummary();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, []);
+
+  const monthlyReportsSummary = useMemo(() => {
+    if (summaryLoading) {
+      return {
+        title: "Reports Generated",
+        counter: "—/—",
+        progressPercent: 0,
+        progressLabel: "Loading",
+        unlimited: false,
+      };
+    }
+
+    if (!accountSummary) {
+      return null;
+    }
+
+    const hasMonthlyLimit =
+      typeof accountSummary.reportsLimitThisMonth === "number" &&
+      Number.isFinite(accountSummary.reportsLimitThisMonth) &&
+      accountSummary.reportsLimitThisMonth > 0;
+
+    if (hasMonthlyLimit) {
+      const total = accountSummary.reportsLimitThisMonth;
+      const fallbackRemaining =
+        typeof accountSummary.reportsAvailableCount === "number"
+          ? accountSummary.reportsAvailableCount
+          : 0;
+      const rawRemaining =
+        typeof accountSummary.reportsRemainingThisMonth === "number"
+          ? accountSummary.reportsRemainingThisMonth
+          : fallbackRemaining;
+      const remaining = Math.max(rawRemaining, 0);
+      const used = Math.min(Math.max(total - remaining, 0), total);
+      const progressPercent = total > 0 ? Math.min((used / total) * 100, 100) : 0;
+
+      return {
+        title: "Reports Generated",
+        counter: `${used}/${total}`,
+        progressPercent,
+        progressLabel: "Current monthly cycle",
+        unlimited: false,
+      };
+    }
+
+    return {
+      title: "Reports Generated",
+      counter: `${accountSummary.reportsCreatedCount}`,
+      progressPercent: null,
+      progressLabel: "Unlimited",
+      unlimited: true,
+    };
+  }, [accountSummary, summaryLoading]);
 
   async function handleLogout() {
     startLogoutInProgress();
@@ -219,66 +310,113 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
       </nav>
 
       <div className={`border-t border-white/10 py-5 ${isCollapsed ? "px-3" : "px-5 md:px-6"}`}>
-        <div className={`rounded-2xl bg-white/6 ${isCollapsed ? "p-2.5" : "p-4"}`}>
-          {!isCollapsed && showPlanSummary && workspace ? (
-            <div className="mb-4">
-              <PlanLimitsSummary
-                workspace={workspace}
-                reportsUsedThisMonth={reportsUsedThisMonth}
-                variant="sidebar"
-              />
-            </div>
+        <div className="space-y-3">
+          {!isCollapsed && monthlyReportsSummary ? (
+            <section className="rounded-[22px] border border-[#79a6ff]/18 bg-[linear-gradient(145deg,#2550ff_0%,#1749ff_54%,#1239d9_100%)] px-4 py-3.5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_18px_34px_rgba(7,17,31,0.18)]">
+              <p className="text-[0.78rem] font-semibold tracking-[0.02em] text-white/92">
+                {monthlyReportsSummary.title}
+              </p>
+              <div className="mt-3 flex items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  {monthlyReportsSummary.unlimited ? (
+                    <div className="flex h-2.5 items-center rounded-full bg-white/14 px-2">
+                      <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-white/78">
+                        Unlimited
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="h-2.5 overflow-hidden rounded-full bg-[#89a5ff]/38">
+                      <div
+                        className="h-full rounded-full bg-white shadow-[0_0_0_1px_rgba(255,255,255,0.12)]"
+                        style={{ width: `${monthlyReportsSummary.progressPercent ?? 0}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+                <p className="shrink-0 text-sm font-semibold tracking-tight text-white">
+                  {monthlyReportsSummary.counter}
+                </p>
+              </div>
+              <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.16em] text-white/70">
+                {monthlyReportsSummary.progressLabel}
+              </p>
+            </section>
           ) : null}
 
-          {!isCollapsed && !FEATURES.ENABLE_APP_REVIEW_MODE && showUpgradePlanButton ? (
+          <div className={`rounded-2xl bg-white/6 ${isCollapsed ? "p-2.5" : "p-4"}`}>
+            {!isCollapsed && showPlanSummary && workspace ? (
+              <div className="mb-4">
+                <PlanLimitsSummary
+                  workspace={workspace}
+                  reportsUsedThisMonth={reportsUsedThisMonth}
+                  variant="sidebar"
+                />
+              </div>
+            ) : null}
+
             <Link
-              href="/plans"
+              href="/pricing"
               onClick={onNavigate}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--measurable-blue)] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[var(--measurable-blue-hover)]"
+              className={`group inline-flex w-full items-center rounded-2xl border border-[#2f63ff]/22 bg-[linear-gradient(135deg,rgba(23,73,255,0.18),rgba(96,165,250,0.08)_58%,rgba(255,255,255,0.06))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_14px_30px_rgba(7,17,31,0.18)] transition hover:border-[#7fb1ff]/38 hover:bg-[linear-gradient(135deg,rgba(23,73,255,0.24),rgba(96,165,250,0.12)_58%,rgba(255,255,255,0.08))] ${
+                isCollapsed ? "justify-center px-2 py-3" : "gap-3 px-4 py-3.5"
+              }`}
+              aria-label={messages.shell.upgradePlan}
+              title={isCollapsed ? messages.shell.upgradePlan : undefined}
             >
-              <svg viewBox="0 0 24 24" fill="none" className="h-4.5 w-4.5 stroke-current">
-                <path
-                  d="M5 18.5h14l-1.6-8.5-4.15 3.2L12 6.5l-1.25 6.7L6.6 10 5 18.5Z"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path d="M8 18.5V20h8v-1.5" strokeWidth="1.7" strokeLinecap="round" />
-              </svg>
-              {messages.shell.upgradePlan}
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/12 bg-white/10">
+                <svg viewBox="0 0 24 24" fill="none" className="h-4.5 w-4.5 stroke-current">
+                  <path
+                    d="M5 18.5h14l-1.6-8.5-4.15 3.2L12 6.5l-1.25 6.7L6.6 10 5 18.5Z"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path d="M8 18.5V20h8v-1.5" strokeWidth="1.7" strokeLinecap="round" />
+                </svg>
+              </span>
+              {!isCollapsed ? (
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-white">
+                    Upgrade
+                  </span>
+                  <span className="block text-[11px] text-blue-100/84">
+                    Get Started with 10% discount
+                  </span>
+                </span>
+              ) : null}
             </Link>
-          ) : null}
 
-          <button
-            type="button"
-            onClick={() => void handleLogout()}
-            aria-label={messages.shell.logout}
-            title={isCollapsed ? messages.shell.logout : undefined}
-            className={`rounded-2xl border border-white/10 bg-white/8 text-sm font-medium text-white transition hover:bg-white/12 ${
-              isCollapsed
-                ? "flex h-12 w-full items-center justify-center"
-                : `w-full px-4 py-3 ${FEATURES.ENABLE_APP_REVIEW_MODE || !showUpgradePlanButton ? "" : "mt-4"}`
-            }`}
-          >
-            {isCollapsed ? (
-              <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 stroke-current">
-                <path
-                  d="M10 6.75H8.75A2.75 2.75 0 0 0 6 9.5v5A2.75 2.75 0 0 0 8.75 17.25H10"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M13 8.5 17 12l-4 3.5M17 12H9.5"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            ) : (
-              messages.shell.logout
-            )}
-          </button>
+            <button
+              type="button"
+              onClick={() => void handleLogout()}
+              aria-label={messages.shell.logout}
+              title={isCollapsed ? messages.shell.logout : undefined}
+              className={`rounded-2xl border border-white/10 bg-white/8 text-sm font-medium text-white transition hover:bg-white/12 ${
+                isCollapsed
+                  ? "mt-0 flex h-12 w-full items-center justify-center"
+                  : "mt-4 w-full px-4 py-3"
+              }`}
+            >
+              {isCollapsed ? (
+                <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 stroke-current">
+                  <path
+                    d="M10 6.75H8.75A2.75 2.75 0 0 0 6 9.5v5A2.75 2.75 0 0 0 8.75 17.25H10"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M13 8.5 17 12l-4 3.5M17 12H9.5"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              ) : (
+                messages.shell.logout
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </aside>

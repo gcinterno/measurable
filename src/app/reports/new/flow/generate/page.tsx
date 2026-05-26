@@ -11,6 +11,7 @@ import { DesktopFlowSteps } from "@/components/reports/flow/DesktopFlowSteps";
 import { MobileFlowHeader } from "@/components/reports/flow/MobileFlowHeader";
 import { FEATURES } from "@/config/features";
 import { getMeasurableBrandingOverride } from "@/lib/branding";
+import { API_URL } from "@/lib/api/config";
 import {
   getIntegrationReportContext,
   setIntegrationReportContext,
@@ -25,14 +26,19 @@ import {
 } from "@/lib/integrations/timeframes";
 import {
   canSelectSlideCount,
+  getSlideCountOptions,
   getPlanCapabilities,
 } from "@/lib/workspace/plan-limits";
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
-import { updateWorkspaceBranding } from "@/lib/api/workspaces";
+import {
+  updateWorkspaceBranding,
+  uploadWorkspaceBrandLogo,
+} from "@/lib/api/workspaces";
 import {
   type ReportTemplateId,
   resolveReportTemplateSelection,
 } from "@/lib/reports/template-selection";
+import { resolveAssetUrl } from "@/lib/reports/branding";
 import { usePreferencesStore } from "@/lib/store/preferences-store";
 
 const templateOptions: {
@@ -62,6 +68,14 @@ const templateOptions: {
 ];
 
 const LOGO_CROP_SIZE = 512;
+const MAX_BRAND_LOGO_SIZE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_BRAND_LOGO_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+  "image/svg+xml",
+]);
 
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -182,6 +196,9 @@ function NewReportFlowGeneratePageContent() {
   const [brandAssetsError, setBrandAssetsError] = useState("");
   const [brandAssetsSaved, setBrandAssetsSaved] = useState(false);
   const [brandAssetsSaving, setBrandAssetsSaving] = useState(false);
+  const [brandLogoUploading, setBrandLogoUploading] = useState(false);
+  const [brandLogoRemoved, setBrandLogoRemoved] = useState(false);
+  const [brandLogoPreviewFailed, setBrandLogoPreviewFailed] = useState(false);
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [cropSource, setCropSource] = useState("");
   const [cropSourceWidth, setCropSourceWidth] = useState(0);
@@ -195,10 +212,10 @@ function NewReportFlowGeneratePageContent() {
   const isFreePlan = workspace?.plan?.trim().toLowerCase() === "free";
   const planCapabilities = getPlanCapabilities(workspace);
   const measurableBranding = getMeasurableBrandingOverride(workspace);
-  const slideCountOptions = [
-    { value: 5, available: !isMultiSourceReport },
-    { value: 10, available: true },
-  ];
+  const slideCountOptions = getSlideCountOptions(planCapabilities).map((option) => ({
+    ...option,
+    available: isMultiSourceReport ? option.value === 10 : option.available,
+  }));
   const timeframeLabel = formatMetaTimeframeLabel({
     timeframe: storedIntegrationContext?.timeframe,
     startDate: storedIntegrationContext?.startDate,
@@ -206,6 +223,10 @@ function NewReportFlowGeneratePageContent() {
   });
   const brandName = brandNameDraft;
   const brandLogoUrl = brandLogoDraft || measurableBranding?.logoUrl || "";
+  const resolvedBrandLogoPreviewUrl = useMemo(
+    () => resolveAssetUrl(brandLogoUrl, API_URL, { workspaceId: workspace?.id }) || "",
+    [brandLogoUrl, workspace?.id]
+  );
   const cropDragStateRef = useRef<{
     pointerId: number;
     startX: number;
@@ -307,7 +328,7 @@ function NewReportFlowGeneratePageContent() {
     });
 
     if (!allowed) {
-      setError("AI Agents is available in Core and Advanced plans.");
+      setError("AI Agents is available on the Advanced plan.");
       return;
     }
 
@@ -334,12 +355,20 @@ function NewReportFlowGeneratePageContent() {
 
   async function handleLogoChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
+    event.target.value = "";
 
     if (!file) {
       return;
     }
 
+    if (!ALLOWED_BRAND_LOGO_TYPES.has(file.type) || file.size > MAX_BRAND_LOGO_SIZE_BYTES) {
+      setBrandAssetsSaved(false);
+      setBrandAssetsError("We could not upload the logo right now.");
+      return;
+    }
+
     try {
+      setBrandAssetsError("");
       const dataUrl = await readFileAsDataUrl(file);
       const dimensions = await loadImageDimensions(dataUrl);
       const minDimension = Math.min(dimensions.width, dimensions.height);
@@ -351,10 +380,10 @@ function NewReportFlowGeneratePageContent() {
       setCropOffsetX(Math.max(0, (dimensions.width - minDimension) / 2));
       setCropOffsetY(Math.max(0, (dimensions.height - minDimension) / 2));
       setCropModalOpen(true);
-      event.target.value = "";
     } catch (readError) {
       console.error("generate flow logo file error:", readError);
-      setError("We could not read the selected logo file.");
+      setBrandAssetsSaved(false);
+      setBrandAssetsError("We could not upload the logo right now.");
     }
   }
 
@@ -364,6 +393,9 @@ function NewReportFlowGeneratePageContent() {
     }
 
     try {
+      setBrandLogoUploading(true);
+      setBrandAssetsSaved(false);
+      setBrandAssetsError("");
       const dataUrl = await buildCroppedLogo({
         src: cropSource,
         width: cropSourceWidth,
@@ -372,20 +404,35 @@ function NewReportFlowGeneratePageContent() {
         offsetX: cropOffsetX,
         offsetY: cropOffsetY,
       });
+      const logoBlob = await fetch(dataUrl).then((response) => response.blob());
+      const uploadedLogo = await uploadWorkspaceBrandLogo(
+        new File([logoBlob], "brand-logo.png", { type: "image/png" })
+      );
 
-      setBrandLogoDraft(dataUrl);
+      setBrandLogoDraft(uploadedLogo.logoUrl);
+      setBrandLogoPreviewFailed(false);
+      setBrandLogoRemoved(false);
       setBrandAssetsSaved(false);
       setBrandAssetsError("");
       setCropModalOpen(false);
     } catch (cropError) {
-      console.error("generate flow logo crop error:", cropError);
-      setError("We could not crop the selected logo file.");
+      console.error("generate flow logo upload error:", {
+        endpoint: "/workspace/branding/logo",
+        error: cropError,
+      });
+      setBrandAssetsSaved(false);
+      setBrandAssetsError("We could not upload the logo right now.");
+    } finally {
+      setBrandLogoUploading(false);
     }
   }
 
   function handleRemoveLogo() {
     setBrandLogoDraft("");
+    setBrandLogoPreviewFailed(false);
+    setBrandLogoRemoved(true);
     setBrandAssetsSaved(false);
+    setBrandAssetsError("");
   }
 
   function handleBrandNameChange(nextBrandName: string) {
@@ -405,6 +452,8 @@ function NewReportFlowGeneratePageContent() {
     }
 
     setBrandLogoDraft(backendLogoUrl || "");
+    setBrandLogoPreviewFailed(false);
+    setBrandLogoRemoved(false);
   }, [workspace?.branding?.brandName, workspace?.branding?.logoUrl]);
 
   async function handleSaveBrandAssets() {
@@ -424,25 +473,46 @@ function NewReportFlowGeneratePageContent() {
 
     try {
       setBrandAssetsSaving(true);
-      const { workspace: updatedWorkspace } = await updateWorkspaceBranding(workspace.id, {
+      setBrandAssetsError("");
+      const payload = {
         brandName: normalizedBrandName,
-        logoUrl: brandLogoDraft || null,
-      });
+        ...(brandLogoRemoved
+          ? { removeLogo: true as const }
+          : brandLogoDraft
+            ? { logoUrl: brandLogoDraft }
+            : {}),
+      };
+      const { workspace: updatedWorkspace } = await updateWorkspaceBranding(
+        workspace.id,
+        payload
+      );
       const savedBrandName = updatedWorkspace.branding?.brandName || normalizedBrandName;
       const savedLogoUrl = updatedWorkspace.branding?.logoUrl || "";
 
       preferences.updatePreferences({
         brandName: savedBrandName,
-        displayName: savedBrandName,
         logoDataUrl: savedLogoUrl,
         logoSource: savedLogoUrl ? "workspace" : "",
       });
       setBrandNameDraft(savedBrandName);
       setBrandLogoDraft(savedLogoUrl);
+      setBrandLogoPreviewFailed(false);
+      setBrandLogoRemoved(false);
       setBrandAssetsError("");
       setBrandAssetsSaved(true);
     } catch (saveError) {
-      console.error("generate flow brand assets save error:", saveError);
+      console.error("generate flow brand assets save error:", {
+        endpoint: "/workspace/branding",
+        payload: {
+          brand_name: normalizedBrandName,
+          ...(brandLogoRemoved
+            ? { remove_logo: true }
+            : brandLogoDraft
+              ? { logo_url: brandLogoDraft }
+              : {}),
+        },
+        error: saveError,
+      });
       setBrandAssetsSaved(false);
       setBrandAssetsError("We could not save Brand Assets right now.");
     } finally {
@@ -792,7 +862,7 @@ function NewReportFlowGeneratePageContent() {
                       >
                         {planCapabilities.canUseAiAgents
                           ? "Usa agentes para proponer estructura, insights y estilo del reporte."
-                          : "Disponible en Core y Advanced."}
+                          : "Disponible en Advanced."}
                       </span>
                     </button>
                   </div>
@@ -842,7 +912,7 @@ function NewReportFlowGeneratePageContent() {
                                 onClick={() => {
                                   void handleSaveBrandAssets();
                                 }}
-                                disabled={brandAssetsSaving}
+                                disabled={brandAssetsSaving || brandLogoUploading}
                                 className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
                               >
                                 {brandAssetsSaving ? "Saving..." : "Save changes"}
@@ -882,15 +952,16 @@ function NewReportFlowGeneratePageContent() {
                           </span>
                           <div className="mt-3 flex items-center gap-4">
                             <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-[28px] border border-slate-200 bg-white">
-                              {brandLogoUrl ? (
+                              {resolvedBrandLogoPreviewUrl && !brandLogoPreviewFailed ? (
                                 <img
-                                  src={brandLogoUrl}
+                                  src={resolvedBrandLogoPreviewUrl}
                                   alt="Brand logo preview"
                                   className="h-full w-full object-contain"
+                                  onError={() => setBrandLogoPreviewFailed(true)}
                                 />
                               ) : (
                                 <span className="text-sm font-semibold text-slate-400">
-                                  {messages.settings.logoPlaceholder}
+                                  Logo
                                 </span>
                               )}
                             </div>
@@ -911,7 +982,7 @@ function NewReportFlowGeneratePageContent() {
                                     type="file"
                                     accept="image/*"
                                     className="hidden"
-                                    disabled={isFreePlan}
+                                    disabled={isFreePlan || brandAssetsSaving || brandLogoUploading}
                                     onChange={handleLogoChange}
                                   />
                                 </label>
@@ -919,6 +990,7 @@ function NewReportFlowGeneratePageContent() {
                                   <button
                                     type="button"
                                     onClick={handleRemoveLogo}
+                                    disabled={brandAssetsSaving || brandLogoUploading}
                                     className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
                                   >
                                     {messages.settings.removeLogo}
@@ -957,7 +1029,7 @@ function NewReportFlowGeneratePageContent() {
                             Upgrade your plan to add your own brand name and logo to reports.
                           </p>
                           <Link
-                            href="/plans"
+                            href="/pricing"
                             className="mt-5 inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
                           >
                             Upgrade your plan
@@ -1117,6 +1189,7 @@ function NewReportFlowGeneratePageContent() {
               <button
                 type="button"
                 onClick={() => setCropModalOpen(false)}
+                disabled={brandLogoUploading}
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
               >
                 {messages.settings.cancel}
@@ -1124,9 +1197,10 @@ function NewReportFlowGeneratePageContent() {
               <button
                 type="button"
                 onClick={() => void handleApplyLogoCrop()}
+                disabled={brandLogoUploading}
                 className="rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
               >
-                {messages.settings.applyLogo}
+                {brandLogoUploading ? "Uploading..." : messages.settings.applyLogo}
               </button>
             </div>
           </div>

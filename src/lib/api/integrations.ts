@@ -38,6 +38,7 @@ type MetaPagesResponse =
       instagram_account_id?: string | number;
       name?: string | null;
       username?: string | null;
+      display_label?: string | null;
     }>
   | {
       pages?: Array<{
@@ -47,6 +48,7 @@ type MetaPagesResponse =
         instagram_account_id?: string | number;
         name?: string | null;
         username?: string | null;
+        display_label?: string | null;
       }>;
       items?: Array<{
         id?: string | number;
@@ -55,6 +57,7 @@ type MetaPagesResponse =
         instagram_account_id?: string | number;
         name?: string | null;
         username?: string | null;
+        display_label?: string | null;
       }>;
       data?: Array<{
         id?: string | number;
@@ -63,6 +66,7 @@ type MetaPagesResponse =
         instagram_account_id?: string | number;
         name?: string | null;
         username?: string | null;
+        display_label?: string | null;
       }>;
     };
 
@@ -305,7 +309,11 @@ function normalizePages(response: MetaPagesResponse) {
         page.instagram_account_id ??
         `entity-${index}`
     ),
-    name: page.name || page.username || `Account ${index + 1}`,
+    name:
+      page.display_label ||
+      (page.username ? `@${page.username.replace(/^@/, "")}` : "") ||
+      page.name ||
+      `Account ${index + 1}`,
   })) satisfies MetaEntity[];
 }
 

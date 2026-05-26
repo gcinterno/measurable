@@ -50,6 +50,7 @@ export function ReachSlide({
           <SlideHeaderLogo
             logoUrl={model.branding.logoUrl}
             brandName={model.branding.brandName}
+            workspaceId={model.branding.workspaceId}
             slideNumber={slideId}
             dark={tone.dark}
           />

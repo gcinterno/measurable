@@ -1,6 +1,11 @@
 import type { Workspace } from "@/types/workspace";
 
 import { formatNumber, formatStorageBytes } from "@/lib/formatters";
+import {
+  getBillingPlanDefinition,
+  normalizeBillingPlanCode,
+  type BillingPlanCode,
+} from "@/lib/billing/plans";
 
 export type PlanCapabilities = {
   plan: string;
@@ -8,43 +13,40 @@ export type PlanCapabilities = {
   canExportPdf: boolean;
   canExportPptx: boolean;
   canUseAiAgents: boolean;
+  canUseCustomBranding: boolean;
+  hasWatermark: boolean;
+  platformMode: string;
+  scheduledReportsLimit: number | null;
 };
 
-const PLAN_CAPABILITIES: Record<string, PlanCapabilities> = {
-  starter: {
-    plan: "starter",
-    maxSlides: 10,
+function buildPlanCapabilities(planCode: BillingPlanCode): PlanCapabilities {
+  const definition = getBillingPlanDefinition(planCode);
+
+  return {
+    plan: definition.code,
+    maxSlides: definition.slidesPerReport,
     canExportPdf: true,
-    canExportPptx: false,
-    canUseAiAgents: false,
-  },
-  core: {
-    plan: "core",
-    maxSlides: 15,
-    canExportPdf: true,
-    canExportPptx: true,
-    canUseAiAgents: false,
-  },
-  advanced: {
-    plan: "advanced",
-    maxSlides: 30,
-    canExportPdf: true,
-    canExportPptx: true,
-    canUseAiAgents: true,
-  },
+    canExportPptx: definition.canExportPptx,
+    canUseAiAgents: definition.code === "advanced",
+    canUseCustomBranding: definition.canUseCustomBranding,
+    hasWatermark: definition.watermark,
+    platformMode: definition.reportScopeLabel,
+    scheduledReportsLimit: definition.scheduledReportsLimit,
+  };
+}
+
+const PLAN_CAPABILITIES: Record<BillingPlanCode, PlanCapabilities> = {
+  free: buildPlanCapabilities("free"),
+  starter: buildPlanCapabilities("starter"),
+  pro: buildPlanCapabilities("pro"),
+  advanced: buildPlanCapabilities("advanced"),
 };
 
-const DEFAULT_PLAN_CAPABILITIES = PLAN_CAPABILITIES.starter;
+const DEFAULT_PLAN_CAPABILITIES = PLAN_CAPABILITIES.free;
 const SLIDE_COUNT_OPTIONS = [5, 10, 15, 30] as const;
 
 function normalizePlanKey(plan?: string | null) {
-  const planKey = plan?.trim().toLowerCase().replace(/[\s-]+/g, "_") || "starter";
-
-  if (planKey === "free") {
-    return "starter";
-  }
-
-  return planKey;
+  return normalizeBillingPlanCode(plan);
 }
 
 export function formatPlanName(plan?: string | null) {
@@ -183,7 +185,7 @@ export function shouldShowUpgradeCta(params: {
   reportsUsedThisMonth?: number;
   estimatedSlides?: number;
 }) {
-  const plan = params.workspace?.plan?.toLowerCase();
+  const plan = normalizePlanKey(params.workspace?.plan);
 
   if (!plan || plan === "advanced") {
     return false;

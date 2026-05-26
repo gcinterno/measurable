@@ -18,13 +18,17 @@ import { resolveReportBranding } from "@/lib/reports/branding";
 import { normalizeDailySeries } from "@/lib/reports/daily-series";
 import type { ReportTemplateId } from "@/lib/reports/template-selection";
 import { getReportTemplate } from "@/lib/reports/templates";
-import { buildDefaultTemplateContext } from "@/lib/reports/templates/default-view-models";
+import {
+  buildDefaultTemplateContext,
+  resolveReportCoverIntegrationLabel,
+  resolveReportCoverSourceName,
+} from "@/lib/reports/templates/default-view-models";
 import {
   REPORT_SLIDE_THEME,
   type ReportRenderMode,
 } from "@/lib/reports/theme";
 import { formatDisplayNumber } from "@/lib/formatters";
-import type { ReportVersionBlock } from "@/types/report";
+import type { Report, ReportDetail, ReportVersionBlock } from "@/types/report";
 
 type SlideRendererProps = {
   reportId?: string;
@@ -36,10 +40,17 @@ type SlideRendererProps = {
   branding?: {
     logoUrl?: string | null;
     brandName?: string | null;
+    workspaceId?: string | null;
     source?: string;
     brandNameSource?: string;
   };
   templateId?: ReportTemplateId;
+  templateOverride?: string;
+  watermarkText?: string;
+  report?:
+    | Pick<Report, "integrationMetadata" | "reportSources" | "sourceSummary" | "title" | "rawIntegrationHints" | "branding">
+    | Pick<ReportDetail, "integrationMetadata" | "reportSources" | "sourceSummary" | "title" | "workspaceId" | "rawIntegrationHints" | "branding">
+    | null;
 };
 
 type BlockChartPoint = {
@@ -62,6 +73,16 @@ const MULTI_SERIES_BLOCKS = new Set([
 
 const FIXED_STAGE_WIDTH = 1920;
 const FIXED_STAGE_HEIGHT = 1080;
+
+function getExportSlideNumber(slideId: string) {
+  const parsed = Number.parseInt(slideId, 10);
+
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return String(parsed);
+  }
+
+  return slideId.replace(/^0+/, "") || slideId;
+}
 
 function FixedReportSlideStage({
   children,
@@ -113,6 +134,12 @@ function FixedReportSlideStage({
   );
 }
 
+function normalizeReportTemplate(value: string | null | undefined) {
+  const trimmed = value?.trim() || "";
+
+  return trimmed || "executive";
+}
+
 function PresentationStageSlideFrame({
   slideId,
   renderMode,
@@ -139,7 +166,9 @@ function PresentationStageSlideFrame({
 
   return (
     <section
-      data-report-slide={slideId}
+      data-report-slide={renderMode === "export" ? "true" : slideId}
+      data-slide-number={renderMode === "export" ? getExportSlideNumber(slideId) : undefined}
+      data-pdf-page={renderMode === "export" ? "true" : undefined}
       className={frameClassName}
       style={{
         width: REPORT_SLIDE_THEME.slide.width,
@@ -4107,9 +4136,12 @@ function ReportBlockSlide({
   renderMode,
   logoUrl,
   brandName,
+  coverSourceName,
+  workspaceId,
   templateId,
   locale,
   hideOverviewInsights = false,
+  watermarkText,
 }: {
   block: ReportVersionBlock;
   blocks: ReportVersionBlock[];
@@ -4119,9 +4151,12 @@ function ReportBlockSlide({
   renderMode: ReportRenderMode;
   logoUrl: string | null;
   brandName: string;
+  coverSourceName: string;
+  workspaceId?: string | null;
   templateId: ReportTemplateId;
   locale?: string;
   hideOverviewInsights?: boolean;
+  watermarkText?: string;
 }) {
   const tone = getTemplateTone(templateId);
   const semanticName = getBlockSemanticName(block);
@@ -4237,12 +4272,14 @@ function ReportBlockSlide({
         renderMode={renderMode}
         templateId={templateId}
         model={{
-          reportTitle: coverTitle || "Marketing Performance Report",
+          reportHeading: "Marketing Report",
+          reportTitle: coverSourceName || coverTitle || "Marketing Report",
           subtitle: coverText,
           meta: coverMeta,
           branding: {
             logoUrl,
             brandName,
+            workspaceId,
           },
         }}
       />
@@ -4260,12 +4297,14 @@ function ReportBlockSlide({
         renderMode={renderMode}
         templateId={templateId}
         model={{
-          reportTitle: title || "Marketing Performance Report",
+          reportHeading: "Marketing Report",
+          reportTitle: coverSourceName || title || "Marketing Report",
           subtitle: text,
           meta,
           branding: {
             logoUrl,
             brandName,
+            workspaceId,
           },
         }}
       />
@@ -4457,6 +4496,7 @@ function ReportBlockSlide({
       title={title}
       renderMode={renderMode}
       templateId={templateId}
+      watermarkText={watermarkText}
     >
       <div className="grid h-full min-h-0 grid-cols-[0.82fr_1.18fr] gap-6">
         <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4">
@@ -4537,9 +4577,12 @@ export function buildReportBlockSlideElements(input: {
   renderMode: ReportRenderMode;
   logoUrl: string | null;
   brandName: string;
+  coverSourceName: string;
+  workspaceId?: string | null;
   templateId: ReportTemplateId;
   locale?: string;
   hideOverviewInsights?: boolean;
+  watermarkText?: string;
 }) {
   const sortedBlocks = sortBlocksByOrder(input.blocks);
 
@@ -4554,9 +4597,12 @@ export function buildReportBlockSlideElements(input: {
       renderMode={input.renderMode}
       logoUrl={input.logoUrl}
       brandName={input.brandName}
+      coverSourceName={input.coverSourceName}
+      workspaceId={input.workspaceId}
       templateId={input.templateId}
       locale={input.locale}
       hideOverviewInsights={input.hideOverviewInsights}
+      watermarkText={input.watermarkText}
     />
   )) as ReactElement[];
 }
@@ -4574,18 +4620,48 @@ export function SlideRenderer({
   hideOverviewInsights = false,
   branding,
   templateId = "executive",
+  templateOverride,
+  watermarkText,
+  report,
 }: SlideRendererProps) {
   const template = getReportTemplate("default");
+  const effectiveTemplate = normalizeReportTemplate(
+    templateOverride || templateId || getStringValue(report?.template) || "executive"
+  );
+  const renderWorkspaceId =
+    (report && "workspaceId" in report ? report.workspaceId || null : null) ||
+    branding?.workspaceId ||
+    null;
+  const preferredBranding =
+    report && "branding" in report && report.branding
+      ? {
+          logoUrl: report.branding.logoUrl || null,
+          brandName: report.branding.brandName || null,
+          source: report.branding.source,
+          brandNameSource: report.branding.brandNameSource,
+        }
+      : branding;
   const safeBranding = resolveReportBranding({
     id: reportId,
-    templateId,
-    branding,
+    workspaceId: renderWorkspaceId,
+    templateId: effectiveTemplate as ReportTemplateId,
+    branding: preferredBranding,
+    report:
+      report && "branding" in report
+        ? {
+            workspaceId: renderWorkspaceId,
+            branding: report.branding,
+          }
+        : undefined,
   });
+  const coverSourceName = resolveReportCoverSourceName(report, safeBranding.brandName);
+  const coverIntegrationLabel = resolveReportCoverIntegrationLabel(report);
   const context = buildDefaultTemplateContext(model, {
     logoUrl: safeBranding.logoUrl || null,
     brandName: safeBranding.brandName,
+    workspaceId: renderWorkspaceId,
     source: safeBranding.source,
-  }, reportId);
+  }, reportId, coverSourceName, coverIntegrationLabel);
   const rootClassName =
     renderMode === "export"
       ? `report-pdf-root ${REPORT_SLIDE_THEME.spacing.exportGap}`
@@ -4593,6 +4669,18 @@ export function SlideRenderer({
   const shouldUseBlockSlides =
     renderMode !== "export" && shouldRenderBlocksAsSlides(blocks);
   const sortedBlocks = blocks ? sortBlocksByOrder(blocks) : [];
+  const coverBlock =
+    sortedBlocks.find((block) => {
+      const semanticName = getNormalizedBlockSemanticName(block);
+      const slideType = getBlockSlideType(block);
+
+      return semanticName === "cover" || semanticName === "title" || slideType === "cover";
+    }) || null;
+  const coverBlockData = getObjectRecord(coverBlock?.data);
+  const coverBlockBranding = getObjectRecord(coverBlockData?.branding);
+  const reportRecord = report ? (report as Record<string, unknown>) : null;
+  const reportBranding = getObjectRecord(reportRecord?.branding);
+  const reportVersionBranding = getObjectRecord(branding as unknown);
   const normalizedOrder = sortedBlocks.map((block) => ({
     slideNumber:
       block.data.slide_number ??
@@ -4620,8 +4708,9 @@ export function SlideRenderer({
       template: templateId,
       slideCount: shouldUseBlockSlides ? sortedBlocks.length : template.slides.length,
       normalizedOrder,
-      branding: safeBranding,
-    });
+    branding: safeBranding,
+    effectiveTemplate,
+  });
   }
 
   if (shouldUseBlockSlides && blocks && template.slides.length < blocks.length) {
@@ -4657,13 +4746,103 @@ export function SlideRenderer({
           renderMode,
           logoUrl: safeBranding.logoUrl,
           brandName: safeBranding.brandName,
-          templateId,
+          coverSourceName,
+          workspaceId: renderWorkspaceId,
+          templateId: effectiveTemplate as ReportTemplateId,
           locale,
           hideOverviewInsights,
+          watermarkText,
         })
       : template.slides.map((slide) => {
           const SlideComponent = slide.component;
           const slideModel = slide.buildModel(context);
+
+          if (slide.id === "01") {
+            console.info("[COVER_RENDER_AUDIT]", {
+              renderMode,
+              reportId: reportId || null,
+              slideNumber: slide.id,
+              title: report?.title || model?.title || null,
+              coverTitle: slideModel.reportTitle || null,
+              coverSubtitle: slideModel.subtitle || null,
+              coverLogoUrl:
+                coverBlockData?.logo_url ||
+                coverBlockData?.logoUrl ||
+                coverBlockData?.image_url ||
+                coverBlockData?.imageUrl ||
+                getObjectRecord(coverBlockBranding)?.logo_url ||
+                getObjectRecord(coverBlockBranding)?.logoUrl ||
+                report?.logoUrl ||
+                report?.logoUrl ||
+                report?.branding?.logoUrl ||
+                report?.branding?.logo_url ||
+                reportBranding?.logo_url ||
+                reportBranding?.logoUrl ||
+                reportVersionBranding?.logoUrl ||
+                reportVersionBranding?.logo_url ||
+                safeBranding.logoUrl ||
+                null,
+              "block.logo_url": coverBlockData?.logo_url || null,
+              "block.logoUrl": coverBlockData?.logoUrl || null,
+              "block.image_url": coverBlockData?.image_url || null,
+              "block.imageUrl": coverBlockData?.imageUrl || null,
+              "block.branding?.logo_url": coverBlockBranding?.logo_url || null,
+              "block.branding?.logoUrl": coverBlockBranding?.logoUrl || null,
+              "report.logo_url": report?.logoUrl || null,
+              "report.logoUrl": report?.logoUrl || null,
+              "report.branding?.logo_url": getStringValue(reportBranding?.logo_url) || null,
+              "report.branding?.logoUrl": getStringValue(reportBranding?.logoUrl) || null,
+              "reportVersion.branding?.logo_url": getStringValue(reportVersionBranding?.logo_url) || null,
+              "reportVersion.branding?.logoUrl": getStringValue(reportVersionBranding?.logoUrl) || null,
+              "publicReport.logo_url": report?.logoUrl || null,
+              "publicReport.logoUrl": report?.logoUrl || null,
+              integration_type:
+                report?.integrationType ||
+                report?.integrationMetadata?.integrationType ||
+                null,
+              integration_label:
+                report?.integrationLabel ||
+                report?.integrationMetadata?.integrationDisplayName ||
+                null,
+              source_name:
+                report?.sourceName ||
+                report?.integrationMetadata?.sourceName ||
+                report?.sourceSummary ||
+                null,
+              channel: report?.channel || report?.integrationMetadata?.channel || null,
+              brand_name: report?.brandName || safeBranding.brandName || null,
+              logo_url: report?.logoUrl || safeBranding.logoUrl || null,
+              workspace_id:
+                report && "workspaceId" in report ? report.workspaceId || null : null,
+              hasBranding: Boolean(safeBranding.logoUrl || safeBranding.brandName),
+              hasCoverBlock: Boolean(coverBlock),
+              hasBlocks: Boolean(blocks?.length),
+              blocksCount: blocks?.length || 0,
+            });
+          }
+
+          console.info("[SLIDE_RENDERER_TEMPLATE_AUDIT]", {
+            renderMode,
+            slideNumber: slide.id,
+            slideType: slide.key || null,
+            templateOverride: templateOverride || null,
+            effectiveTemplate,
+            slideTemplate: slideIdTemplateForAudit(slideModel),
+            finalTemplateUsed: effectiveTemplate,
+          });
+
+          console.info("[THEME_RESOLUTION_AUDIT]", {
+            slideNumber: slide.id,
+            inputTemplate: templateOverride || templateId || getStringValue(report?.template) || null,
+            finalThemeName: effectiveTemplate,
+            source: templateOverride
+              ? "query"
+              : getStringValue(report?.template)
+                ? "report"
+                : templateId
+                  ? "block"
+                  : "fallback",
+          });
 
           return (
             <SlideComponent
@@ -4672,7 +4851,8 @@ export function SlideRenderer({
               eyebrow={slide.eyebrow}
               title={slide.title}
               renderMode={renderMode}
-              templateId={templateId}
+              templateId={effectiveTemplate as ReportTemplateId}
+              reportId={reportId}
               model={slideModel}
             />
           ) as ReactElement;
@@ -4685,4 +4865,19 @@ export function SlideRenderer({
   }
 
   return <SlideDeckViewport slides={slideElements}>{slides}</SlideDeckViewport>;
+}
+
+function slideIdTemplateForAudit(model: unknown) {
+  if (!model || typeof model !== "object") {
+    return null;
+  }
+
+  const record = model as Record<string, unknown>;
+
+  return (
+    (typeof record.template === "string" && record.template) ||
+    (typeof record.templateId === "string" && record.templateId) ||
+    (typeof record.coverTemplate === "string" && record.coverTemplate) ||
+    null
+  );
 }

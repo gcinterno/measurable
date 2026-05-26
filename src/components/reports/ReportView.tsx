@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/components/providers/LanguageProvider";
-import { ReportExportSurface } from "@/components/reports/ReportExportSurface";
+import { fetchAccountSummary } from "@/lib/api/account";
+import { ReportShareDialog } from "@/components/reports/ReportShareDialog";
 import {
   buildReportBlockSlideElements,
   getReportBlockDiagnostics,
@@ -15,24 +16,28 @@ import { buildExecutiveDarkViewModel } from "@/components/reports/report-view.he
 import { FEATURES } from "@/config/features";
 import { getMeasurableBrandingOverride } from "@/lib/branding";
 import {
+  createReportShare,
   deleteReport,
-  exportReportPptx,
+  downloadReportPdf,
   fetchLatestReportRenderData,
+  updateReportFolder,
 } from "@/lib/api/reports";
 import { formatDisplayNumber } from "@/lib/formatters";
 import { formatMetaTimeframeDateRange } from "@/lib/integrations/timeframes";
 import { resolveReportBranding } from "@/lib/reports/branding";
 import { getReportBrandingSnapshot } from "@/lib/reports/branding-snapshots";
 import { setReportChatContext } from "@/lib/reports/chat-context";
-import { exportReportPdf } from "@/lib/reports/export-pdf";
+import { getReportIntegrationDetails } from "@/lib/reports/integration-metadata";
 import {
   getReportTemplateLabel,
   getStoredReportTemplateSelection,
 } from "@/lib/reports/template-selection";
 import { REPORT_SLIDE_THEME } from "@/lib/reports/theme";
 import { getReportTemplate } from "@/lib/reports/templates";
-import { buildDefaultTemplateContext } from "@/lib/reports/templates/default-view-models";
-import { getPlanCapabilities } from "@/lib/workspace/plan-limits";
+import {
+  buildDefaultTemplateContext,
+  resolveReportCoverSourceName,
+} from "@/lib/reports/templates/default-view-models";
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 import type { ReportDescription, ReportDetail, ReportVersionBlock } from "@/types/report";
 
@@ -187,7 +192,7 @@ function getClipboardReportId(reportId: string) {
   return reportId.replace(/\D/g, "") || reportId;
 }
 
-function ReportAssistantPrompt() {
+function ReportAssistantPrompt({ onClose }: { onClose: () => void }) {
   return (
     <div
       className="fixed bottom-28 right-5 z-40 max-w-[min(22rem,calc(100vw-2rem))] animate-[assistantPromptIn_420ms_ease-out] rounded-[28px] border border-sky-200 bg-white px-5 py-4 text-slate-950 shadow-[0_24px_70px_rgba(14,165,233,0.22)]"
@@ -198,22 +203,30 @@ function ReportAssistantPrompt() {
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-950 text-lg text-white">
           🤖
         </span>
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold">AI Assistant</p>
           <p className="mt-1 text-sm font-medium text-slate-700">
             Hablemos de tu Reporte! 🤖📊
           </p>
         </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Cerrar aviso del AI Assistant"
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+        >
+          x
+        </button>
       </div>
       <style jsx>{`
         @keyframes assistantPromptIn {
           from {
             opacity: 0;
-            transform: translateY(14px) scale(0.96);
+            transform: translateX(22px) translateY(4px) scale(0.96);
           }
           to {
             opacity: 1;
-            transform: translateY(0) scale(1);
+            transform: translateX(0) translateY(0) scale(1);
           }
         }
       `}</style>
@@ -241,30 +254,61 @@ export default function ReportView({
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [downloading, setDownloading] = useState(false);
-  const [pptxLoading, setPptxLoading] = useState(false);
-  const [pptxFeedback, setPptxFeedback] = useState("");
-  const [pdfProgress, setPdfProgress] = useState<{ current: number; total: number } | null>(null);
-  const [mountExportSurface, setMountExportSurface] = useState(false);
-  const [exportSurfaceReady, setExportSurfaceReady] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [shareLoading, setShareLoading] = useState(false);
   const [activeSlideId, setActiveSlideId] = useState("01");
   const [shareFeedback, setShareFeedback] = useState("");
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareDialogUrl, setShareDialogUrl] = useState("");
   const [folders, setFolders] = useState<ReportFolder[]>([]);
   const [folderId, setFolderId] = useState("");
+  const [pendingFolderId, setPendingFolderId] = useState("");
+  const [savingFolder, setSavingFolder] = useState(false);
+  const [folderFeedback, setFolderFeedback] = useState("");
   const [deletingReport, setDeletingReport] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [resolvedVersionId, setResolvedVersionId] = useState("");
   const [idCopied, setIdCopied] = useState(false);
   const [showReportAssistantPrompt, setShowReportAssistantPrompt] = useState(false);
-  const exportSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const [showFreeWatermark, setShowFreeWatermark] = useState(false);
+  const reportAssistantPromptShownRef = useRef(false);
   const slideDeckRef = useRef<HTMLDivElement | null>(null);
   const latestLoadRequestRef = useRef(0);
   const { workspace } = useActiveWorkspace();
-  const planCapabilities = getPlanCapabilities(workspace);
 
   useEffect(() => {
     setFolders(loadStoredFolders());
     setFolderId(loadStoredAssignments()[reportId] || "");
+    setPendingFolderId(loadStoredAssignments()[reportId] || "");
   }, [reportId]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadAccountSummary() {
+      try {
+        const summary = await fetchAccountSummary();
+
+        if (!active) {
+          return;
+        }
+
+        setShowFreeWatermark(
+          summary.isFreePlan ||
+            summary.reportBrandingMode === "measurable" ||
+            summary.canUseCustomBranding === false
+        );
+      } catch (error) {
+        console.error("report view account summary error:", error);
+      }
+    }
+
+    void loadAccountSummary();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const loadReport = useCallback(async () => {
     const requestId = latestLoadRequestRef.current + 1;
@@ -307,17 +351,22 @@ export default function ReportView({
   }, [loadReport]);
 
   useEffect(() => {
-    if (loading || error || blocks.length === 0) {
+    if (loading || error || blocks.length === 0 || reportAssistantPromptShownRef.current) {
       setShowReportAssistantPrompt(false);
       return;
     }
 
-    const timer = window.setTimeout(() => {
+    reportAssistantPromptShownRef.current = true;
+    const showTimer = window.setTimeout(() => {
       setShowReportAssistantPrompt(true);
     }, 450);
+    const hideTimer = window.setTimeout(() => {
+      setShowReportAssistantPrompt(false);
+    }, 30450);
 
     return () => {
-      window.clearTimeout(timer);
+      window.clearTimeout(showTimer);
+      window.clearTimeout(hideTimer);
     };
   }, [blocks.length, error, loading, reportId]);
 
@@ -345,6 +394,7 @@ export default function ReportView({
     () => getStoredReportTemplateSelection(reportId),
     [reportId]
   );
+  const activeTemplate = selectedTemplateId || reportDetail?.template || undefined;
   const viewModel = useMemo(
     () =>
       buildExecutiveDarkViewModel(blocks, {
@@ -453,9 +503,25 @@ export default function ReportView({
       locale: language,
     }) || viewModel.coverTimeframeLabel || viewModel.periodLabel;
   const template = useMemo(() => getReportTemplate("default"), []);
+  const reportIntegration = useMemo(
+    () =>
+      getReportIntegrationDetails(
+        reportDetail || { integrationMetadata: undefined, reportSources: [] }
+      ),
+    [reportDetail]
+  );
   const thumbnailContext = useMemo(
-    () => buildDefaultTemplateContext(viewModel, resolvedBranding),
-    [resolvedBranding, viewModel]
+    () =>
+      buildDefaultTemplateContext(
+        viewModel,
+        {
+          ...resolvedBranding,
+          workspaceId: reportDetail?.workspaceId || null,
+        },
+        reportId,
+        resolveReportCoverSourceName(reportDetail, resolvedBranding.brandName)
+      ),
+    [reportDetail, reportId, resolvedBranding, viewModel]
   );
   const slideNavigationItems = useMemo(
     () => {
@@ -527,23 +593,35 @@ export default function ReportView({
   }, [activeSlideId, blocks, slideNavigationItems.length, template.slides.length]);
 
   async function handleShare() {
-    const reportUrl = `${window.location.origin}/reports/${reportId}`;
+    try {
+      setShareLoading(true);
+      console.info("[ShareReport][ui.start]", {
+        reportId,
+      });
 
-    if (navigator.share) {
+      const response = await createReportShare(reportId);
+
       try {
-        await navigator.share({
-          title,
-          url: reportUrl,
-        });
-        setShareFeedback(messages.reports.sharedLink);
-        return;
+        await navigator.clipboard.writeText(response.shareUrl);
+        setShareFeedback(messages.reports.copiedLink);
       } catch {
-        return;
+        setShareDialogUrl(response.shareUrl);
+        setShareDialogOpen(true);
       }
-    }
 
-    await navigator.clipboard.writeText(reportUrl);
-    setShareFeedback(messages.reports.copiedLink);
+      console.info("[ShareReport][ui.success]", {
+        reportId,
+        shareUrl: response.shareUrl,
+      });
+    } catch (error) {
+      console.error("[ShareReport][ui.error]", {
+        reportId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      setShareFeedback(messages.reports.createShareError);
+    } finally {
+      setShareLoading(false);
+    }
   }
 
   async function handleCopyReportId() {
@@ -552,79 +630,30 @@ export default function ReportView({
   }
 
   async function handleDownload() {
-    console.info("[PlanLimits][export.ui]", {
-      currentPlan: planCapabilities.plan,
-      plan: planCapabilities.plan,
-      exportType: "pdf",
-      reportId,
-      allowed: planCapabilities.canExportPdf,
-    });
-
-    if (!planCapabilities.canExportPdf) {
-      setShareFeedback("PDF export is not available for your current plan.");
-      return;
-    }
-
-    setExportSurfaceReady(false);
-    setMountExportSurface(true);
-    setDownloading(true);
-  }
-
-  async function handleExportPptx() {
-    if (!FEATURES.ENABLE_PPTX_EXPORT) {
-      return;
-    }
-
-    const allowed = planCapabilities.canExportPptx;
-
-    console.info("[PlanLimits][export.ui]", {
-      currentPlan: planCapabilities.plan,
-      plan: planCapabilities.plan,
-      exportType: "pptx",
-      reportId,
-      allowed,
-    });
-
-    if (!allowed) {
-      setPptxFeedback("PPTX export is available on Core and Advanced plans.");
-      return;
-    }
-
     try {
-      setPptxLoading(true);
-      setPptxFeedback("");
-      console.info("[PlanLimits][export.ui]", {
-        currentPlan: planCapabilities.plan,
-        plan: planCapabilities.plan,
-        exportType: "pptx",
+      setPdfLoading(true);
+      console.info("[PDFExport][ui.start]", {
         reportId,
-        allowed,
-        stage: "request start",
+        template: activeTemplate || null,
       });
-      const message = await exportReportPptx(reportId);
-      console.info("[PlanLimits][export.ui]", {
-        currentPlan: planCapabilities.plan,
-        plan: planCapabilities.plan,
-        exportType: "pptx",
+
+      const result = await downloadReportPdf(
         reportId,
-        allowed,
-        stage: "request success",
+        activeTemplate ? { template: activeTemplate } : undefined
+      );
+
+      console.info("[PDFExport][ui.success]", {
+        reportId,
+        filename: result.filename,
       });
-      setPptxFeedback(message || messages.reports.exportStarted);
     } catch (error) {
-      console.warn("[PlanLimits][export.ui]", {
-        currentPlan: planCapabilities.plan,
-        plan: planCapabilities.plan,
-        exportType: "pptx",
+      console.error("[PDFExport][ui.error]", {
         reportId,
-        allowed,
-        stage: "request failure",
         error: error instanceof Error ? error.message : String(error),
       });
-      console.error("report view pptx export error:", error);
-      setPptxFeedback(messages.reports.exportError);
+      setShareFeedback(messages.reports.exportPdfError);
     } finally {
-      setPptxLoading(false);
+      setPdfLoading(false);
     }
   }
 
@@ -641,6 +670,26 @@ export default function ReportView({
 
     saveAssignments(nextAssignments);
     setFolderId(nextFolderId);
+    setPendingFolderId(nextFolderId);
+  }
+
+  async function handleSaveFolder() {
+    const nextFolder = folders.find((folder) => folder.id === pendingFolderId);
+
+    try {
+      setSavingFolder(true);
+      await updateReportFolder(reportId, {
+        folderId: pendingFolderId || null,
+        folderName: nextFolder?.name || null,
+      });
+      handleMoveToFolder(pendingFolderId);
+      setFolderFeedback("Folder updated");
+    } catch (error) {
+      console.error("report detail folder update error:", error);
+      setFolderFeedback("No se pudo guardar la carpeta.");
+    } finally {
+      setSavingFolder(false);
+    }
   }
 
   async function handleDeleteReport() {
@@ -655,6 +704,7 @@ export default function ReportView({
     try {
       setDeletingReport(true);
       await deleteReport(reportId);
+      setDeleteConfirmOpen(false);
 
       const nextAssignments = {
         ...loadStoredAssignments(),
@@ -664,48 +714,12 @@ export default function ReportView({
       router.push("/reports");
     } catch (error) {
       console.error("report detail delete error:", error);
-      window.alert(
-        messages.reports.deleteReportFailed
-      );
+      setDeleteConfirmOpen(false);
+      window.alert("No se pudo eliminar el reporte. Intenta nuevamente.");
     } finally {
       setDeletingReport(false);
     }
   }
-
-  useEffect(() => {
-    let active = true;
-
-    async function generatePdf() {
-      if (!downloading || !mountExportSurface || !exportSurfaceReady || !exportSurfaceRef.current) {
-        return;
-      }
-
-      try {
-        await exportReportPdf(exportSurfaceRef.current, {
-          onProgress: (current, total) => {
-            if (active) {
-              setPdfProgress({ current, total });
-            }
-          },
-        });
-      } catch (err) {
-        console.error("report view download error:", err);
-      } finally {
-        if (active) {
-          setDownloading(false);
-          setMountExportSurface(false);
-          setExportSurfaceReady(false);
-          setPdfProgress(null);
-        }
-      }
-    }
-
-    void generatePdf();
-
-    return () => {
-      active = false;
-    };
-  }, [downloading, exportSurfaceReady, mountExportSurface]);
 
   useEffect(() => {
     if (blocks.length === 0) {
@@ -820,22 +834,29 @@ export default function ReportView({
 
   return (
     <div className="space-y-8">
-      {showReportAssistantPrompt ? <ReportAssistantPrompt /> : null}
-
-      {mountExportSurface ? (
-        <ReportExportSurface
-          reportId={reportId}
-          ref={exportSurfaceRef}
-          model={viewModel}
-          branding={resolvedBranding}
-          templateId={selectedTemplateId}
-          onReadyChange={setExportSurfaceReady}
-        />
+      {showReportAssistantPrompt ? (
+        <ReportAssistantPrompt onClose={() => setShowReportAssistantPrompt(false)} />
       ) : null}
+      <ReportShareDialog
+        open={shareDialogOpen}
+        title={messages.reports.manualShareTitle}
+        description={messages.reports.manualShareDescription}
+        shareUrl={shareDialogUrl}
+        closeLabel={messages.common.close}
+        onClose={() => setShareDialogOpen(false)}
+      />
 
       <section className="mx-auto max-w-[1180px]">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
+            <button
+              type="button"
+              onClick={() => router.push("/reports")}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+            >
+              <span aria-hidden="true">←</span>
+              Volver a reportes
+            </button>
             <h1 className="text-3xl font-semibold tracking-[-0.05em] text-slate-950 sm:text-4xl">
               {title}
             </h1>
@@ -868,18 +889,13 @@ export default function ReportView({
                   ID copiado
                 </span>
               ) : null}
-              {reportDetail?.sourceSummary ? (
-                <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
-                  {reportDetail.sourceSummary}
-                </span>
-              ) : null}
               {timeframeLabel ? (
                 <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
                   Period: {timeframeLabel}
                 </span>
               ) : null}
               {FEATURES.ENABLE_AI_AGENTS_MODE && aiModeMetadata.aiMode ? (
-                <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
+                <span className="hidden rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700 sm:inline-flex">
                   AI mode: {aiModeMetadata.aiMode === "agents" ? "Agents" : "Standard"}
                 </span>
               ) : null}
@@ -887,6 +903,31 @@ export default function ReportView({
             {FEATURES.ENABLE_AI_AGENTS_MODE && aiModeMetadata.fallbackUsed ? (
               <p className="mt-3 text-xs font-medium text-slate-500">
                 Fallback estándar aplicado
+              </p>
+            ) : null}
+            <div className="mt-4 rounded-[24px] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600 shadow-sm">
+              <p>
+                <span className="font-semibold text-slate-900">
+                  {messages.reports.templateLabel}:
+                </span>{" "}
+                {getReportTemplateLabel(selectedTemplateId)}
+              </p>
+              <p className="mt-3 sm:mt-1">
+                <span className="font-semibold text-slate-900">Integración:</span>{" "}
+                {reportIntegration.integrationLabel}
+              </p>
+              <p>
+                <span className="font-semibold text-slate-900">Fuente:</span>{" "}
+                {reportIntegration.sourceLabel}
+              </p>
+              <p className="mt-1">
+                <span className="font-semibold text-slate-900">Canal:</span>{" "}
+                {reportIntegration.channelLabel}
+              </p>
+            </div>
+            {shareFeedback ? (
+              <p className={`mt-4 rounded-2xl px-3 py-2 text-sm ${shareFeedback === messages.reports.createShareError || shareFeedback === messages.reports.exportPdfError ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-700"}`}>
+                {shareFeedback}
               </p>
             ) : null}
           </div>
@@ -935,10 +976,7 @@ export default function ReportView({
           </div>
         </aside>
 
-        <div
-          ref={slideDeckRef}
-          className="rounded-[44px] bg-[#eef3f8] px-4 py-5"
-        >
+        <div ref={slideDeckRef} className="report-main-preview-surface w-full">
           <div className="w-full overflow-hidden">
             <SlideRenderer
               reportId={reportId}
@@ -947,7 +985,9 @@ export default function ReportView({
               locale={language}
               hideOverviewInsights={hideOverviewInsights}
               branding={resolvedBranding}
+              report={reportDetail}
               templateId={selectedTemplateId}
+              watermarkText={showFreeWatermark ? "Reporte creado con measurableapp.com" : undefined}
             />
           </div>
         </div>
@@ -963,7 +1003,7 @@ export default function ReportView({
                 <button
                   type="button"
                   onClick={handleDownload}
-                  disabled={downloading || !reportId}
+                  disabled={pdfLoading || !reportId}
                   className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50"
                 >
                   <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-white ring-1 ring-slate-900/10">
@@ -973,48 +1013,10 @@ export default function ReportView({
                   </span>
                   <span className="min-w-0">
                     <span className="block text-sm font-semibold text-slate-950">
-                      {messages.common.download}
+                      {messages.reports.downloadPdf}
                     </span>
                     <span className="block text-xs text-slate-500">
-                      {downloading
-                        ? pdfProgress
-                          ? `${messages.common.generatingPdf} ${pdfProgress.current}/${pdfProgress.total}`
-                          : messages.common.downloading
-                        : language === "es"
-                          ? messages.reports.saveDeckCopy
-                          : messages.reports.saveDeckCopy}
-                    </span>
-                  </span>
-                </button>
-              ) : null}
-
-              {FEATURES.ENABLE_PPTX_EXPORT ? (
-                <button
-                  type="button"
-                  onClick={handleExportPptx}
-                  disabled={pptxLoading || !reportId}
-                  className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition disabled:cursor-not-allowed ${
-                    planCapabilities.canExportPptx
-                      ? "border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:bg-slate-50"
-                      : "border-amber-200 bg-amber-50 hover:bg-amber-100 disabled:bg-amber-50"
-                  }`}
-                >
-                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-white ring-1 ring-slate-900/10">
-                    <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 stroke-current">
-                      <path d="M6.5 4.5h7l4 4v11h-11v-15Z" strokeWidth="1.8" strokeLinejoin="round" />
-                      <path d="M13.5 4.5v4h4M9 13h6M9 16h4" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-slate-950">
-                      {messages.reports.exportPptx}
-                    </span>
-                    <span className={`block text-xs ${planCapabilities.canExportPptx ? "text-slate-500" : "text-amber-800"}`}>
-                      {pptxLoading
-                        ? messages.reports.exportingPptx
-                        : planCapabilities.canExportPptx
-                          ? "PowerPoint deck export"
-                          : "Core or Advanced required"}
+                      {pdfLoading ? messages.reports.exportingPdf : messages.reports.saveDeckCopy}
                     </span>
                   </span>
                 </button>
@@ -1024,7 +1026,7 @@ export default function ReportView({
                 <button
                   type="button"
                   onClick={handleShare}
-                  disabled={!reportId}
+                  disabled={shareLoading || !reportId}
                   className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50"
                 >
                   <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-white ring-1 ring-slate-900/10">
@@ -1040,9 +1042,7 @@ export default function ReportView({
                       {messages.common.share}
                     </span>
                     <span className="block text-xs text-slate-500">
-                      {language === "es"
-                        ? messages.reports.shareLinkDescription
-                        : messages.reports.shareLinkDescription}
+                      {shareLoading ? messages.common.generating : messages.reports.shareLinkDescription}
                     </span>
                   </span>
                 </button>
@@ -1053,8 +1053,11 @@ export default function ReportView({
                   {messages.reports.addToFolderLabel}
                 </label>
                 <select
-                  value={folderId}
-                  onChange={(event) => handleMoveToFolder(event.target.value)}
+                  value={pendingFolderId}
+                  onChange={(event) => {
+                    setPendingFolderId(event.target.value);
+                    setFolderFeedback("");
+                  }}
                   className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-950 outline-none transition focus:border-sky-300"
                 >
                   <option value="">{messages.common.noFolder}</option>
@@ -1064,11 +1067,31 @@ export default function ReportView({
                     </option>
                   ))}
                 </select>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPendingFolderId(folderId)}
+                    className="rounded-xl px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-100"
+                  >
+                    {messages.common.cancel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveFolder()}
+                    disabled={savingFolder || pendingFolderId === folderId}
+                    className="rounded-xl bg-slate-950 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    {savingFolder ? "Saving..." : messages.common.save}
+                  </button>
+                </div>
+                {folderFeedback ? (
+                  <p className="mt-2 text-xs text-slate-500">{folderFeedback}</p>
+                ) : null}
               </div>
 
               <button
                 type="button"
-                onClick={() => void handleDeleteReport()}
+                onClick={() => setDeleteConfirmOpen(true)}
                 disabled={deletingReport}
                 className="flex w-full items-center gap-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-left transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -1091,22 +1114,8 @@ export default function ReportView({
             </div>
 
             {shareFeedback ? (
-              <p className="mt-3 rounded-2xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              <p className={`mt-3 rounded-2xl px-3 py-2 text-sm ${shareFeedback === messages.reports.createShareError || shareFeedback === messages.reports.exportPdfError ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-700"}`}>
                 {shareFeedback}
-              </p>
-            ) : null}
-            {FEATURES.ENABLE_PPTX_EXPORT && pptxFeedback ? (
-              <p className="mt-3 rounded-2xl bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                {pptxFeedback}
-                {!planCapabilities.canExportPptx ? (
-                  <button
-                    type="button"
-                    onClick={() => router.push("/plans")}
-                    className="ml-2 font-semibold underline"
-                  >
-                    Upgrade
-                  </button>
-                ) : null}
               </p>
             ) : null}
           </div>
@@ -1114,101 +1123,87 @@ export default function ReportView({
         ) : null}
       </section>
 
-      {!FEATURES.ENABLE_APP_REVIEW_MODE && FEATURES.ENABLE_PPTX_EXPORT && pptxFeedback ? (
-        <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 xl:hidden">
-          {pptxFeedback}
-          {!planCapabilities.canExportPptx ? (
-            <button
-              type="button"
-              onClick={() => router.push("/plans")}
-              className="ml-2 font-semibold underline"
-            >
-              Upgrade
-            </button>
-          ) : null}
-        </p>
-      ) : null}
+      <style jsx global>{`
+        .report-main-preview-surface [data-report-slide].report-preview-slide {
+          background: #ffffff !important;
+          border: 1px solid rgba(226, 232, 240, 0.9) !important;
+          border-radius: 40px !important;
+          box-shadow: 0 14px 36px rgba(15, 23, 42, 0.05) !important;
+          padding: 20px !important;
+        }
+      `}</style>
 
       {!FEATURES.ENABLE_APP_REVIEW_MODE ? (
-      <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] z-30 border-t border-slate-900 bg-[linear-gradient(180deg,#0b1220_0%,#111827_100%)] px-4 pb-4 pt-3 text-white shadow-[0_-12px_24px_rgba(15,23,42,0.22)] backdrop-blur xl:hidden">
-        <div className={`grid gap-3 ${showDownloadAction || showShareAction ? "grid-cols-2" : "grid-cols-1"}`}>
-          {showDownloadAction ? (
-            <button
-              type="button"
-              onClick={handleDownload}
-              disabled={downloading || !reportId}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:bg-white/5"
-            >
-              <svg viewBox="0 0 24 24" fill="none" className="h-4.5 w-4.5 stroke-current">
-                <path d="M12 4.5v9M8.5 10l3.5 3.5 3.5-3.5" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M5.5 15.5v2a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-2" strokeWidth="1.8" strokeLinecap="round" />
-              </svg>
-              {downloading
-                ? pdfProgress
-                  ? `${messages.common.generatingPdf} ${pdfProgress.current}/${pdfProgress.total}`
-                  : messages.common.downloading
-                : messages.common.download}
-            </button>
-          ) : null}
-          {FEATURES.ENABLE_PPTX_EXPORT ? (
-            <button
-              type="button"
-              onClick={handleExportPptx}
-              disabled={pptxLoading || !reportId}
-              className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed ${
-                planCapabilities.canExportPptx
-                  ? "border-white/10 bg-white/5 text-white hover:bg-white/10"
-                  : "border-amber-300/30 bg-amber-300/10 text-amber-100 hover:bg-amber-300/15"
-              }`}
-            >
-              {pptxLoading ? messages.reports.exportingPptx : "PPTX"}
-            </button>
-          ) : null}
-          {showShareAction ? (
-            <button
-              type="button"
-              onClick={handleShare}
-              disabled={!reportId}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:bg-white/5"
-            >
-              <svg viewBox="0 0 24 24" fill="none" className="h-4.5 w-4.5 stroke-current">
-                <path d="M14 5.5h4.5V10" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M18.5 5.5l-7.25 7.25" strokeWidth="1.8" strokeLinecap="round" />
-                <path d="M10 7.5H8.25A2.75 2.75 0 0 0 5.5 10.25v5.5a2.75 2.75 0 0 0 2.75 2.75h5.5a2.75 2.75 0 0 0 2.75-2.75V14" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              {messages.common.share}
-            </button>
-          ) : null}
+        <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+6.75rem)] z-50 xl:hidden">
+          <div className="mx-auto flex w-full max-w-[1180px] justify-center px-4">
+            <div className="pointer-events-auto inline-flex items-center gap-3">
+              {showDownloadAction ? (
+                <button
+                  type="button"
+                  onClick={handleDownload}
+                  disabled={pdfLoading || !reportId}
+                  className="inline-flex h-14 min-w-[min(78vw,280px)] items-center justify-center rounded-full bg-[var(--measurable-blue)] px-6 text-[15px] font-semibold text-white shadow-[0_18px_40px_rgba(23,73,255,0.22)] transition hover:scale-[1.01] hover:bg-[var(--measurable-blue-hover)] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {pdfLoading
+                    ? messages.reports.exportingPdf
+                    : language === "es"
+                      ? "Download report"
+                      : "Download report"}
+                </button>
+              ) : null}
+
+              {showShareAction ? (
+                <button
+                  type="button"
+                  onClick={handleShare}
+                  disabled={shareLoading || !reportId}
+                  aria-label="Share report"
+                  className="inline-flex h-[60px] w-[60px] flex-none items-center justify-center rounded-full bg-white text-slate-900 shadow-[0_18px_40px_rgba(15,23,42,0.16)] ring-1 ring-slate-200 transition hover:bg-slate-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {shareLoading ? (
+                    <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900" />
+                  ) : (
+                    <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6 stroke-current">
+                      <path d="M8.5 12.5 15.5 8.5M8.5 11.5l7 4" strokeWidth="1.8" strokeLinecap="round" />
+                      <circle cx="18" cy="7" r="2.5" strokeWidth="1.8" />
+                      <circle cx="6" cy="12" r="2.5" strokeWidth="1.8" />
+                      <circle cx="18" cy="17" r="2.5" strokeWidth="1.8" />
+                    </svg>
+                  )}
+                </button>
+              ) : null}
+            </div>
+          </div>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <select
-            value={folderId}
-            onChange={(event) => handleMoveToFolder(event.target.value)}
-            className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm font-medium text-white outline-none"
-          >
-            <option value="">{language === "es" ? "Agregar a folder" : "Add to folder"}</option>
-            {folders.map((folder) => (
-              <option key={folder.id} value={folder.id}>
-                {folder.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => void handleDeleteReport()}
-            disabled={deletingReport}
-            className="inline-flex items-center justify-center rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-100 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {deletingReport
-              ? language === "es"
-                ? "Eliminando..."
-                : "Deleting..."
-              : language === "es"
-                ? "Eliminar reporte"
-                : "Delete report"}
-          </button>
+      ) : null}
+
+      {deleteConfirmOpen ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/35 px-4">
+          <div className="w-full max-w-md rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_24px_70px_rgba(15,23,42,0.18)]">
+            <h3 className="text-xl font-semibold text-slate-950">Eliminar reporte</h3>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              ¿Seguro que quieres eliminar este reporte? Esta acción no se puede deshacer.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmOpen(false)}
+                disabled={deletingReport}
+                className="rounded-2xl px-4 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteReport()}
+                disabled={deletingReport}
+                className="rounded-2xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
+              >
+                {deletingReport ? "Eliminando..." : "Eliminar reporte"}
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
       ) : null}
     </div>
   );

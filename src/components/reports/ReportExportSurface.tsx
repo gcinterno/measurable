@@ -6,15 +6,19 @@ import { SlideRenderer } from "@/components/reports/SlideRenderer";
 import type { ExecutiveDarkViewModel } from "@/components/reports/report-view.helpers";
 import type { ReportTemplateId } from "@/lib/reports/template-selection";
 import { REPORT_SLIDE_THEME } from "@/lib/reports/theme";
+import type { Report, ReportDetail } from "@/types/report";
 
 type ReportExportSurfaceProps = {
   reportId?: string;
   model: ExecutiveDarkViewModel;
   branding?: {
     logoUrl?: string | null;
+    workspaceId?: string | null;
     source?: string;
   };
+  report?: Pick<Report, "integrationMetadata" | "reportSources" | "sourceSummary" | "title"> | Pick<ReportDetail, "integrationMetadata" | "reportSources" | "sourceSummary" | "title" | "workspaceId"> | null;
   templateId?: ReportTemplateId;
+  watermarkText?: string;
   onReadyChange?: (ready: boolean) => void;
 };
 
@@ -23,7 +27,7 @@ const EXPORT_SLIDE_HEIGHT = REPORT_SLIDE_THEME.slide.height;
 
 export const ReportExportSurface = forwardRef<HTMLDivElement, ReportExportSurfaceProps>(
   function ReportExportSurface(
-    { reportId, model, branding, templateId = "executive", onReadyChange },
+    { reportId, model, branding, report, templateId = "executive", watermarkText, onReadyChange },
     ref
   ) {
     const rootRef = useRef<HTMLDivElement | null>(null);
@@ -56,7 +60,6 @@ export const ReportExportSurface = forwardRef<HTMLDivElement, ReportExportSurfac
       let active = true;
 
       if (!fontsReady) {
-        setSlidesReady(false);
         onReadyChange?.(false);
         return () => {
           active = false;
@@ -91,11 +94,11 @@ export const ReportExportSurface = forwardRef<HTMLDivElement, ReportExportSurfac
                 ? Math.abs(firstSlideRect.height - EXPORT_SLIDE_HEIGHT) < 1
                 : false;
               const ready =
-                slideCount === 5 &&
-                svgCount > 0 &&
-                logosReady &&
+                slideCount > 0 &&
                 slideWidthReady &&
-                slideHeightReady;
+                slideHeightReady &&
+                (svgCount > 0 || templateId === "executive") &&
+                (logos.length === 0 || logosReady);
 
               setSlidesReady(ready);
               onReadyChange?.(ready);
@@ -151,7 +154,9 @@ export const ReportExportSurface = forwardRef<HTMLDivElement, ReportExportSurfac
           model={model}
           renderMode="export"
           branding={branding}
+          report={report}
           templateId={templateId}
+          watermarkText={watermarkText}
         />
       </div>
     );

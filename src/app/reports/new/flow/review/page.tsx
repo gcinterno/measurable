@@ -6,10 +6,12 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRef } from "react";
 
 import { AppShell } from "@/components/layout/AppShell";
+import { UpgradeLimitModal } from "@/components/layout/UpgradeLimitModal";
 import { useI18n } from "@/components/providers/LanguageProvider";
+import { fetchAccountSummary } from "@/lib/api/account";
 import { DesktopFlowSteps } from "@/components/reports/flow/DesktopFlowSteps";
 import { MobileFlowHeader } from "@/components/reports/flow/MobileFlowHeader";
-import { ReportExportSurface } from "@/components/reports/ReportExportSurface";
+import { ReportShareDialog } from "@/components/reports/ReportShareDialog";
 import {
   getReportBlockDiagnostics,
   SlideRenderer,
@@ -19,14 +21,18 @@ import { FEATURES } from "@/config/features";
 import { ApiError, isPlanLimitError } from "@/lib/api";
 import { getMeasurableBrandingOverride } from "@/lib/branding";
 import {
+  createReportShare,
   createMetaPagesReport,
   createMultiSourceReport,
   createInstagramBusinessReport,
-  exportReportPptx,
+  downloadReportPdf,
   fetchLatestReportRenderData,
   fetchReports,
 } from "@/lib/api/reports";
-import { isMetaFrontendIntegrationKey } from "@/lib/integrations/catalog";
+import {
+  integrationCatalog,
+  isMetaFrontendIntegrationKey,
+} from "@/lib/integrations/catalog";
 import {
   formatMetaTimeframeDateRange,
   formatMetaTimeframeLabel,
@@ -36,12 +42,10 @@ import { getIntegrationReportContext } from "@/lib/integrations/session";
 import { resolveReportBranding } from "@/lib/reports/branding";
 import { getReportBrandingSnapshot } from "@/lib/reports/branding-snapshots";
 import { saveReportBrandingSnapshot } from "@/lib/reports/branding-snapshots";
-import { exportReportPdf } from "@/lib/reports/export-pdf";
 import {
   resolveReportTemplateSelection,
   saveReportTemplateSelection,
 } from "@/lib/reports/template-selection";
-import { getPlanCapabilities } from "@/lib/workspace/plan-limits";
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 import type { SourceKey } from "@/lib/integrations/session";
 import type { ReportDescription, ReportDetail, ReportVersionBlock } from "@/types/report";
@@ -165,7 +169,7 @@ function getAiModeMetadata(
 }
 
 function NewReportFlowReviewPageContent() {
-  const showReviewActions = false;
+  const showReviewActions = true;
   const { language, messages } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -175,8 +179,17 @@ function NewReportFlowReviewPageContent() {
   const [generatedReportId, setGeneratedReportId] = useState("");
   const reportId = generatedReportId || queryReportId;
   const integrationSource = searchParams.get("integration") || "";
+  const templateFromQuery = searchParams.get("template") || "";
   const selectedTemplate = resolveReportTemplateSelection(
-    searchParams.get("template") || storedIntegrationContext?.templateId
+    templateFromQuery || storedIntegrationContext?.templateId
+  );
+  const activeTemplate = useMemo(
+    () =>
+      templateFromQuery ||
+      selectedTemplate ||
+      reportDetail?.template ||
+      "executive",
+    [reportDetail?.template, selectedTemplate, templateFromQuery]
   );
   const currentStep = 4;
   const stepHrefMap: Record<number, string> = {
@@ -204,19 +217,23 @@ function NewReportFlowReviewPageContent() {
     source?: string;
   } | null>(null);
   const [reportsCount, setReportsCount] = useState(0);
-  const [downloading, setDownloading] = useState(false);
-  const [pptxLoading, setPptxLoading] = useState(false);
-  const [pptxFeedback, setPptxFeedback] = useState("");
-  const [pdfProgress, setPdfProgress] = useState<{ current: number; total: number } | null>(null);
-  const [mountExportSurface, setMountExportSurface] = useState(false);
-  const [exportSurfaceReady, setExportSurfaceReady] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareFeedback, setShareFeedback] = useState("");
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareDialogUrl, setShareDialogUrl] = useState("");
   const [error, setError] = useState("");
   const [generationErrorDetail, setGenerationErrorDetail] = useState("");
+  const [generationLimitReached, setGenerationLimitReached] = useState(false);
   const [resolvedVersionId, setResolvedVersionId] = useState("");
-  const exportSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const [showFreeWatermark, setShowFreeWatermark] = useState(false);
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [upgradeModalMessage, setUpgradeModalMessage] = useState(
+    "Has alcanzado el límite de 10 reportes gratuitos."
+  );
+  const [upgradeModalUrl, setUpgradeModalUrl] = useState("/wishlist");
   const generationStartedRef = useRef(false);
   const { workspace } = useActiveWorkspace();
-  const planCapabilities = getPlanCapabilities(workspace);
   const flowSteps = [
     {
       id: 1,
@@ -459,16 +476,32 @@ function NewReportFlowReviewPageContent() {
           return;
         }
 
-        if (isPlanLimitError(err)) {
-          const message = err.message || messages.reports.generateReportError;
+        if (err instanceof ApiError && err.code === "FREE_REPORT_LIMIT_REACHED") {
+          setGenerationLimitReached(true);
+          setUpgradeModalMessage(
+            err.message || "Has alcanzado el límite de 10 reportes gratuitos."
+          );
+          setUpgradeModalUrl(err.upgradeUrl || "https://measurableapp.com/wishlist");
+          setUpgradeModalOpen(true);
+          setError("");
+          setGenerationErrorDetail("");
+          setReviewStatus("loading");
+        } else if (isPlanLimitError(err)) {
+          const message = "Llegaste al limite mensual de reportes de tu plan.";
+          setGenerationLimitReached(true);
+          setUpgradeModalMessage(message);
+          setUpgradeModalUrl(err.upgradeUrl || "/pricing");
+          setUpgradeModalOpen(true);
           setError(message);
           setGenerationErrorDetail(message);
         } else if (err instanceof ApiError && err.message) {
+          setGenerationLimitReached(false);
           setError(err.message);
           setGenerationErrorDetail(
             err.status ? `${err.message} (${err.status})` : err.message
           );
         } else {
+          setGenerationLimitReached(false);
           setError(messages.reports.generateReportError);
           setGenerationErrorDetail(messages.reports.generateReportError);
         }
@@ -720,6 +753,54 @@ function NewReportFlowReviewPageContent() {
       endDate: storedIntegrationContext?.endDate,
     });
   const aiModeMetadata = getAiModeMetadata(reportDetail, reportVersionDescription);
+  const selectedSourceCards = useMemo(() => {
+    const selectedSources = storedIntegrationContext?.selectedSources || [];
+    const selectedAccounts = storedIntegrationContext?.selectedAccountsBySource;
+
+    return selectedSources.map((sourceKey) => {
+      const integration = integrationCatalog.find(
+        (item) => item.integrationKey === sourceKey
+      );
+      const selectedAccount = selectedAccounts?.[sourceKey];
+
+      return {
+        key: sourceKey,
+        integrationLabel:
+          integration?.name ||
+          (sourceKey === "instagram_business" ? "Instagram Business" : "Facebook Page"),
+        sourceLabel: selectedAccount?.accountName || "Fuente no disponible",
+        channelLabel: sourceKey === "instagram_business" ? "Instagram" : "Facebook",
+      };
+    });
+  }, [storedIntegrationContext]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadAccountSummary() {
+      try {
+        const summary = await fetchAccountSummary();
+
+        if (!active) {
+          return;
+        }
+
+        setShowFreeWatermark(
+          summary.isFreePlan ||
+            summary.reportBrandingMode === "measurable" ||
+            summary.canUseCustomBranding === false
+        );
+      } catch (error) {
+        console.error("flow review account summary error:", error);
+      }
+    }
+
+    void loadAccountSummary();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   function handleRetryReview() {
     console.info("[ReviewBug][retry]", {
@@ -735,138 +816,104 @@ function NewReportFlowReviewPageContent() {
   }
 
   async function handleShare() {
-    const reportUrl = `${window.location.origin}/reports/${reportId}`;
+    try {
+      setShareLoading(true);
+      console.info("[ShareReport][ui.start]", {
+        reportId,
+      });
 
-    if (navigator.share) {
+      const response = await createReportShare(reportId);
+
       try {
-        await navigator.share({
-          title: reportTitle,
-          url: reportUrl,
-        });
-        return;
+        await navigator.clipboard.writeText(response.shareUrl);
+        setShareFeedback(messages.reports.copiedLink);
       } catch {
-        return;
+        setShareDialogUrl(response.shareUrl);
+        setShareDialogOpen(true);
       }
-    }
 
-    await navigator.clipboard.writeText(reportUrl);
+      console.info("[ShareReport][ui.success]", {
+        reportId,
+        shareUrl: response.shareUrl,
+      });
+    } catch (shareError) {
+      console.error("[ShareReport][ui.error]", {
+        reportId,
+        error: shareError instanceof Error ? shareError.message : String(shareError),
+      });
+      setShareFeedback(messages.reports.createShareError);
+    } finally {
+      setShareLoading(false);
+    }
   }
 
   async function handleDownload() {
-    console.info("[PlanLimits][export.ui]", {
-      currentPlan: planCapabilities.plan,
-      plan: planCapabilities.plan,
-      exportType: "pdf",
-      reportId,
-      allowed: planCapabilities.canExportPdf,
-    });
-
-    if (!planCapabilities.canExportPdf) {
-      setError("PDF export is not available for your current plan.");
-      return;
-    }
-
-    setExportSurfaceReady(false);
-    setMountExportSurface(true);
-    setDownloading(true);
-  }
-
-  async function handleExportPptx() {
-    if (!FEATURES.ENABLE_PPTX_EXPORT) {
-      return;
-    }
-
-    const allowed = planCapabilities.canExportPptx;
-
-    console.info("[PlanLimits][export.ui]", {
-      currentPlan: planCapabilities.plan,
-      plan: planCapabilities.plan,
-      exportType: "pptx",
-      reportId,
-      allowed,
-    });
-
-    if (!allowed) {
-      setPptxFeedback("PPTX export is available on Core and Advanced plans.");
-      return;
-    }
-
     try {
-      setPptxLoading(true);
-      setPptxFeedback("");
-      console.info("[PlanLimits][export.ui]", {
-        currentPlan: planCapabilities.plan,
-        plan: planCapabilities.plan,
-        exportType: "pptx",
+      setPdfLoading(true);
+      console.log("[PDF_TEMPLATE_AUDIT]", {
         reportId,
-        allowed,
-        stage: "request start",
+        activeTemplate,
+        source: templateFromQuery
+          ? "query"
+          : selectedTemplate
+            ? "state"
+            : reportDetail?.template
+              ? "report"
+              : "default",
       });
-      const message = await exportReportPptx(reportId);
-      console.info("[PlanLimits][export.ui]", {
-        currentPlan: planCapabilities.plan,
-        plan: planCapabilities.plan,
-        exportType: "pptx",
+      console.info("[PDFExport][ui.start]", {
         reportId,
-        allowed,
-        stage: "request success",
       });
-      setPptxFeedback(message || messages.reports.exportStarted);
+
+      const result = await downloadReportPdf(reportId, { template: activeTemplate });
+
+      console.info("[PDFExport][ui.success]", {
+        reportId,
+        filename: result.filename,
+      });
     } catch (error) {
-      console.warn("[PlanLimits][export.ui]", {
-        currentPlan: planCapabilities.plan,
-        plan: planCapabilities.plan,
-        exportType: "pptx",
+      console.error("[PDFExport][ui.error]", {
         reportId,
-        allowed,
-        stage: "request failure",
         error: error instanceof Error ? error.message : String(error),
       });
-      console.error("flow review pptx export error:", error);
-      setPptxFeedback(messages.reports.exportError);
+      setShareFeedback(messages.reports.exportPdfError);
     } finally {
-      setPptxLoading(false);
+      setPdfLoading(false);
     }
   }
 
   useEffect(() => {
-    let active = true;
-
-    async function generatePdf() {
-      if (!downloading || !mountExportSurface || !exportSurfaceReady || !exportSurfaceRef.current) {
-        return;
-      }
-
-      try {
-        await exportReportPdf(exportSurfaceRef.current, {
-          onProgress: (current, total) => {
-            if (active) {
-              setPdfProgress({ current, total });
-            }
-          },
-        });
-      } catch (err) {
-        console.error("flow review download error:", err);
-      } finally {
-        if (active) {
-          setDownloading(false);
-          setMountExportSurface(false);
-          setExportSurfaceReady(false);
-          setPdfProgress(null);
-        }
-      }
+    if (!shareFeedback) {
+      return;
     }
 
-    void generatePdf();
+    const timer = window.setTimeout(() => {
+      setShareFeedback("");
+    }, 2400);
 
     return () => {
-      active = false;
+      window.clearTimeout(timer);
     };
-  }, [downloading, exportSurfaceReady, mountExportSurface]);
+  }, [shareFeedback]);
 
   return (
     <AppShell>
       <div className="-mx-4 -mt-4 space-y-5 bg-white px-4 pt-4 pb-6 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6 sm:pb-8">
+        <UpgradeLimitModal
+          open={upgradeModalOpen}
+          message={upgradeModalMessage}
+          onClose={() => {
+            setUpgradeModalOpen(false);
+            router.replace(
+              integrationSource
+                ? `/reports/new/flow/generate?integration=${integrationSource}`
+                : "/reports/new/flow/generate"
+            );
+          }}
+          onUpgrade={() => {
+            window.location.assign(upgradeModalUrl || "https://measurableapp.com/wishlist");
+          }}
+        />
         <MobileFlowHeader
           currentStep={currentStep}
           totalSteps={flowSteps.length}
@@ -874,16 +921,14 @@ function NewReportFlowReviewPageContent() {
           description={messages.review.reviewDescription}
           backHref={stepHrefMap[3]}
         />
-        {mountExportSurface ? (
-          <ReportExportSurface
-            reportId={reportId}
-            ref={exportSurfaceRef}
-            model={viewModel}
-            branding={resolvedBranding}
-            templateId={selectedTemplate}
-            onReadyChange={setExportSurfaceReady}
-          />
-        ) : null}
+        <ReportShareDialog
+          open={shareDialogOpen}
+          title={messages.reports.manualShareTitle}
+          description={messages.reports.manualShareDescription}
+          shareUrl={shareDialogUrl}
+          closeLabel={messages.common.close}
+          onClose={() => setShareDialogOpen(false)}
+        />
 
         <section className="p-5 sm:p-8">
           <div className="hidden max-w-3xl md:block">
@@ -906,6 +951,25 @@ function NewReportFlowReviewPageContent() {
           />
 
           <div className="mt-8">
+            {selectedSourceCards.length > 0 ? (
+              <section className="mb-6 rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
+                  Integración utilizada
+                </p>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  {selectedSourceCards.map((card) => (
+                    <div key={card.key} className="rounded-[20px] border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-base font-semibold text-slate-950">{card.integrationLabel}</p>
+                      <p className="mt-2 text-sm text-slate-600">{card.sourceLabel}</p>
+                      <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        Canal: {card.channelLabel}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
             <section className="p-0">
               {!introComplete ? (
                 <div className="space-y-4">
@@ -941,18 +1005,29 @@ function NewReportFlowReviewPageContent() {
               ) : reviewStatus === "error" ? (
                 <div className="rounded-[20px] border border-red-200 bg-red-50 px-5 py-5 text-sm text-red-700">
                   <p className="font-semibold">
-                    {messages.reports.generateReportError}
+                    {generationLimitReached
+                      ? "Limite mensual alcanzado"
+                      : messages.reports.generateReportError}
                   </p>
                   <p className="mt-2">
                     {generationErrorDetail || error}
                   </p>
-                  <button
-                    type="button"
-                    onClick={handleRetryReview}
-                    className="mt-4 inline-flex rounded-2xl bg-red-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-800"
-                  >
-                    Reintentar
-                  </button>
+                  {generationLimitReached ? (
+                    <Link
+                      href="/pricing"
+                      className="mt-4 inline-flex rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
+                    >
+                      Ver planes
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleRetryReview}
+                      className="mt-4 inline-flex rounded-2xl bg-red-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-800"
+                    >
+                      Reintentar
+                    </button>
+                  )}
                 </div>
               ) : reviewStatus === "empty" ? (
                 <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[20px] border border-slate-200 bg-slate-50 px-6 text-center">
@@ -1028,36 +1103,18 @@ function NewReportFlowReviewPageContent() {
                           <button
                             type="button"
                             onClick={handleDownload}
-                            disabled={downloading || !reportId}
+                            disabled={pdfLoading || !reportId}
                             className="hidden items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100 md:inline-flex"
                           >
-                            {downloading
-                              ? pdfProgress
-                                ? `${messages.common.generatingPdf} ${pdfProgress.current}/${pdfProgress.total}`
-                                : messages.common.downloading
-                              : messages.common.download}
+                            {pdfLoading ? messages.reports.exportingPdf : messages.reports.downloadPdf}
                           </button>
-                          {FEATURES.ENABLE_PPTX_EXPORT ? (
-                            <button
-                              type="button"
-                              onClick={handleExportPptx}
-                              disabled={pptxLoading || !reportId}
-                              className={`hidden items-center justify-center rounded-full border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:bg-slate-100 md:inline-flex ${
-                                planCapabilities.canExportPptx
-                                  ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                                  : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
-                              }`}
-                            >
-                              {pptxLoading ? messages.reports.exportingPptx : messages.reports.exportPptx}
-                            </button>
-                          ) : null}
                           <button
                             type="button"
                             onClick={handleShare}
-                            disabled={!reportId}
+                            disabled={shareLoading || !reportId}
                             className="hidden items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100 md:inline-flex"
                           >
-                            {messages.common.share}
+                            {shareLoading ? messages.common.generating : messages.common.share}
                           </button>
                           <Link
                             href={reportId ? `/reports/${reportId}` : "/reports"}
@@ -1078,17 +1135,16 @@ function NewReportFlowReviewPageContent() {
                     </div>
                     ) : null}
                   </div>
-                  {FEATURES.ENABLE_PPTX_EXPORT && pptxFeedback ? (
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                      {pptxFeedback}
-                      {!planCapabilities.canExportPptx ? (
-                        <Link
-                          href="/plans"
-                          className="ml-2 font-semibold text-amber-900 underline"
-                        >
-                          Upgrade
-                        </Link>
-                      ) : null}
+                  {shareFeedback ? (
+                    <div
+                      className={`rounded-2xl border px-4 py-3 text-sm ${
+                        shareFeedback === messages.reports.createShareError ||
+                        shareFeedback === messages.reports.exportPdfError
+                          ? "border-amber-200 bg-amber-50 text-amber-800"
+                          : "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      }`}
+                    >
+                      {shareFeedback}
                     </div>
                   ) : null}
 
@@ -1100,7 +1156,9 @@ function NewReportFlowReviewPageContent() {
                         blocks={blocks}
                         locale={language}
                         branding={resolvedBranding}
+                        report={reportDetail}
                         templateId={selectedTemplate}
+                        watermarkText={showFreeWatermark ? "Reporte creado con measurableapp.com" : undefined}
                       />
                     </div>
                   </div>
@@ -1119,36 +1177,18 @@ function NewReportFlowReviewPageContent() {
               <button
                 type="button"
                 onClick={handleDownload}
-                disabled={downloading || !reportId}
+                disabled={pdfLoading || !reportId}
                 className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100"
               >
-                {downloading
-                  ? pdfProgress
-                    ? `${messages.common.generatingPdf} ${pdfProgress.current}/${pdfProgress.total}`
-                    : messages.common.downloading
-                  : messages.common.download}
+                {pdfLoading ? messages.reports.exportingPdf : messages.reports.downloadPdf}
               </button>
-              {FEATURES.ENABLE_PPTX_EXPORT ? (
-                <button
-                  type="button"
-                  onClick={handleExportPptx}
-                  disabled={pptxLoading || !reportId}
-                  className={`inline-flex items-center justify-center rounded-full border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:bg-slate-100 ${
-                    planCapabilities.canExportPptx
-                      ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
-                      : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
-                  }`}
-                >
-                  {pptxLoading ? messages.reports.exportingPptx : messages.reports.exportPptx}
-                </button>
-              ) : null}
               <button
                 type="button"
                 onClick={handleShare}
-                disabled={!reportId}
+                disabled={shareLoading || !reportId}
                 className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100"
               >
-                {messages.common.share}
+                {shareLoading ? messages.common.generating : messages.common.share}
               </button>
               <Link
                 href={reportId ? `/reports/${reportId}` : "/reports"}
@@ -1166,37 +1206,19 @@ function NewReportFlowReviewPageContent() {
             <button
               type="button"
               onClick={handleDownload}
-              disabled={downloading || !reportId}
+              disabled={pdfLoading || !reportId}
               className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100"
             >
               <svg viewBox="0 0 24 24" fill="none" className="h-4.5 w-4.5 stroke-current">
                 <path d="M12 4.5v9M8.5 10l3.5 3.5 3.5-3.5" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                 <path d="M5.5 15.5v2a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-2" strokeWidth="1.8" strokeLinecap="round" />
               </svg>
-              {downloading
-                ? pdfProgress
-                  ? `${messages.common.generatingPdf} ${pdfProgress.current}/${pdfProgress.total}`
-                  : messages.common.downloading
-                : messages.common.download}
+              {pdfLoading ? messages.reports.exportingPdf : messages.reports.downloadPdf}
             </button>
-            {FEATURES.ENABLE_PPTX_EXPORT ? (
-              <button
-                type="button"
-                onClick={handleExportPptx}
-                disabled={pptxLoading || !reportId}
-                className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed ${
-                  planCapabilities.canExportPptx
-                    ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:bg-slate-100"
-                    : "border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 disabled:bg-amber-50"
-                }`}
-              >
-                {pptxLoading ? messages.reports.exportingPptx : "PPTX"}
-              </button>
-            ) : null}
             <button
               type="button"
               onClick={handleShare}
-              disabled={!reportId}
+              disabled={shareLoading || !reportId}
               className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100"
             >
               <svg viewBox="0 0 24 24" fill="none" className="h-4.5 w-4.5 stroke-current">
@@ -1204,7 +1226,7 @@ function NewReportFlowReviewPageContent() {
                 <path d="M18.5 5.5l-7.25 7.25" strokeWidth="1.8" strokeLinecap="round" />
                 <path d="M10 7.5H8.25A2.75 2.75 0 0 0 5.5 10.25v5.5a2.75 2.75 0 0 0 2.75 2.75h5.5a2.75 2.75 0 0 0 2.75-2.75V14" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              {messages.common.share}
+              {shareLoading ? messages.common.generating : messages.common.share}
             </button>
           </div>
           <div className="mt-3 flex items-center gap-3">

@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { AdAccountSelector } from "@/components/integrations/AdAccountSelector";
 import { MetaStatusCard } from "@/components/integrations/MetaStatusCard";
 import { AppShell } from "@/components/layout/AppShell";
+import { UpgradeLimitModal } from "@/components/layout/UpgradeLimitModal";
 import { PlanLimitsSummary } from "@/components/workspace/PlanLimitsSummary";
 import { ApiError, isLimitError } from "@/lib/api";
 import {
@@ -22,8 +23,10 @@ import {
   createPendingMetaOAuth,
   clearMetaOAuthDebugUrl,
   hasMetaConnectPrerequisites,
+  isMetaOAuthWindowMessage,
   markMetaRedirectStarted,
   normalizeMetaAuthUrl,
+  openMetaOAuthPopup,
   showMetaOAuthReadyBanner,
   storeMetaOAuthDebugUrl,
 } from "@/lib/integrations/meta-oauth";
@@ -83,7 +86,14 @@ function MetaIntegrationPageContent() {
   const [hasNoAuthorizedPages, setHasNoAuthorizedPages] = useState(false);
   const [pageSelected, setPageSelected] = useState(false);
   const [syncCompleted, setSyncCompleted] = useState(false);
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [upgradeModalMessage, setUpgradeModalMessage] = useState(
+    "Has alcanzado el límite de 10 reportes gratuitos."
+  );
+  const [upgradeModalUrl, setUpgradeModalUrl] = useState("/wishlist");
   const connectInFlightRef = useRef(false);
+  const popupPollRef = useRef<number | null>(null);
+  const popupTimeoutRef = useRef<number | null>(null);
   const selectedPage = useMemo(
     () => pages.find((page) => page.id === selectedPageId),
     [pages, selectedPageId]
@@ -101,6 +111,17 @@ function MetaIntegrationPageContent() {
   const currentMetaSource = isPendingMetaSource(storedContext?.source)
     ? storedContext.source
     : "facebook_pages";
+
+  const stopPopupPolling = useCallback(() => {
+    if (popupPollRef.current !== null && typeof window !== "undefined") {
+      window.clearInterval(popupPollRef.current);
+      popupPollRef.current = null;
+    }
+    if (popupTimeoutRef.current !== null && typeof window !== "undefined") {
+      window.clearTimeout(popupTimeoutRef.current);
+      popupTimeoutRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     const hasCallbackParams =
@@ -120,6 +141,55 @@ function MetaIntegrationPageContent() {
 
     window.location.href = retryAuthUrl;
   }, [searchParams]);
+
+  const refreshMetaPagesState = useCallback(async (input?: {
+    quiet?: boolean;
+    integrationIdOverride?: string;
+  }) => {
+    const nextIntegrationId =
+      input?.integrationIdOverride || integrationId || storedContext?.integrationId || "";
+
+    if (!nextIntegrationId) {
+      setConnected(false);
+      setPages([]);
+      setHasNoAuthorizedPages(false);
+      return false;
+    }
+
+    if (!input?.quiet) {
+      setLoading(true);
+    }
+
+    try {
+      const pageData = await fetchMetaPages(
+        nextIntegrationId,
+        workspaceId || storedContext?.workspaceId || ""
+      );
+
+      setPages(pageData);
+      setConnected(pageData.length > 0);
+      setHasNoAuthorizedPages(pageData.length === 0);
+      setPageSelected((current) =>
+        pageData.some((page) => page.id === selectedPageId) ? current : false
+      );
+
+      if (!pageData.some((page) => page.id === selectedPageId)) {
+        setSelectedPageId("");
+      }
+
+      if (pageData.length === 0) {
+        setStatusMessage(
+          "Connected but no authorized pages were found. Reconnect and approve at least one page."
+        );
+      }
+
+      return pageData.length > 0;
+    } finally {
+      if (!input?.quiet) {
+        setLoading(false);
+      }
+    }
+  }, [integrationId, selectedPageId, storedContext?.integrationId, storedContext?.workspaceId, workspaceId]);
 
   useEffect(() => {
     if (!storedContext || storedContext.integration !== "meta") {
@@ -191,6 +261,54 @@ function MetaIntegrationPageContent() {
     router,
     searchParams,
   ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    async function handleMetaWindowMessage(event: MessageEvent) {
+      if (event.origin !== window.location.origin || !isMetaOAuthWindowMessage(event.data)) {
+        return;
+      }
+
+      stopPopupPolling();
+      clearPendingMetaOAuth();
+      connectInFlightRef.current = false;
+      setConnectLoading(false);
+
+      if (event.data.type === "MEASURABLE_META_CONNECT_SUCCESS") {
+        setError("");
+        setStatusMessage("Integración conectada correctamente.");
+
+        if (event.data.integrationId) {
+          setIntegrationId(event.data.integrationId);
+        }
+
+        try {
+          await refreshMetaPagesState({
+            quiet: true,
+            integrationIdOverride: event.data.integrationId,
+          });
+        } catch (error) {
+          console.error("meta page popup refresh error:", error);
+          setError("La conexión terminó, pero no pudimos refrescar las páginas.");
+        }
+
+        return;
+      }
+
+      setStatusMessage("");
+      setError(event.data.message || "No se pudo completar la conexión con Meta.");
+    }
+
+    window.addEventListener("message", handleMetaWindowMessage);
+
+    return () => {
+      stopPopupPolling();
+      window.removeEventListener("message", handleMetaWindowMessage);
+    };
+  }, [refreshMetaPagesState, stopPopupPolling]);
 
   useEffect(() => {
     let active = true;
@@ -268,7 +386,7 @@ function MetaIntegrationPageContent() {
     return () => {
       active = false;
     };
-  }, [connected, integrationId, selectedPageId, workspaceId]);
+  }, [connected, integrationId, selectedPageId, storedContext?.workspaceId, workspaceId]);
 
   useEffect(() => {
     if (!storedContext || storedContext.pageName || !selectedPageId) {
@@ -339,6 +457,8 @@ function MetaIntegrationPageContent() {
       });
       return;
     }
+
+    let popupStarted = false;
 
     try {
       connectInFlightRef.current = true;
@@ -431,13 +551,54 @@ function MetaIntegrationPageContent() {
         authUrl,
         source: currentMetaSource,
         route: "/integrations/meta",
+        transport: "popup",
       });
       storeMetaOAuthDebugUrl(authUrl);
       await showMetaOAuthReadyBanner();
 
       if (typeof window !== "undefined") {
         markMetaRedirectStarted();
-        window.location.href = authUrl;
+        const popup = openMetaOAuthPopup(authUrl);
+
+        if (!popup) {
+          window.location.href = authUrl;
+          return;
+        }
+
+        popupStarted = true;
+        setStatusMessage("Waiting for Meta connection...");
+        stopPopupPolling();
+        popupTimeoutRef.current = window.setTimeout(() => {
+          connectInFlightRef.current = false;
+          setConnectLoading(false);
+          setStatusMessage(
+            "Si terminaste la conexión, ya puedes cerrar la pestaña de Meta."
+          );
+        }, 90000);
+        popupPollRef.current = window.setInterval(async () => {
+          if (!popup.closed) {
+            return;
+          }
+
+          stopPopupPolling();
+          clearPendingMetaOAuth();
+          connectInFlightRef.current = false;
+          setConnectLoading(false);
+
+          try {
+            const connectedAfterClose = await refreshMetaPagesState({ quiet: true });
+            if (connectedAfterClose) {
+              setError("");
+              setStatusMessage("Integración conectada correctamente.");
+              return;
+            }
+          } catch (error) {
+            console.error("meta page popup closed refresh error:", error);
+          }
+
+          setStatusMessage("");
+          setError("La ventana de conexión se cerró antes de completar la autorización.");
+        }, 2500);
         return;
       }
     } catch (err: unknown) {
@@ -450,8 +611,10 @@ function MetaIntegrationPageContent() {
           : "We could not start the Facebook Pages connection. Try again."
       );
     } finally {
-      connectInFlightRef.current = false;
-      setConnectLoading(false);
+      if (!popupStarted) {
+        connectInFlightRef.current = false;
+        setConnectLoading(false);
+      }
     }
   }
 
@@ -586,7 +749,15 @@ function MetaIntegrationPageContent() {
       router.replace(`/reports/${report.reportId}`);
     } catch (err: unknown) {
       console.error("meta pages create report error:", err);
-      if (isLimitError(err)) {
+      if (err instanceof ApiError && err.code === "FREE_REPORT_LIMIT_REACHED") {
+        setUpgradeModalMessage(
+          err.message || "Has alcanzado el límite de 10 reportes gratuitos."
+        );
+        setUpgradeModalUrl(err.upgradeUrl || "https://measurableapp.com/wishlist");
+        setUpgradeModalOpen(true);
+        setError("");
+        setStatusMessage("");
+      } else if (isLimitError(err)) {
         setError(err.message || "We could not generate the report with the synced data. Try again.");
       } else if (err instanceof ApiError && err.message) {
         setError(err.message);
@@ -639,6 +810,14 @@ function MetaIntegrationPageContent() {
   return (
     <AppShell>
       <div className="space-y-5 sm:space-y-6">
+        <UpgradeLimitModal
+          open={upgradeModalOpen}
+          message={upgradeModalMessage}
+          onClose={() => setUpgradeModalOpen(false)}
+          onUpgrade={() => {
+            window.location.assign(upgradeModalUrl || "https://measurableapp.com/wishlist");
+          }}
+        />
         <MetaStatusCard
           state={uiState}
           workspaceId={workspaceId}
@@ -706,7 +885,7 @@ function MetaIntegrationPageContent() {
                 </p>
                 {showUpgradeCta ? (
                   <Link
-                    href="/plans"
+                    href="/pricing"
                     className="mt-3 inline-flex rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
                   >
                     Upgrade plan

@@ -15,8 +15,8 @@ export default async function ReportDetailPage({
     <AppShell>
       <ReportView
         reportId={id}
-        showDownloadAction={false}
-        showShareAction={false}
+        showDownloadAction
+        showShareAction
       />
     </AppShell>
   );

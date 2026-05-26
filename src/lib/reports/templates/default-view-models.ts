@@ -11,6 +11,7 @@ import type {
 } from "@/components/reports/slides/types";
 import { formatDisplayNumber, formatNumber } from "@/lib/formatters";
 import { getIntegrationReportContext } from "@/lib/integrations/session";
+import type { Report, ReportDetail } from "@/types/report";
 
 const DEFAULT_AI_INSIGHT_FALLBACK = "Dato no disponible en este momento.";
 const PAGE_VIEWS_UNAVAILABLE_MESSAGE =
@@ -22,9 +23,10 @@ export type DefaultTemplateContext = {
   branding: {
     logoUrl: string | null;
     brandName: string;
+    workspaceId?: string | null;
     source?: string;
   };
-  coverBrandName: string;
+  coverSourceName: string;
   coverIntegrationLabel: string;
   analyzedPeriod: string;
   reachDisplayLabel: string;
@@ -124,6 +126,86 @@ function formatIntegrationDisplayName(value: string) {
 
 function getFallbackBrandName() {
   return "Social Account";
+}
+
+type CoverSourceReportInput =
+  | Pick<
+      Report,
+      | "integrationMetadata"
+      | "reportSources"
+      | "sourceSummary"
+      | "title"
+      | "rawIntegrationHints"
+      | "integrationType"
+      | "integrationLabel"
+      | "sourceName"
+      | "channel"
+      | "brandName"
+      | "logoUrl"
+      | "periodStart"
+      | "periodEnd"
+      | "template"
+      | "reportTitle"
+      | "workspaceId"
+    >
+  | Pick<
+      ReportDetail,
+      | "integrationMetadata"
+      | "reportSources"
+      | "sourceSummary"
+      | "title"
+      | "rawIntegrationHints"
+      | "integrationType"
+      | "integrationLabel"
+      | "sourceName"
+      | "channel"
+      | "brandName"
+      | "logoUrl"
+      | "periodStart"
+      | "periodEnd"
+      | "template"
+      | "reportTitle"
+      | "workspaceId"
+    >
+  | null
+  | undefined;
+
+function getFirstNonEmpty(values: Array<string | null | undefined>) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return "";
+}
+
+export function resolveReportCoverSourceName(
+  report: CoverSourceReportInput,
+  fallbackBrandName?: string | null
+) {
+  const metadata = report?.integrationMetadata;
+  const primarySourceLabel = report?.reportSources?.find((source) => source.label?.trim())?.label;
+  const storedPageName = getIntegrationReportContext()?.pageName?.trim();
+  const flatSourceName =
+    report && "sourceName" in report && typeof report.sourceName === "string"
+      ? report.sourceName.trim()
+      : "";
+  const titleCandidate = report?.title || report?.reportTitle || "";
+  const titleFallback = titleCandidate ? getCoverBrandName(titleCandidate) : "";
+
+  return (
+    getFirstNonEmpty([
+      flatSourceName,
+      metadata?.sourceName,
+      metadata?.sourceHandle,
+      primarySourceLabel,
+      report?.sourceSummary,
+      storedPageName,
+      titleFallback,
+      fallbackBrandName,
+    ]) || "Marketing Report"
+  );
 }
 
 function getCoverBrandName(title: string) {
@@ -236,6 +318,79 @@ function getCoverIntegrationLabel() {
   return "Social Account";
 }
 
+export function resolveReportCoverIntegrationLabel(report?: CoverSourceReportInput) {
+  const metadata = report?.integrationMetadata;
+  const hints = report?.rawIntegrationHints;
+  const flatIntegrationLabel =
+    report && "integrationLabel" in report && typeof report.integrationLabel === "string"
+      ? report.integrationLabel.trim()
+      : "";
+  const flatIntegrationType =
+    report && "integrationType" in report && typeof report.integrationType === "string"
+      ? report.integrationType.trim()
+      : "";
+  const flatChannel =
+    report && "channel" in report && typeof report.channel === "string" ? report.channel.trim() : "";
+  const haystacks = [
+    flatIntegrationLabel,
+    flatIntegrationType,
+    flatChannel,
+    metadata?.channel,
+    metadata?.socialNetwork,
+    metadata?.integrationType,
+    metadata?.integrationDisplayName,
+    hints?.channel,
+    hints?.socialNetwork,
+    hints?.integrationType,
+    hints?.integrationDisplayName,
+    hints?.sourceType,
+    hints?.integration,
+    hints?.type,
+    hints?.reportType,
+    report?.sourceSummary,
+    report?.title,
+  ]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim().toLowerCase());
+
+  const hasFacebook = haystacks.some(
+    (value) =>
+      value.includes("facebook_pages") ||
+      value.includes("facebook page") ||
+      value.includes("facebook")
+  );
+  const hasInstagram = haystacks.some(
+    (value) =>
+      value.includes("instagram_business") ||
+      value.includes("instagram business") ||
+      value.includes("instagram")
+  );
+  const hasCsv = haystacks.some((value) => value.includes("csv"));
+  const hasUpload = haystacks.some((value) => value.includes("upload"));
+
+  if (hasFacebook && hasInstagram) {
+    return "Facebook Pages";
+  }
+
+  if (hasFacebook) {
+    return "Facebook Pages";
+  }
+
+  if (hasInstagram) {
+    return "Instagram Business";
+  }
+
+  if (hasCsv) {
+    return "CSV";
+  }
+
+  if (hasUpload) {
+    return "Upload";
+  }
+
+  return getCoverIntegrationLabel();
+}
+
 function getReachInsight(report: ExecutiveDarkViewModel) {
   return (
     report.reachInsightText ||
@@ -343,9 +498,12 @@ export function buildDefaultTemplateContext(
   branding: {
     logoUrl: string | null;
     brandName: string;
+    workspaceId?: string | null;
     source?: string;
   },
-  reportId?: string
+  reportId?: string,
+  coverSourceName?: string,
+  coverIntegrationLabel?: string
 ): DefaultTemplateContext {
   const reachDisplayLabel = "ALCANCE";
   const impressionsDisplayLabel = "IMPRESIONES";
@@ -364,8 +522,9 @@ export function buildDefaultTemplateContext(
     reportId,
     report,
     branding,
-    coverBrandName: branding.brandName || getCoverBrandName(report.title),
-    coverIntegrationLabel: getCoverIntegrationLabel(),
+    coverSourceName:
+      coverSourceName || getCoverBrandName(report.title) || branding.brandName || "Marketing Report",
+    coverIntegrationLabel: coverIntegrationLabel || getCoverIntegrationLabel(),
     analyzedPeriod: formatAnalyzedPeriod(report),
     reachDisplayLabel,
     impressionsDisplayLabel,
@@ -386,7 +545,8 @@ export function buildCoverSlideModel(
   context: DefaultTemplateContext
 ): CoverSlideModel {
   return {
-    reportTitle: `Marketing Report ${context.coverBrandName}`,
+    reportHeading: "Marketing Report",
+    reportTitle: context.coverSourceName,
     subtitle: `${context.coverIntegrationLabel} Report - Summary & Insights`,
     meta: context.analyzedPeriod,
     branding: context.branding,

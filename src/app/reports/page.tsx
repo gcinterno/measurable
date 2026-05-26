@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { useI18n } from "@/components/providers/LanguageProvider";
 import { ReportLibraryCard } from "@/components/reports/ReportLibraryCard";
 import { ReportsEmptyState } from "@/components/reports/ReportsEmptyState";
 import { isAbortError, isAuthError } from "@/lib/api";
-import { fetchReports } from "@/lib/api/reports";
+import { fetchReports, updateReportFolder } from "@/lib/api/reports";
 import { formatNumber } from "@/lib/formatters";
 import { getActiveWorkspaceId } from "@/lib/workspace/session";
 import type { Report } from "@/types/report";
@@ -22,6 +22,20 @@ const REPORT_FOLDERS_KEY = "reportFolders";
 const REPORT_FOLDER_ASSIGNMENTS_KEY = "reportFolderAssignments";
 const REPORTS_CACHE_KEY = "reportsPageCache";
 const INITIAL_VISIBLE_REPORTS = 12;
+type ReportFilter = {
+  id: "all" | "facebook" | "instagram" | "csv" | "legacy";
+  label: string;
+  integrationType?: string;
+  channel?: string;
+};
+
+const REPORT_FILTERS: ReportFilter[] = [
+  { id: "all", label: "Todos" },
+  { id: "facebook", label: "Facebook", integrationType: "facebook" },
+  { id: "instagram", label: "Instagram", integrationType: "instagram" },
+  { id: "csv", label: "CSV / Uploads", integrationType: "csv" },
+  { id: "legacy", label: "Legacy / Manual", channel: "legacy" },
+];
 
 function loadStoredFolders() {
   if (typeof window === "undefined") {
@@ -104,6 +118,10 @@ export default function ReportsPage() {
   const [error, setError] = useState("");
   const [showStaleBanner, setShowStaleBanner] = useState(false);
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_REPORTS);
+  const [activeIntegrationFilter, setActiveIntegrationFilter] =
+    useState<ReportFilter["id"]>("all");
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const filterMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     console.log("reports page mounted");
@@ -127,7 +145,12 @@ export default function ReportsPage() {
     setShowStaleBanner(false);
 
     try {
-      const data = await fetchReports({ signal });
+      const activeFilter = REPORT_FILTERS.find((filter) => filter.id === activeIntegrationFilter);
+      const data = await fetchReports({
+        signal,
+        integrationType: activeFilter?.integrationType,
+        channel: activeFilter?.channel,
+      });
 
       setReports(data);
       saveCachedReports(data);
@@ -154,7 +177,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [messages.reports.loadReportDescription]);
+  }, [activeIntegrationFilter, messages.reports.loadReportDescription]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -185,7 +208,33 @@ export default function ReportsPage() {
 
   useEffect(() => {
     setVisibleCount(INITIAL_VISIBLE_REPORTS);
-  }, [activeFolderId, reports.length]);
+  }, [activeFolderId, activeIntegrationFilter, reports.length]);
+
+  useEffect(() => {
+    if (!filterMenuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!filterMenuRef.current?.contains(event.target as Node)) {
+        setFilterMenuOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setFilterMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [filterMenuOpen]);
 
   function handleCreateFolder() {
     const trimmedName = newFolderName.trim();
@@ -507,9 +556,56 @@ export default function ReportsPage() {
                       : messages.reports.folderViewNone}
                   </p>
                 </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                  {formatNumber(visibleReports.length, 0)}
-                </span>
+                <div className="flex items-center gap-2">
+                  <div ref={filterMenuRef} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setFilterMenuOpen((current) => !current)}
+                      className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" className="h-4.5 w-4.5 stroke-current">
+                        <path
+                          d="M4.75 6.5h14.5M7.75 12h8.5M10.75 17.5h2.5"
+                          strokeWidth="1.9"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                      <span className="hidden sm:inline">Filtrar</span>
+                    </button>
+                    {filterMenuOpen ? (
+                      <div className="absolute right-0 top-[calc(100%+10px)] z-20 w-60 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_44px_rgba(15,23,42,0.12)]">
+                        {REPORT_FILTERS.map((filter) => {
+                          const active = activeIntegrationFilter === filter.id;
+
+                          return (
+                            <button
+                              key={filter.id}
+                              type="button"
+                              onClick={() => {
+                                setActiveIntegrationFilter(filter.id);
+                                setFilterMenuOpen(false);
+                              }}
+                              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-medium transition ${
+                                active
+                                  ? "bg-slate-950 text-white"
+                                  : "text-slate-700 hover:bg-slate-50"
+                              }`}
+                            >
+                              <span>{filter.label}</span>
+                              {active ? <span className="text-xs">Activo</span> : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                  <span className="hidden rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600 sm:inline-flex">
+                    Filtro: {REPORT_FILTERS.find((filter) => filter.id === activeIntegrationFilter)?.label || "Todos"}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                    {formatNumber(visibleReports.length, 0)}
+                  </span>
+                </div>
               </div>
 
               {visibleReports.length > 0 ? (
@@ -520,7 +616,14 @@ export default function ReportsPage() {
                       report={report}
                       folders={folders}
                       folderId={assignments[report.id] || ""}
-                      onMoveToFolder={handleMoveReport}
+                      onMoveToFolder={async (reportId, nextFolderId) => {
+                        const nextFolder = folders.find((folder) => folder.id === nextFolderId);
+                        await updateReportFolder(reportId, {
+                          folderId: nextFolderId || null,
+                          folderName: nextFolder?.name || null,
+                        });
+                        handleMoveReport(reportId, nextFolderId);
+                      }}
                       onDeleted={(reportId) => {
                         const nextReports = reports.filter((item) => item.id !== reportId);
                         const nextAssignments = { ...assignments };
