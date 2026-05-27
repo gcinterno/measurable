@@ -67,6 +67,10 @@ const templateOptions: {
   },
 ];
 
+const templatePreviewVersions: Partial<Record<ReportTemplateId, string>> = {
+  simple: "2026-05-26-01",
+};
+
 const LOGO_CROP_SIZE = 512;
 const MAX_BRAND_LOGO_SIZE_BYTES = 5 * 1024 * 1024;
 const LOCKED_SLIDE_COUNTS = new Set([10, 15, 30]);
@@ -786,6 +790,9 @@ function NewReportFlowGeneratePageContent() {
                 <div className="mt-4 grid gap-4 xl:grid-cols-3">
                   {templateOptions.map((template) => {
                     const active = template.id === selectedTemplate;
+                    const previewSrc = templatePreviewVersions[template.id]
+                      ? `${template.previewSrc}?v=${templatePreviewVersions[template.id]}`
+                      : template.previewSrc;
 
                     return (
                       <button
@@ -800,7 +807,7 @@ function NewReportFlowGeneratePageContent() {
                       >
                         <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-[#eef3f8] shadow-[0_14px_32px_rgba(15,23,42,0.08)]">
                           <img
-                            src={template.previewSrc}
+                            src={previewSrc}
                             alt={`${template.name} template preview`}
                             className="block aspect-[1160/670] h-auto w-full object-cover"
                           />
