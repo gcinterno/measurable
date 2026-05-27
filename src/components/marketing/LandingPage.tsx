@@ -745,7 +745,7 @@ function PricingSection() {
               </div>
 
               <Link
-                href="/login"
+                href={plan.name === "Free" ? "/login" : "/wishlist"}
                 className={`inline-flex w-full items-center justify-center rounded-2xl px-5 py-3 text-sm font-semibold transition ${
                   plan.name === "Free"
                     ? "border border-[var(--border-soft)] bg-white text-[var(--text-primary)] hover:bg-[var(--surface-soft)]"

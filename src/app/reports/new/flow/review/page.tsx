@@ -50,6 +50,9 @@ import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 import type { SourceKey } from "@/lib/integrations/session";
 import type { ReportDescription, ReportDetail, ReportVersionBlock } from "@/types/report";
 
+const REPORT_PDF_DOWNLOADS_LOCKED = true;
+const REPORT_PDF_LOCKED_TOOLTIP = "Proximamente";
+
 const loadingQuotes = [
   {
     quote: "Lo que se mide con claridad permite decidir mejor, enfocar recursos y convertir la actividad diaria en resultados visibles.",
@@ -183,14 +186,6 @@ function NewReportFlowReviewPageContent() {
   const selectedTemplate = resolveReportTemplateSelection(
     templateFromQuery || storedIntegrationContext?.templateId
   );
-  const activeTemplate = useMemo(
-    () =>
-      templateFromQuery ||
-      selectedTemplate ||
-      reportDetail?.template ||
-      "executive",
-    [reportDetail?.template, selectedTemplate, templateFromQuery]
-  );
   const currentStep = 4;
   const stepHrefMap: Record<number, string> = {
     1: integrationSource
@@ -234,6 +229,14 @@ function NewReportFlowReviewPageContent() {
   const [upgradeModalUrl, setUpgradeModalUrl] = useState("/wishlist");
   const generationStartedRef = useRef(false);
   const { workspace } = useActiveWorkspace();
+  const activeTemplate = useMemo(
+    () =>
+      templateFromQuery ||
+      selectedTemplate ||
+      reportDetail?.template ||
+      "executive",
+    [reportDetail?.template, selectedTemplate, templateFromQuery]
+  );
   const flowSteps = [
     {
       id: 1,
@@ -266,6 +269,26 @@ function NewReportFlowReviewPageContent() {
       hasStoredContext: Boolean(storedIntegrationContext),
     });
   }, [generatedReportId, queryReportId, reportId, shouldGenerateReport, storedIntegrationContext]);
+
+  useEffect(() => {
+    console.info("[REVIEW_TEMPLATE_AUDIT]", {
+      templateFromQuery: templateFromQuery || null,
+      selectedTemplate,
+      reportTemplate: reportDetail?.template || null,
+      activeTemplate,
+      reportId: reportId || null,
+      hasReportDetail: Boolean(reportDetail),
+      blocksCount: blocks.length,
+    });
+  }, [
+    activeTemplate,
+    blocks.length,
+    reportDetail,
+    reportDetail?.template,
+    reportId,
+    selectedTemplate,
+    templateFromQuery,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -516,6 +539,7 @@ function NewReportFlowReviewPageContent() {
       active = false;
     };
   }, [
+    language,
     messages.reports.generateReportError,
     messages.reports.noDatasetYet,
     router,
@@ -1100,14 +1124,37 @@ function NewReportFlowReviewPageContent() {
                     {!FEATURES.ENABLE_APP_REVIEW_MODE && showReviewActions ? (
                       <div className="flex shrink-0 items-center justify-end">
                         <div className="flex flex-wrap items-center justify-end gap-3">
-                          <button
-                            type="button"
-                            onClick={handleDownload}
-                            disabled={pdfLoading || !reportId}
-                            className="hidden items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100 md:inline-flex"
-                          >
-                            {pdfLoading ? messages.reports.exportingPdf : messages.reports.downloadPdf}
-                          </button>
+                          <div className="group relative hidden md:block">
+                            <button
+                              type="button"
+                              onClick={handleDownload}
+                              disabled={REPORT_PDF_DOWNLOADS_LOCKED || pdfLoading || !reportId}
+                              aria-disabled={REPORT_PDF_DOWNLOADS_LOCKED}
+                              className={`items-center justify-center rounded-full border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed md:inline-flex ${
+                                REPORT_PDF_DOWNLOADS_LOCKED
+                                  ? "border-amber-200 bg-[linear-gradient(135deg,#fffdf7_0%,#fff7ed_100%)] text-slate-800 shadow-[0_14px_34px_rgba(245,158,11,0.10)]"
+                                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:bg-slate-100"
+                              }`}
+                            >
+                              {REPORT_PDF_DOWNLOADS_LOCKED ? (
+                                <>
+                                  <span className="mr-2 rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                                    Locked
+                                  </span>
+                                  {messages.reports.downloadPdf}
+                                </>
+                              ) : pdfLoading ? (
+                                messages.reports.exportingPdf
+                              ) : (
+                                messages.reports.downloadPdf
+                              )}
+                            </button>
+                            {REPORT_PDF_DOWNLOADS_LOCKED ? (
+                              <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 rounded-full bg-slate-950 px-3 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100">
+                                {REPORT_PDF_LOCKED_TOOLTIP}
+                              </span>
+                            ) : null}
+                          </div>
                           <button
                             type="button"
                             onClick={handleShare}
@@ -1158,6 +1205,7 @@ function NewReportFlowReviewPageContent() {
                         branding={resolvedBranding}
                         report={reportDetail}
                         templateId={selectedTemplate}
+                        templateOverride={activeTemplate}
                         watermarkText={showFreeWatermark ? "Reporte creado con measurableapp.com" : undefined}
                       />
                     </div>
@@ -1174,14 +1222,37 @@ function NewReportFlowReviewPageContent() {
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
                 Actions
               </span>
-              <button
-                type="button"
-                onClick={handleDownload}
-                disabled={pdfLoading || !reportId}
-                className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100"
-              >
-                {pdfLoading ? messages.reports.exportingPdf : messages.reports.downloadPdf}
-              </button>
+              <div className="group relative">
+                <button
+                  type="button"
+                  onClick={handleDownload}
+                  disabled={REPORT_PDF_DOWNLOADS_LOCKED || pdfLoading || !reportId}
+                  aria-disabled={REPORT_PDF_DOWNLOADS_LOCKED}
+                  className={`inline-flex items-center justify-center rounded-full border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed ${
+                    REPORT_PDF_DOWNLOADS_LOCKED
+                      ? "border-amber-200 bg-[linear-gradient(135deg,#fffdf7_0%,#fff7ed_100%)] text-slate-800 shadow-[0_14px_34px_rgba(245,158,11,0.10)]"
+                      : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:bg-slate-100"
+                  }`}
+                >
+                  {REPORT_PDF_DOWNLOADS_LOCKED ? (
+                    <>
+                      <span className="mr-2 rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                        Locked
+                      </span>
+                      {messages.reports.downloadPdf}
+                    </>
+                  ) : pdfLoading ? (
+                    messages.reports.exportingPdf
+                  ) : (
+                    messages.reports.downloadPdf
+                  )}
+                </button>
+                {REPORT_PDF_DOWNLOADS_LOCKED ? (
+                  <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 rounded-full bg-slate-950 px-3 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100">
+                    {REPORT_PDF_LOCKED_TOOLTIP}
+                  </span>
+                ) : null}
+              </div>
               <button
                 type="button"
                 onClick={handleShare}
@@ -1203,18 +1274,41 @@ function NewReportFlowReviewPageContent() {
         {!FEATURES.ENABLE_APP_REVIEW_MODE && showReviewActions ? (
         <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] z-30 border-t border-slate-200 bg-white/96 px-4 pb-4 pt-3 shadow-[0_-12px_24px_rgba(15,23,42,0.08)] backdrop-blur md:hidden">
           <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={handleDownload}
-              disabled={pdfLoading || !reportId}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100"
-            >
-              <svg viewBox="0 0 24 24" fill="none" className="h-4.5 w-4.5 stroke-current">
-                <path d="M12 4.5v9M8.5 10l3.5 3.5 3.5-3.5" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M5.5 15.5v2a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-2" strokeWidth="1.8" strokeLinecap="round" />
-              </svg>
-              {pdfLoading ? messages.reports.exportingPdf : messages.reports.downloadPdf}
-            </button>
+            <div className="group relative">
+              <button
+                type="button"
+                onClick={handleDownload}
+                disabled={REPORT_PDF_DOWNLOADS_LOCKED || pdfLoading || !reportId}
+                aria-disabled={REPORT_PDF_DOWNLOADS_LOCKED}
+                className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed ${
+                  REPORT_PDF_DOWNLOADS_LOCKED
+                    ? "border-amber-200 bg-[linear-gradient(135deg,#fffdf7_0%,#fff7ed_100%)] text-slate-800 shadow-[0_14px_34px_rgba(245,158,11,0.10)]"
+                    : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:bg-slate-100"
+                }`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" className="h-4.5 w-4.5 stroke-current">
+                  <path d="M12 4.5v9M8.5 10l3.5 3.5 3.5-3.5" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M5.5 15.5v2a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-2" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
+                {REPORT_PDF_DOWNLOADS_LOCKED ? (
+                  <>
+                    <span className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                      Locked
+                    </span>
+                    {messages.reports.downloadPdf}
+                  </>
+                ) : pdfLoading ? (
+                  messages.reports.exportingPdf
+                ) : (
+                  messages.reports.downloadPdf
+                )}
+              </button>
+              {REPORT_PDF_DOWNLOADS_LOCKED ? (
+                <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 rounded-full bg-slate-950 px-3 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100">
+                  {REPORT_PDF_LOCKED_TOOLTIP}
+                </span>
+              ) : null}
+            </div>
             <button
               type="button"
               onClick={handleShare}

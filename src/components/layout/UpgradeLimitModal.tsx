@@ -35,7 +35,7 @@ export function UpgradeLimitModal({
             </div>
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-200">
-                Upgrade
+                Coming soon
               </p>
               <h2 className="mt-1 text-xl font-semibold tracking-tight">
                 Límite gratuito alcanzado
@@ -59,7 +59,7 @@ export function UpgradeLimitModal({
               onClick={onUpgrade}
               className="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#0f172a_0%,#1d4ed8_100%)] px-4 text-sm font-semibold text-white shadow-[0_16px_34px_rgba(29,78,216,0.24)] transition hover:opacity-95 sm:flex-1"
             >
-              Upgrade Plan
+              Join Wishlist
             </button>
             <button
               type="button"

@@ -14,6 +14,7 @@ import { ApiError, isLimitError } from "@/lib/api";
 import {
   fetchMetaInstagramAccounts,
   fetchMetaPages,
+  refreshMetaPages,
   selectMetaPage,
   syncMetaInstagramAccount,
   syncMetaPages,
@@ -46,6 +47,9 @@ type SourceSelectorState = {
   accounts: MetaOption[];
   loading: boolean;
   error: string;
+  lastUpdatedAt?: number;
+  loadingSlow?: boolean;
+  refreshing?: boolean;
 };
 
 const EMPTY_SOURCE_SELECTOR_STATE: Record<SourceKey, SourceSelectorState> = {
@@ -60,6 +64,15 @@ const EMPTY_SOURCE_SELECTOR_STATE: Record<SourceKey, SourceSelectorState> = {
     error: "",
   },
 };
+
+const META_SELECTOR_CACHE_KEY = "measurable.meta.sync.selectorCache";
+
+type SourceCacheRecord = {
+  accounts: MetaOption[];
+  lastUpdatedAt: number;
+};
+
+type SelectorCache = Partial<Record<SourceKey, SourceCacheRecord>>;
 
 function getSourceConfig(sourceKey: SourceKey) {
   const integration = integrationCatalog.find(
@@ -133,6 +146,56 @@ function FailedBadge() {
   );
 }
 
+function readSelectorCache() {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  const rawValue = window.localStorage.getItem(META_SELECTOR_CACHE_KEY);
+
+  if (!rawValue) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(rawValue) as SelectorCache;
+  } catch {
+    return {};
+  }
+}
+
+function writeSelectorCache(sourceKey: SourceKey, accounts: MetaOption[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const currentCache = readSelectorCache();
+  currentCache[sourceKey] = {
+    accounts,
+    lastUpdatedAt: Date.now(),
+  };
+  window.localStorage.setItem(META_SELECTOR_CACHE_KEY, JSON.stringify(currentCache));
+}
+
+function formatRelativeLastUpdated(timestamp?: number) {
+  if (!timestamp) {
+    return "";
+  }
+
+  const elapsedMinutes = Math.max(0, Math.round((Date.now() - timestamp) / 60000));
+
+  if (elapsedMinutes < 1) {
+    return "just now";
+  }
+
+  if (elapsedMinutes < 60) {
+    return `${elapsedMinutes} min ago`;
+  }
+
+  const elapsedHours = Math.round(elapsedMinutes / 60);
+  return `${elapsedHours}h ago`;
+}
+
 function NewReportFlowSyncPageContent() {
   const { messages } = useI18n();
   const router = useRouter();
@@ -140,17 +203,17 @@ function NewReportFlowSyncPageContent() {
   const storedIntegrationContext = getIntegrationReportContext();
   const integrationSource =
     searchParams.get("integration") || storedIntegrationContext?.source || "";
-  const storedSelectedSourcesKey = (storedIntegrationContext?.selectedSources || []).join("|");
+  const preferredSelectedSources = storedIntegrationContext?.selectedSources;
   const selectedSources = useMemo(
     () =>
       (
-        storedIntegrationContext?.selectedSources?.length
-          ? storedIntegrationContext.selectedSources
+        preferredSelectedSources?.length
+          ? preferredSelectedSources
           : integrationSource
             ? [integrationSource]
             : []
       ).filter((source): source is SourceKey => isMetaFrontendIntegrationKey(source)),
-    [integrationSource, storedIntegrationContext?.source, storedSelectedSourcesKey]
+    [integrationSource, preferredSelectedSources]
   );
   const hasSelectedSources = selectedSources.length > 0;
   const selectedIntegration = useMemo(
@@ -219,15 +282,15 @@ function NewReportFlowSyncPageContent() {
     });
   }, [integrationId, integrationSource, selectedSources]);
 
-  function normalizeCurrentTimeframe() {
+  const normalizeCurrentTimeframe = useCallback(() => {
     return normalizeMetaTimeframeSelection({
       preset: selectedTimeframe,
       startDate,
       endDate,
     });
-  }
+  }, [endDate, selectedTimeframe, startDate]);
 
-  function buildNextContext(nextAccountsBySource: typeof selectedAccountsBySource) {
+  const buildNextContext = useCallback((nextAccountsBySource: typeof selectedAccountsBySource) => {
     const normalizedSelection = normalizeCurrentTimeframe();
     const firstSource = selectedSources[0] || "";
     const firstSourceAccount = firstSource
@@ -266,7 +329,17 @@ function NewReportFlowSyncPageContent() {
           ? ("multi_source" as const)
           : ("single_source" as const),
     };
-  }
+  }, [
+    integrationId,
+    normalizeCurrentTimeframe,
+    selectedSources,
+    storedIntegrationContext?.aiMode,
+    storedIntegrationContext?.integrationId,
+    storedIntegrationContext?.postConnectRedirect,
+    storedIntegrationContext?.requestedSlides,
+    storedIntegrationContext?.templateId,
+    workspaceId,
+  ]);
 
   function invalidateSyncedSources() {
     const nextAccountsBySource = { ...selectedAccountsBySource };
@@ -291,7 +364,7 @@ function NewReportFlowSyncPageContent() {
 
     setLoadingProgress(0);
 
-    const progressSteps = [0, 20, 40, 60, 80, 90];
+    const progressSteps = [0, 24, 48, 72, 86];
     let stepIndex = 0;
 
     const intervalId = window.setInterval(() => {
@@ -319,6 +392,7 @@ function NewReportFlowSyncPageContent() {
     }
 
     const sourceKeys = sourceKey ? [sourceKey] : selectedSources;
+    const selectorCache = readSelectorCache();
 
     console.info("[SyncFlow][load.start]", {
       sourceKey: sourceKey || null,
@@ -343,20 +417,39 @@ function NewReportFlowSyncPageContent() {
       return;
     }
 
+    let slowLoadTimer: number | null = null;
+
     try {
       hasLoadedRef.current = true;
       setLoading(true);
       setSourceState((current) => {
         const nextState = { ...current };
         sourceKeys.forEach((selectedSource) => {
+          const cached = selectorCache[selectedSource];
           nextState[selectedSource] = {
-            ...nextState[selectedSource],
+            accounts: cached?.accounts || nextState[selectedSource].accounts,
             loading: true,
             error: "",
+            lastUpdatedAt: cached?.lastUpdatedAt || nextState[selectedSource].lastUpdatedAt,
+            loadingSlow: false,
+            refreshing: nextState[selectedSource].refreshing || false,
           };
         });
         return nextState;
       });
+
+      slowLoadTimer = window.setTimeout(() => {
+        setSourceState((current) => {
+          const nextState = { ...current };
+          sourceKeys.forEach((selectedSource) => {
+            nextState[selectedSource] = {
+              ...nextState[selectedSource],
+              loadingSlow: true,
+            };
+          });
+          return nextState;
+        });
+      }, 2300);
 
       const responses = await Promise.all(
         sourceKeys.map(async (selectedSource) => {
@@ -373,10 +466,14 @@ function NewReportFlowSyncPageContent() {
         const nextState = { ...current };
 
         responses.forEach(([selectedSource, accountData]) => {
+          writeSelectorCache(selectedSource, accountData);
           nextState[selectedSource] = {
             accounts: accountData,
             loading: false,
             error: "",
+            lastUpdatedAt: Date.now(),
+            loadingSlow: false,
+            refreshing: false,
           };
         });
 
@@ -404,15 +501,22 @@ function NewReportFlowSyncPageContent() {
       setSourceState((current) => {
         const nextState = { ...current };
         sourceKeys.forEach((selectedSource) => {
+          const cached = selectorCache[selectedSource];
           nextState[selectedSource] = {
-            accounts: [],
+            accounts: cached?.accounts || [],
             loading: false,
             error: messages.reports.loadPagesError,
+            lastUpdatedAt: cached?.lastUpdatedAt || nextState[selectedSource].lastUpdatedAt,
+            loadingSlow: false,
+            refreshing: false,
           };
         });
         return nextState;
       });
     } finally {
+      if (slowLoadTimer !== null) {
+        window.clearTimeout(slowLoadTimer);
+      }
       setLoading(false);
     }
   }, [
@@ -433,7 +537,7 @@ function NewReportFlowSyncPageContent() {
     }
 
     setIntegrationReportContext(buildNextContext(selectedAccountsBySource));
-  }, [endDate, selectedAccountsBySource, selectedSources, selectedTimeframe, startDate]);
+  }, [buildNextContext, selectedAccountsBySource, selectedSources.length]);
 
   function handleSelectAccount(sourceKey: SourceKey, accountId: string) {
     const selectedAccount = sourceState[sourceKey].accounts.find((account) => account.id === accountId);
@@ -453,6 +557,43 @@ function NewReportFlowSyncPageContent() {
 
     setSelectedAccountsBySource(nextAccountsBySource);
     setError("");
+  }
+
+  async function handleRefreshSource(sourceKey: SourceKey) {
+    if (!integrationId) {
+      setError(messages.reports.missingIntegration);
+      return;
+    }
+
+    try {
+      setSourceState((current) => ({
+        ...current,
+        [sourceKey]: {
+          ...current[sourceKey],
+          refreshing: true,
+          error: "",
+        },
+      }));
+
+      await refreshMetaPages({
+        integrationId,
+        workspaceId: workspaceId || undefined,
+      });
+
+      hasLoadedRef.current = false;
+      await loadPages(sourceKey, true);
+      setError("");
+    } catch (refreshError) {
+      console.error("meta pages refresh error:", refreshError);
+      setError("Usaremos las páginas guardadas. Puedes intentar actualizar de nuevo.");
+      setSourceState((current) => ({
+        ...current,
+        [sourceKey]: {
+          ...current[sourceKey],
+          refreshing: false,
+        },
+      }));
+    }
   }
 
   async function handleSync(sourceKey: SourceKey) {
@@ -744,10 +885,12 @@ function NewReportFlowSyncPageContent() {
                     const selectedAccount = selectedAccountsBySource[sourceKey];
                     const isSourceLoading = sourceSelectorState.loading || loading;
                     const isSourceSyncing = syncingSource === sourceKey;
+                    const hasCachedAccounts = sourceSelectorState.accounts.length > 0;
+                    const showUsableCachedSelector = hasCachedAccounts;
 
                     return (
                       <div key={sourceKey}>
-                        {isSourceLoading ? (
+                        {isSourceLoading && !showUsableCachedSelector ? (
                           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6">
                             <div className="flex items-center justify-between gap-4 text-sm">
                               <span className="font-medium text-slate-700">
@@ -763,6 +906,23 @@ function NewReportFlowSyncPageContent() {
                                 style={{ width: `${loadingProgress}%` }}
                               />
                             </div>
+                            {sourceSelectorState.loadingSlow ? (
+                              <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600">
+                                <p>
+                                  Estamos cargando tus páginas. Esto puede tardar si tienes muchas cuentas conectadas.
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    hasLoadedRef.current = false;
+                                    void loadPages(sourceKey, true);
+                                  }}
+                                  className="mt-4 inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                                >
+                                  Intentar de nuevo
+                                </button>
+                              </div>
+                            ) : null}
                           </div>
                         ) : sourceSelectorState.error ? (
                           <div className="rounded-[28px] border border-red-200 bg-white p-6 shadow-sm">
@@ -789,47 +949,111 @@ function NewReportFlowSyncPageContent() {
                             </div>
                           </div>
                         ) : (
-                          <AdAccountSelector
-                            accounts={sourceSelectorState.accounts}
-                            value={selectedAccount.accountId}
-                            onChange={(value) => handleSelectAccount(sourceKey, value)}
-                            loading={isSourceSyncing}
-                            eyebrow={config.selectorEyebrow}
-                            title={config.selectorTitle}
-                            description={config.selectorDescription}
-                            selectedLabel={config.selectedLabel}
-                            emptyMessage={config.emptyMessage}
-                            logoUrl={config.logoUrl}
-                            logoAlt={config.logoAlt}
-                            footer={
-                              <>
-                                <div className="flex flex-wrap items-center gap-3">
+                          <div className="space-y-3">
+                            {showUsableCachedSelector ? (
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                  <div>
+                                    <p className="font-medium text-slate-900">
+                                      {sourceSelectorState.lastUpdatedAt
+                                        ? "Tus páginas guardadas están listas."
+                                        : "Tus páginas están listas."}
+                                    </p>
+                                    <p className="mt-1 text-xs text-slate-500">
+                                      {sourceSelectorState.lastUpdatedAt
+                                        ? `Última actualización: ${formatRelativeLastUpdated(sourceSelectorState.lastUpdatedAt)}`
+                                        : "Puedes actualizarlas si hiciste cambios recientes en Meta."}
+                                    </p>
+                                  </div>
                                   <button
                                     type="button"
-                                    onClick={() => void handleSync(sourceKey)}
-                                    disabled={isSourceLoading || isSourceSyncing || !selectedAccount.accountId}
-                                    className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                                    onClick={() => void handleRefreshSource(sourceKey)}
+                                    disabled={Boolean(sourceSelectorState.refreshing)}
+                                    className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
-                                    {isSourceSyncing ? (
-                                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                                    ) : null}
-                                    {isSourceSyncing
-                                      ? messages.reports.syncing
-                                      : selectedAccount.syncStatus === "synced"
-                                        ? "Sync again"
-                                        : `${messages.reports.syncData} ${config.displayName}`}
+                                    {sourceSelectorState.refreshing ? "Refreshing..." : "Refresh pages"}
                                   </button>
-                                  {selectedAccount.syncStatus === "synced" ? <SuccessBadge /> : null}
-                                  {selectedAccount.syncStatus === "error" ? <FailedBadge /> : null}
                                 </div>
-                                {selectedAccount.error ? (
-                                  <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                                    {selectedAccount.error}
-                                  </div>
+                                {sourceSelectorState.accounts.length > 10 ? (
+                                  <p className="mt-2 text-xs text-slate-500">
+                                    Tienes varias páginas conectadas. Usa el buscador para encontrar la correcta.
+                                  </p>
                                 ) : null}
-                              </>
-                            }
-                          />
+                              </div>
+                            ) : null}
+
+                            {sourceSelectorState.accounts.length === 0 && !isSourceLoading ? (
+                              <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+                                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
+                                  {config.selectorEyebrow}
+                                </p>
+                                <h3 className="mt-3 text-2xl font-semibold text-slate-950">
+                                  {config.selectorTitle}
+                                </h3>
+                                <p className="mt-2 text-sm leading-6 text-slate-500">
+                                  No encontramos páginas guardadas. Carga tus páginas desde Meta para continuar.
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleRefreshSource(sourceKey)}
+                                  disabled={Boolean(sourceSelectorState.refreshing)}
+                                  className="mt-5 inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {sourceSelectorState.refreshing ? "Loading..." : "Load pages from Meta"}
+                                </button>
+                              </div>
+                            ) : (
+                              <AdAccountSelector
+                                accounts={sourceSelectorState.accounts}
+                                value={selectedAccount.accountId}
+                                onChange={(value) => handleSelectAccount(sourceKey, value)}
+                                loading={isSourceSyncing}
+                                eyebrow={config.selectorEyebrow}
+                                title={config.selectorTitle}
+                                description={config.selectorDescription}
+                                selectedLabel={config.selectedLabel}
+                                emptyMessage={config.emptyMessage}
+                                logoUrl={config.logoUrl}
+                                logoAlt={config.logoAlt}
+                                footer={
+                                  <>
+                                    <div className="flex flex-wrap items-center gap-3">
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleSync(sourceKey)}
+                                        disabled={isSourceSyncing || !selectedAccount.accountId}
+                                        className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                                      >
+                                        {isSourceSyncing ? (
+                                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                                        ) : null}
+                                        {isSourceSyncing
+                                          ? messages.reports.syncing
+                                          : selectedAccount.syncStatus === "synced"
+                                            ? "Sync again"
+                                            : `${messages.reports.syncData} ${config.displayName}`}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleRefreshSource(sourceKey)}
+                                        disabled={Boolean(sourceSelectorState.refreshing)}
+                                        className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                      >
+                                        {sourceSelectorState.refreshing ? "Refreshing..." : "Refresh pages"}
+                                      </button>
+                                      {selectedAccount.syncStatus === "synced" ? <SuccessBadge /> : null}
+                                      {selectedAccount.syncStatus === "error" ? <FailedBadge /> : null}
+                                    </div>
+                                    {selectedAccount.error ? (
+                                      <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                                        {selectedAccount.error}
+                                      </div>
+                                    ) : null}
+                                  </>
+                                }
+                              />
+                            )}
+                          </div>
                         )}
                       </div>
                     );

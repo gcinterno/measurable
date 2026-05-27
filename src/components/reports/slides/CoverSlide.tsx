@@ -440,7 +440,7 @@ function SimpleCover({
       <div
         ref={frameRef}
         data-pdf-slide-frame={renderMode === "export" ? "true" : undefined}
-        className={`mx-auto max-w-none overflow-hidden rounded-[32px] border border-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_18px_42px_rgba(15,23,42,0.08)] bg-[linear-gradient(180deg,#f8fbff_0%,#f3f6fa_100%)]`}
+        className="mx-auto max-w-none overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_18px_42px_rgba(15,23,42,0.06)]"
         style={{
           width: shellWidth,
           height: shellHeight,
@@ -448,24 +448,25 @@ function SimpleCover({
           margin: "0 auto",
         }}
       >
-        <div className="relative grid h-full grid-cols-[0.55fr_0.45fr] overflow-hidden bg-[linear-gradient(180deg,#f7fafc_0%,#f2f5f9_100%)]">
-          <div className="relative border-r border-[#E6EBF2] bg-[linear-gradient(180deg,#f2f5f8_0%,#edf1f5_100%)]">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,rgba(148,163,184,0.12),transparent_38%),linear-gradient(135deg,rgba(255,255,255,0.42),rgba(255,255,255,0)_45%)]" />
-            <div className="absolute bottom-0 left-0 right-0 h-[84px] rounded-t-[26px] bg-[linear-gradient(180deg,rgba(218,225,236,0.88)_0%,rgba(212,219,231,0.96)_100%)]" />
+        <div className="relative grid h-full grid-cols-[0.56fr_0.44fr] overflow-hidden bg-white">
+          <div className="relative border-r border-[#EDF1F5] bg-white">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.04),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.96))]" />
+            <div className="pointer-events-none absolute left-[18px] top-[18px] h-[calc(100%-36px)] w-[calc(100%-36px)] rounded-[28px] border border-slate-100" />
 
-            <div className="relative flex h-full flex-col px-[52px] pb-[92px] pt-[52px]">
+            <div className="relative flex h-full flex-col px-[52px] pb-[74px] pt-[58px]">
               <p className="text-[1rem] font-semibold uppercase tracking-[0.28em] text-[#2B83D7]">
                 {model.reportHeading || "Marketing Report"}
               </p>
-              <div className="max-w-[31rem] rounded-[28px] bg-[linear-gradient(180deg,rgba(245,248,252,0.95)_0%,rgba(236,241,246,0.92)_100%)] px-[30px] py-[34px] shadow-[0_10px_24px_rgba(148,163,184,0.10)]">
-                <h1 className="text-[5rem] font-semibold leading-[0.9] tracking-[-0.08em] text-black">
+
+              <div className="mt-3 max-w-[31rem] rounded-[28px] border border-slate-100 bg-white px-[34px] py-[36px] shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+                <h1 className="text-[5rem] font-semibold leading-[0.9] tracking-[-0.085em] text-black">
                   {model.reportTitle}
                 </h1>
               </div>
 
               <div className="mt-auto max-w-[38rem]">
                 {model.subtitle ? (
-                  <p className="text-[1.1rem] font-normal tracking-[-0.02em] text-[#7084A0]">
+                  <p className="text-[1.08rem] font-normal tracking-[-0.02em] text-[#7084A0]">
                     {model.subtitle}
                   </p>
                 ) : null}
@@ -478,10 +479,9 @@ function SimpleCover({
             </div>
           </div>
 
-          <div className="relative overflow-hidden bg-[linear-gradient(180deg,#ffffff_0%,#fbfcfe_100%)]">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.08),transparent_26%),linear-gradient(180deg,rgba(255,255,255,0.72),rgba(248,250,252,0.82))]" />
-            <div className="absolute right-[34px] top-[26px] h-3 w-12 rounded-full bg-slate-100/70" />
-            <div className="absolute right-[18px] top-[20px] text-[0.95rem] uppercase tracking-[0.12em] text-slate-100">
+          <div className="relative overflow-hidden bg-white">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.03),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(249,250,251,0.98))]" />
+            <div className="absolute right-[36px] top-[30px] text-[0.92rem] uppercase tracking-[0.14em] text-slate-200">
               {model.branding.brandName}
             </div>
 
@@ -494,24 +494,20 @@ function SimpleCover({
                   reportId={reportId || null}
                   renderMode={renderMode}
                   className="flex h-full w-full items-center justify-center overflow-hidden"
-                  imageClassName="block max-h-[64%] max-w-[76%] object-contain object-center drop-shadow-[0_18px_30px_rgba(59,130,246,0.12)]"
+                  imageClassName="block max-h-[62%] max-w-[72%] object-contain object-center"
                   fallback={
-                    <div className="relative h-[290px] w-[290px]">
-                      <div className="absolute inset-[18%] rounded-[36px] bg-[linear-gradient(135deg,#2563eb_0%,#1d4ed8_100%)] opacity-95" />
-                      <div className="absolute left-[18%] top-[14%] h-[58%] w-[18%] rounded-[20px] bg-[#2563eb]" />
-                      <div className="absolute right-[18%] top-[14%] h-[70%] w-[18%] rounded-[20px] bg-[#2563eb]" />
-                      <div className="absolute left-[28%] top-[34%] h-[18%] w-[44%] rotate-[-39deg] rounded-[18px] bg-[#1d4ed8]" />
-                      <div className="absolute right-[10%] top-[56%] h-[18%] w-[34%] rotate-[-48deg] rounded-[18px] bg-[#2563eb]" />
+                    <div className="relative h-[300px] w-[300px] rounded-full border border-slate-100 bg-[radial-gradient(circle_at_center,#ffffff_0%,#f8fafc_72%,#eef2f7_100%)]">
+                      <div className="absolute inset-[22%] rounded-[32px] border border-slate-200 bg-white shadow-[0_10px_28px_rgba(15,23,42,0.06)]" />
+                      <div className="absolute left-[32%] top-[32%] h-[36%] w-[36%] rotate-45 rounded-[24px] border border-[#2B83D7]/16 bg-[linear-gradient(135deg,rgba(43,131,215,0.12),rgba(43,131,215,0.03))]" />
+                      <div className="absolute left-[42%] top-[42%] h-[16%] w-[16%] rounded-full bg-[#2B83D7]/16" />
                     </div>
                   }
                 />
               ) : (
-                <div className="relative h-[290px] w-[290px]">
-                  <div className="absolute inset-[18%] rounded-[36px] bg-[linear-gradient(135deg,#2563eb_0%,#1d4ed8_100%)] opacity-95" />
-                  <div className="absolute left-[18%] top-[14%] h-[58%] w-[18%] rounded-[20px] bg-[#2563eb]" />
-                  <div className="absolute right-[18%] top-[14%] h-[70%] w-[18%] rounded-[20px] bg-[#2563eb]" />
-                  <div className="absolute left-[28%] top-[34%] h-[18%] w-[44%] rotate-[-39deg] rounded-[18px] bg-[#1d4ed8]" />
-                  <div className="absolute right-[10%] top-[56%] h-[18%] w-[34%] rotate-[-48deg] rounded-[18px] bg-[#2563eb]" />
+                <div className="relative h-[300px] w-[300px] rounded-full border border-slate-100 bg-[radial-gradient(circle_at_center,#ffffff_0%,#f8fafc_72%,#eef2f7_100%)]">
+                  <div className="absolute inset-[22%] rounded-[32px] border border-slate-200 bg-white shadow-[0_10px_28px_rgba(15,23,42,0.06)]" />
+                  <div className="absolute left-[32%] top-[32%] h-[36%] w-[36%] rotate-45 rounded-[24px] border border-[#2B83D7]/16 bg-[linear-gradient(135deg,rgba(43,131,215,0.12),rgba(43,131,215,0.03))]" />
+                  <div className="absolute left-[42%] top-[42%] h-[16%] w-[16%] rounded-full bg-[#2B83D7]/16" />
                 </div>
               )}
             </div>

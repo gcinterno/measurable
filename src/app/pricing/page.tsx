@@ -250,16 +250,7 @@ export default function PricingPage() {
       return;
     }
 
-    if (isPaidWorkspace && currentPlanCode !== planCode) {
-      setPendingPlanCode(planCode);
-      return;
-    }
-
-    const result = await startCheckout(planCode);
-
-    if (result?.mode === "updated") {
-      setUpdatedPlanCode(planCode);
-    }
+    router.push("/wishlist");
   }
 
   async function handleConfirmPlanChange() {

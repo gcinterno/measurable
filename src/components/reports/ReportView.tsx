@@ -55,6 +55,8 @@ type ReportFolder = {
 
 const REPORT_FOLDERS_KEY = "reportFolders";
 const REPORT_FOLDER_ASSIGNMENTS_KEY = "reportFolderAssignments";
+const REPORT_PDF_DOWNLOADS_LOCKED = true;
+const REPORT_PDF_LOCKED_TOOLTIP = "Proximamente";
 
 function loadStoredFolders() {
   if (typeof window === "undefined") {
@@ -275,6 +277,7 @@ export default function ReportView({
   const slideDeckRef = useRef<HTMLDivElement | null>(null);
   const latestLoadRequestRef = useRef(0);
   const { workspace } = useActiveWorkspace();
+  const pdfDownloadLocked = REPORT_PDF_DOWNLOADS_LOCKED;
 
   useEffect(() => {
     setFolders(loadStoredFolders());
@@ -1000,26 +1003,51 @@ export default function ReportView({
             </p>
             <div className="mt-4 space-y-3">
               {showDownloadAction ? (
-                <button
-                  type="button"
-                  onClick={handleDownload}
-                  disabled={pdfLoading || !reportId}
-                  className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50"
-                >
-                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-white ring-1 ring-slate-900/10">
-                    <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 stroke-current">
-                      <path d="M12 4v10m0 0 4-4m-4 4-4-4M5 19h14" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-slate-950">
-                      {messages.reports.downloadPdf}
+                <div className="group relative">
+                  <button
+                    type="button"
+                    onClick={handleDownload}
+                    disabled={pdfDownloadLocked || pdfLoading || !reportId}
+                    aria-disabled={pdfDownloadLocked}
+                    className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition disabled:cursor-not-allowed ${
+                      pdfDownloadLocked
+                        ? "border-amber-200 bg-[linear-gradient(135deg,#fffdf7_0%,#fff7ed_100%)] text-slate-800 shadow-[0_12px_28px_rgba(245,158,11,0.08)]"
+                        : "border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:bg-slate-50"
+                    }`}
+                  >
+                    <span className={`flex h-10 w-10 items-center justify-center rounded-2xl ring-1 ${
+                      pdfDownloadLocked
+                        ? "bg-amber-100 text-amber-700 ring-amber-200"
+                        : "bg-slate-950 text-white ring-slate-900/10"
+                    }`}>
+                      <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 stroke-current">
+                        <path d="M12 4v10m0 0 4-4m-4 4-4-4M5 19h14" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
                     </span>
-                    <span className="block text-xs text-slate-500">
-                      {pdfLoading ? messages.reports.exportingPdf : messages.reports.saveDeckCopy}
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-slate-950">
+                        {messages.reports.downloadPdf}
+                      </span>
+                      <span className="block text-xs text-slate-500">
+                        {pdfDownloadLocked
+                          ? "Opcion bloqueada"
+                          : pdfLoading
+                            ? messages.reports.exportingPdf
+                            : messages.reports.saveDeckCopy}
+                      </span>
                     </span>
-                  </span>
-                </button>
+                    {pdfDownloadLocked ? (
+                      <span className="ml-auto rounded-full border border-amber-300 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                        Locked
+                      </span>
+                    ) : null}
+                  </button>
+                  {pdfDownloadLocked ? (
+                    <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 rounded-full bg-slate-950 px-3 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100">
+                      {REPORT_PDF_LOCKED_TOOLTIP}
+                    </span>
+                  ) : null}
+                </div>
               ) : null}
 
               {showShareAction ? (
@@ -1138,18 +1166,39 @@ export default function ReportView({
           <div className="mx-auto flex w-full max-w-[1180px] justify-center px-4">
             <div className="pointer-events-auto inline-flex items-center gap-3">
               {showDownloadAction ? (
-                <button
-                  type="button"
-                  onClick={handleDownload}
-                  disabled={pdfLoading || !reportId}
-                  className="inline-flex h-14 min-w-[min(78vw,280px)] items-center justify-center rounded-full bg-[var(--measurable-blue)] px-6 text-[15px] font-semibold text-white shadow-[0_18px_40px_rgba(23,73,255,0.22)] transition hover:scale-[1.01] hover:bg-[var(--measurable-blue-hover)] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {pdfLoading
-                    ? messages.reports.exportingPdf
-                    : language === "es"
-                      ? "Download report"
-                      : "Download report"}
-                </button>
+                <div className="group relative">
+                  <button
+                    type="button"
+                    onClick={handleDownload}
+                    disabled={pdfDownloadLocked || pdfLoading || !reportId}
+                    aria-disabled={pdfDownloadLocked}
+                    className={`inline-flex h-14 min-w-[min(78vw,280px)] items-center justify-center gap-2 rounded-full px-6 text-[15px] font-semibold transition active:scale-[0.99] disabled:cursor-not-allowed ${
+                      pdfDownloadLocked
+                        ? "border border-amber-200 bg-[linear-gradient(135deg,#fffdf7_0%,#fff7ed_100%)] text-slate-800 shadow-[0_14px_34px_rgba(245,158,11,0.10)]"
+                        : "bg-[var(--measurable-blue)] text-white shadow-[0_18px_40px_rgba(23,73,255,0.22)] hover:scale-[1.01] hover:bg-[var(--measurable-blue-hover)] disabled:opacity-70"
+                    }`}
+                  >
+                    {pdfDownloadLocked ? (
+                      <>
+                        <span className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                          Locked
+                        </span>
+                        <span>Download report</span>
+                      </>
+                    ) : pdfLoading ? (
+                      messages.reports.exportingPdf
+                    ) : language === "es" ? (
+                      "Download report"
+                    ) : (
+                      "Download report"
+                    )}
+                  </button>
+                  {pdfDownloadLocked ? (
+                    <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 rounded-full bg-slate-950 px-3 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100">
+                      {REPORT_PDF_LOCKED_TOOLTIP}
+                    </span>
+                  ) : null}
+                </div>
               ) : null}
 
               {showShareAction ? (

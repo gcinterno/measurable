@@ -41,10 +41,24 @@ export function AdAccountSelector({
 }: AdAccountSelectorProps) {
   const { messages } = useI18n();
   const [open, setOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [portalReady, setPortalReady] = useState(false);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < 768 : false
+  );
+  const [search, setSearch] = useState("");
   const containerRef = useRef<HTMLDivElement | null>(null);
   const touchSelectionLockRef = useRef<string | null>(null);
+
+  const filteredAccounts = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+
+    if (!normalizedSearch) {
+      return accounts;
+    }
+
+    return accounts.filter((account) =>
+      account.name.toLowerCase().includes(normalizedSearch)
+    );
+  }, [accounts, search]);
 
   const selectedAccount = useMemo(
     () => accounts.find((account) => account.id === value) || null,
@@ -74,8 +88,6 @@ export function AdAccountSelector({
       setIsMobile(window.innerWidth < 768);
     }
 
-    syncViewportMode();
-    setPortalReady(true);
     window.addEventListener("resize", syncViewportMode);
 
     return () => {
@@ -133,6 +145,7 @@ export function AdAccountSelector({
       isMobile,
     });
     setOpen(false);
+    setSearch("");
   }
 
   function openSelector() {
@@ -178,7 +191,7 @@ export function AdAccountSelector({
     selectAccount(accountId);
   }
 
-  const mobileSheet = open && isMobile && portalReady && typeof document !== "undefined"
+  const mobileSheet = open && isMobile && typeof document !== "undefined"
     ? createPortal(
         <div className="pointer-events-none fixed inset-0 z-[120] md:hidden">
           <div
@@ -210,9 +223,18 @@ export function AdAccountSelector({
                 Choose the asset you want to sync.
               </p>
             </div>
+            <div className="border-b border-slate-100 px-4 pb-3 pt-3">
+              <input
+                type="text"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar página..."
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              />
+            </div>
             <div className="max-h-[min(320px,50vh)] overflow-y-auto px-3 pb-[calc(env(safe-area-inset-bottom)+6.5rem)] pt-3">
               <div className="space-y-2">
-                {accounts.map((account) => {
+                {filteredAccounts.map((account) => {
                   const selected = account.id === value;
 
                   return (
@@ -242,6 +264,11 @@ export function AdAccountSelector({
                     </button>
                   );
                 })}
+                {filteredAccounts.length === 0 ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+                    No encontramos resultados para tu búsqueda.
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
@@ -315,9 +342,18 @@ export function AdAccountSelector({
                 <p className="mt-1 text-sm text-slate-500">
                   Choose the asset you want to sync.
                 </p>
+                {accounts.length > 10 ? (
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Buscar página..."
+                    className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                  />
+                ) : null}
               </div>
               <div className="max-h-[min(320px,50vh)] overflow-y-auto bg-slate-50/80 p-2">
-                {accounts.map((account) => {
+                {filteredAccounts.map((account) => {
                   const selected = account.id === value;
 
                   return (
@@ -346,6 +382,11 @@ export function AdAccountSelector({
                     </button>
                   );
                 })}
+                {filteredAccounts.length === 0 ? (
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-500">
+                    No encontramos resultados para tu búsqueda.
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : null}

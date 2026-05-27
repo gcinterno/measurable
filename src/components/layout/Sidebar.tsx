@@ -355,7 +355,7 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
             ) : null}
 
             <Link
-              href="/pricing"
+              href="/wishlist"
               onClick={onNavigate}
               className={`group inline-flex w-full items-center rounded-2xl border border-[#2f63ff]/22 bg-[linear-gradient(135deg,rgba(23,73,255,0.18),rgba(96,165,250,0.08)_58%,rgba(255,255,255,0.06))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_14px_30px_rgba(7,17,31,0.18)] transition hover:border-[#7fb1ff]/38 hover:bg-[linear-gradient(135deg,rgba(23,73,255,0.24),rgba(96,165,250,0.12)_58%,rgba(255,255,255,0.08))] ${
                 isCollapsed ? "justify-center px-2 py-3" : "gap-3 px-4 py-3.5"
@@ -380,7 +380,7 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
                     Upgrade
                   </span>
                   <span className="block text-[11px] text-blue-100/84">
-                    Get Started with 10% discount
+                    Join the premium wishlist
                   </span>
                 </span>
               ) : null}

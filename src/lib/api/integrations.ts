@@ -30,6 +30,19 @@ type MetaEntity = {
   name: string;
 };
 
+type MetaRefreshPagesResponse = {
+  message?: string;
+  detail?: string;
+  status?: string;
+  ok?: boolean;
+  data?: {
+    message?: string;
+    detail?: string;
+    status?: string;
+    ok?: boolean;
+  };
+};
+
 type MetaPagesResponse =
   | Array<{
       id?: string | number;
@@ -612,6 +625,42 @@ export async function fetchMetaInstagramAccounts(
 
   const payload = JSON.parse(text) as MetaPagesResponse;
   return normalizePages(payload);
+}
+
+export async function refreshMetaPages(input: {
+  integrationId: string;
+  workspaceId?: string | null;
+}) {
+  const resolvedWorkspaceId = await getRequiredWorkspaceId(input.workspaceId);
+  const endpoint = "/integrations/meta/refresh-pages";
+  const payload = {
+    workspace_id: resolvedWorkspaceId,
+    integration_id: input.integrationId,
+  };
+
+  const res = await fetch(apiUrl(endpoint), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(getAuthHeaders() || {}),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const text = await readApiResponseText(endpoint, res);
+  const parsedPayload = text
+    ? (JSON.parse(text) as MetaRefreshPagesResponse)
+    : {};
+
+  return {
+    ok: Boolean(parsedPayload.ok ?? parsedPayload.data?.ok ?? res.ok),
+    message:
+      parsedPayload.message ||
+      parsedPayload.detail ||
+      parsedPayload.data?.message ||
+      parsedPayload.data?.detail ||
+      "",
+  };
 }
 
 export async function selectMetaPage(input: {

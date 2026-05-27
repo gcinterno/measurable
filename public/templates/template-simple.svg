@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="810" viewBox="0 0 1440 810" fill="none">
+  <rect width="1440" height="810" rx="36" fill="#FFFFFF"/>
+  <rect x="1" y="1" width="1438" height="808" rx="35" stroke="#E6EDF5" stroke-width="2"/>
+  <rect x="720" y="0" width="2" height="810" fill="#EEF3F8"/>
+
+  <rect x="0" y="0" width="720" height="810" fill="url(#leftPanel)"/>
+  <rect x="722" y="0" width="718" height="810" fill="#FFFFFF"/>
+
+  <text x="110" y="352" fill="#0C1541" font-family="Inter, Arial, sans-serif" font-size="94" font-weight="700" letter-spacing="-4">
+    <tspan x="110" dy="0">Marketing Report</tspan>
+    <tspan x="110" dy="104">Workspace Luis</tspan>
+  </text>
+
+  <rect x="112" y="456" width="96" height="3" rx="1.5" fill="#8DC1FF"/>
+
+  <text x="110" y="546" fill="#7D8CA3" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="400">
+    Facebook Pages Report - Summary &amp; Insights
+  </text>
+
+  <text x="110" y="644" fill="#2B83D7" font-family="Inter, Arial, sans-serif" font-size="27" font-weight="600" letter-spacing="8">
+    MAY 15, 2026 - MAY 21, 2026
+  </text>
+
+  <text x="110" y="756" fill="#0C1541" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="500">
+    Workspace Luis
+  </text>
+
+  <g transform="translate(910 180)">
+    <path d="M120 120L240 232L360 120V502L295 442V287L240 340L185 287V442L120 382V120Z" fill="url(#logoGradient)"/>
+    <path d="M365 313L458 284L389 430L365 502V313Z" fill="url(#logoGradient)"/>
+    <path d="M407 272L489 262L436 320L407 272Z" fill="url(#logoGradient)"/>
+    <path d="M120 120L240 232L360 120" stroke="url(#logoHighlight)" stroke-width="6" stroke-linejoin="round"/>
+  </g>
+
+  <defs>
+    <linearGradient id="leftPanel" x1="0" y1="0" x2="720" y2="810" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FBFF"/>
+      <stop offset="1" stop-color="#F5F8FC"/>
+    </linearGradient>
+    <linearGradient id="logoGradient" x1="120" y1="120" x2="489" y2="502" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5E79F4"/>
+      <stop offset="0.45" stop-color="#3263FF"/>
+      <stop offset="1" stop-color="#0B46FF"/>
+    </linearGradient>
+    <linearGradient id="logoHighlight" x1="150" y1="130" x2="380" y2="360" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6E89FF" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+</svg>

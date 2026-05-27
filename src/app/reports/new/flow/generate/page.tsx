@@ -57,7 +57,7 @@ const templateOptions: {
     id: "simple",
     name: "Report Simple",
     description: "Clean light report style for simple executive summaries",
-    previewSrc: "/templates/template-modern.svg",
+    previewSrc: "/templates/template-simple.svg",
   },
   {
     id: "modern",
@@ -69,6 +69,7 @@ const templateOptions: {
 
 const LOGO_CROP_SIZE = 512;
 const MAX_BRAND_LOGO_SIZE_BYTES = 5 * 1024 * 1024;
+const LOCKED_SLIDE_COUNTS = new Set([10, 15, 30]);
 const ALLOWED_BRAND_LOGO_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -214,7 +215,9 @@ function NewReportFlowGeneratePageContent() {
   const measurableBranding = getMeasurableBrandingOverride(workspace);
   const slideCountOptions = getSlideCountOptions(planCapabilities).map((option) => ({
     ...option,
-    available: isMultiSourceReport ? option.value === 10 : option.available,
+    available:
+      (isMultiSourceReport ? option.value === 10 : option.available) &&
+      !LOCKED_SLIDE_COUNTS.has(option.value),
   }));
   const timeframeLabel = formatMetaTimeframeLabel({
     timeframe: storedIntegrationContext?.timeframe,
@@ -292,6 +295,11 @@ function NewReportFlowGeneratePageContent() {
   }
 
   function handleSelectSlides(nextSlides: number) {
+    if (LOCKED_SLIDE_COUNTS.has(nextSlides)) {
+      setError("Las opciones de 10, 15 y 30 slides estan temporalmente bloqueadas.");
+      return;
+    }
+
     if (isMultiSourceReport && nextSlides !== 10) {
       setError(
         "Multi-source reports require the 10-slide format to include platform comparisons and cross-channel insights."
@@ -316,6 +324,22 @@ function NewReportFlowGeneratePageContent() {
     setSelectedSlides(nextSlides);
     persistGenerateOptions(nextSlides, aiMode);
   }
+
+  useEffect(() => {
+    if (!isMultiSourceReport && LOCKED_SLIDE_COUNTS.has(selectedSlides)) {
+      setSelectedSlides(5);
+      const latestContext = getIntegrationReportContext();
+
+      if (latestContext) {
+        setIntegrationReportContext({
+          ...latestContext,
+          requestedSlides: 5,
+          aiMode,
+          templateId: selectedTemplate,
+        });
+      }
+    }
+  }, [aiMode, isMultiSourceReport, selectedSlides, selectedTemplate]);
 
   function handleSelectAiMode(nextAiMode: "standard" | "agents") {
     const allowed =
@@ -745,7 +769,7 @@ function NewReportFlowGeneratePageContent() {
                             ? "border-slate-950 bg-slate-950 text-white"
                           : option.available
                               ? "border-slate-200 bg-slate-50 text-slate-950 hover:bg-slate-100"
-                              : "border-slate-200 bg-white text-slate-400 hover:border-amber-200 hover:bg-amber-50"
+                              : "border-slate-200 bg-white text-slate-400 opacity-60 blur-[0.6px]"
                         } disabled:cursor-not-allowed`}
                       >
                         <span className="block text-lg font-semibold">{option.value} slides</span>
@@ -790,26 +814,6 @@ function NewReportFlowGeneratePageContent() {
                       </button>
                     );
                   })}
-                  <div className="rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-4 text-left">
-                    <div className="flex aspect-[1160/670] items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-white/70">
-                      <div className="text-center">
-                        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400">
-                          <svg viewBox="0 0 24 24" fill="none" className="h-7 w-7 stroke-current">
-                            <path d="M12 5v14M5 12h14" strokeWidth="1.8" strokeLinecap="round" />
-                          </svg>
-                        </div>
-                        <p className="mt-4 text-lg font-semibold text-slate-700">
-                          More templates coming soon...
-                        </p>
-                      </div>
-                    </div>
-                    <h3 className="mt-4 text-lg font-semibold text-slate-700">
-                      Coming soon
-                    </h3>
-                    <p className="mt-1 text-sm leading-6 text-slate-500">
-                      We are preparing more report styles for future releases.
-                    </p>
-                  </div>
                 </div>
               </section>
 
