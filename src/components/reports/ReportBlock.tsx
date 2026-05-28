@@ -44,7 +44,7 @@ export function ReportBlock({ block, onSave }: ReportBlockProps) {
       console.error("report block save error:", err);
       setError(
         language === "es"
-          ? "No pudimos guardar este bloque. Intenta de nuevo en unos segundos."
+          ? "We couldn’t save this block. Please try again in a few seconds."
           : "We could not save this block. Try again in a few seconds."
       );
     } finally {
@@ -69,7 +69,7 @@ export function ReportBlock({ block, onSave }: ReportBlockProps) {
               disabled={saving}
               className="rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:bg-slate-400"
             >
-              {saving ? (language === "es" ? "Guardando..." : "Saving...") : language === "es" ? "Guardar" : "Save"}
+              {saving ? "Saving..." : "Save"}
             </button>
             <button
               type="button"
@@ -80,7 +80,7 @@ export function ReportBlock({ block, onSave }: ReportBlockProps) {
               }}
               className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
             >
-              {language === "es" ? "Cancelar" : "Cancel"}
+              Cancel
             </button>
           </div>
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -111,7 +111,7 @@ export function ReportBlock({ block, onSave }: ReportBlockProps) {
             <p className="mt-3 text-sm leading-6 text-slate-500">
               {block.content ||
                 (language === "es"
-                  ? "El backend devolvió un bloque de gráfico. Esta tarjeta reserva el espacio del gráfico sin inventar dashboards falsos."
+                  ? "The backend returned a chart block. This card reserves chart space without fabricating fake dashboards."
                   : "The backend returned a chart block. This card reserves space for the chart without inventing fake dashboards.")}
             </p>
           </div>

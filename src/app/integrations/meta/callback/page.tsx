@@ -33,9 +33,9 @@ function CallbackRedirectFallback() {
 function MetaIntegrationCallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [title, setTitle] = useState("Completando conexion con Meta...");
+  const [title, setTitle] = useState("Completing Meta connection...");
   const [description, setDescription] = useState(
-    "Estamos validando la autorizacion para terminar la conexion."
+    "We’re validating the authorization to complete the connection."
   );
   const [isError, setIsError] = useState(false);
   const [returnHref, setReturnHref] = useState("/integrations");
@@ -79,7 +79,7 @@ function MetaIntegrationCallbackContent() {
               type: META_OAUTH_CONNECT_ERROR,
               provider: "meta",
               message:
-                input.message || "No se pudo completar la conexión con Meta.",
+                input.message || "We couldn’t complete the Meta connection.",
             }
       );
 
@@ -94,12 +94,12 @@ function MetaIntegrationCallbackContent() {
         updateFallback({
           title:
             input.type === META_OAUTH_CONNECT_SUCCESS
-              ? "Integracion conectada correctamente."
-              : "No pudimos completar la conexion con Meta.",
+              ? "Integration connected successfully."
+              : "We couldn’t complete the Meta connection.",
           description:
             input.type === META_OAUTH_CONNECT_SUCCESS
-              ? "Puedes cerrar esta pestaña."
-              : "Puedes cerrar esta pestaña o volver a Measurable para intentarlo de nuevo.",
+              ? "You can close this tab."
+              : "You can close this tab or return to Measurable to try again.",
           isError: input.type === META_OAUTH_CONNECT_ERROR,
           returnHref: input.redirectTo || "/integrations",
         });
@@ -123,8 +123,8 @@ function MetaIntegrationCallbackContent() {
       const fallbackReturnHref = storedContext?.postConnectRedirect || "/integrations";
 
       updateFallback({
-        title: "Completando conexion con Meta...",
-        description: "Estamos validando la autorizacion para terminar la conexion.",
+        title: "Completing Meta connection...",
+        description: "We’re validating the authorization to complete the connection.",
         returnHref: fallbackReturnHref,
       });
 
@@ -154,9 +154,9 @@ function MetaIntegrationCallbackContent() {
         }
 
         updateFallback({
-          title: "No pudimos completar la conexion con Meta.",
+          title: "We couldn’t complete the Meta connection.",
           description:
-            "Puedes cerrar esta pestaña o volver a Measurable para intentarlo de nuevo.",
+            "You can close this tab or return to Measurable to try again.",
           isError: true,
           returnHref: fallbackReturnHref,
         });
@@ -226,9 +226,9 @@ function MetaIntegrationCallbackContent() {
           }
 
           updateFallback({
-            title: "No pudimos completar la conexion con Meta.",
+            title: "We couldn’t complete the Meta connection.",
             description:
-              "No pudimos verificar la conexion despues del callback. Puedes cerrar esta pestaña o volver a Measurable.",
+              "We couldn’t verify the connection after the callback. You can close this tab or return to Measurable.",
             isError: true,
             returnHref: fallbackReturnHref,
           });
@@ -259,9 +259,9 @@ function MetaIntegrationCallbackContent() {
           }
 
           updateFallback({
-            title: "No pudimos completar la conexion con Meta.",
+            title: "We couldn’t complete the Meta connection.",
             description:
-              "Meta regreso del OAuth, pero la conexion no fue confirmada. Puedes cerrar esta pestaña o volver a Measurable.",
+              "Meta returned from OAuth, but the connection was not confirmed. You can close this tab or return to Measurable.",
             isError: true,
             returnHref: fallbackReturnHref,
           });
@@ -305,7 +305,7 @@ function MetaIntegrationCallbackContent() {
 
           updateFallback({
             title: "Integracion conectada correctamente.",
-            description: "Puedes cerrar esta pestaña y volver a Measurable.",
+            description: "You can close this tab and return to Measurable.",
             returnHref: fallbackReturnHref,
           });
 
@@ -332,7 +332,7 @@ function MetaIntegrationCallbackContent() {
 
         updateFallback({
           title: "Integracion conectada correctamente.",
-          description: "Puedes cerrar esta pestaña y volver a Measurable.",
+          description: "You can close this tab and return to Measurable.",
           returnHref: fallbackReturnHref,
         });
 
@@ -377,7 +377,7 @@ function MetaIntegrationCallbackContent() {
         </p>
         {isError ? (
           <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            No pudimos completar la conexion con Meta.
+            We couldn’t complete the Meta connection.
           </div>
         ) : null}
         <div className="mt-6 flex flex-col gap-3">

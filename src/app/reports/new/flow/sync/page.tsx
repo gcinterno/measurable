@@ -12,6 +12,7 @@ import { FlowLoadingOverlay } from "@/components/reports/flow/FlowLoadingOverlay
 import { MobileFlowHeader } from "@/components/reports/flow/MobileFlowHeader";
 import { ApiError, isLimitError } from "@/lib/api";
 import {
+  fetchIntegrationsConnectionStatus,
   fetchMetaInstagramAccounts,
   fetchMetaPages,
   refreshMetaPages,
@@ -24,8 +25,10 @@ import {
   isMetaFrontendIntegrationKey,
 } from "@/lib/integrations/catalog";
 import {
+  clearMetaIntegrationSessionState,
   createEmptySelectedAccountsBySource,
   getIntegrationReportContext,
+  META_SELECTOR_CACHE_KEY,
   setIntegrationReportContext,
   type SourceKey,
 } from "@/lib/integrations/session";
@@ -64,8 +67,6 @@ const EMPTY_SOURCE_SELECTOR_STATE: Record<SourceKey, SourceSelectorState> = {
     error: "",
   },
 };
-
-const META_SELECTOR_CACHE_KEY = "measurable.meta.sync.selectorCache";
 
 type SourceCacheRecord = {
   accounts: MetaOption[];
@@ -223,7 +224,6 @@ function NewReportFlowSyncPageContent() {
       ),
     [selectedSources]
   );
-  const integrationId = storedIntegrationContext?.integrationId || "";
   const workspaceId = storedIntegrationContext?.workspaceId || "";
   const currentStep = 2;
   const previousStepHref = "/reports/new/flow?resume=1";
@@ -248,7 +248,9 @@ function NewReportFlowSyncPageContent() {
   );
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const [resolvedIntegrationId, setResolvedIntegrationId] = useState("");
   const [syncingSource, setSyncingSource] = useState<SourceKey | null>(null);
+  const [metaDisconnected, setMetaDisconnected] = useState(false);
   const [error, setError] = useState("");
   const hasLoadedRef = useRef(false);
   const flowSteps = [
@@ -278,9 +280,9 @@ function NewReportFlowSyncPageContent() {
     console.info("[SyncFlow][mount]", {
       integrationSource,
       selectedSources,
-      integrationId,
+      integrationId: resolvedIntegrationId,
     });
-  }, [integrationId, integrationSource, selectedSources]);
+  }, [integrationSource, resolvedIntegrationId, selectedSources]);
 
   const normalizeCurrentTimeframe = useCallback(() => {
     return normalizeMetaTimeframeSelection({
@@ -304,7 +306,7 @@ function NewReportFlowSyncPageContent() {
       integrationId:
         firstSourceAccount?.integrationId ||
         storedIntegrationContext?.integrationId ||
-        integrationId,
+        resolvedIntegrationId,
       pageId: firstSourceAccount?.accountId || undefined,
       pageName: firstSourceAccount?.accountName || undefined,
       timeframe: normalizedSelection.key,
@@ -330,8 +332,8 @@ function NewReportFlowSyncPageContent() {
           : ("single_source" as const),
     };
   }, [
-    integrationId,
     normalizeCurrentTimeframe,
+    resolvedIntegrationId,
     selectedSources,
     storedIntegrationContext?.aiMode,
     storedIntegrationContext?.integrationId,
@@ -377,7 +379,74 @@ function NewReportFlowSyncPageContent() {
     };
   }, [loading]);
 
+  useEffect(() => {
+    let active = true;
+
+    async function validateMetaConnection() {
+      if (!hasSelectedSources) {
+        setMetaDisconnected(false);
+        return;
+      }
+
+      try {
+        const connectionStatus = await fetchIntegrationsConnectionStatus();
+
+        if (!active) {
+          return;
+        }
+
+        if (!connectionStatus.metaConnected || !connectionStatus.integrationId) {
+          clearMetaIntegrationSessionState();
+          setMetaDisconnected(true);
+          setResolvedIntegrationId("");
+          setSelectedAccountsBySource(createEmptySelectedAccountsBySource());
+          setSourceState({
+            facebook_pages: {
+              accounts: [],
+              loading: false,
+              error: "",
+            },
+            instagram_business: {
+              accounts: [],
+              loading: false,
+              error: "",
+            },
+          });
+          hasLoadedRef.current = true;
+          setLoading(false);
+          setError("");
+          return;
+        }
+
+        setMetaDisconnected(false);
+        hasLoadedRef.current = false;
+        setLoading(true);
+        setError("");
+        setResolvedIntegrationId(connectionStatus.integrationId);
+      } catch (connectionError) {
+        if (!active) {
+          return;
+        }
+
+        console.error("sync flow connection status error:", connectionError);
+        setError("We couldn’t validate the Meta status. Please try again.");
+        setLoading(false);
+      }
+    }
+
+    void validateMetaConnection();
+
+    return () => {
+      active = false;
+    };
+  }, [hasSelectedSources]);
+
   const loadPages = useCallback(async (sourceKey?: SourceKey, force = false) => {
+    if (metaDisconnected) {
+      setLoading(false);
+      return;
+    }
+
     if (!force && hasLoadedRef.current) {
       console.info("[SyncFlow][load.skip.already_loaded]", {
         sourceKey: sourceKey || null,
@@ -397,10 +466,10 @@ function NewReportFlowSyncPageContent() {
     console.info("[SyncFlow][load.start]", {
       sourceKey: sourceKey || null,
       selectedSources: sourceKeys,
-      integrationId,
+      integrationId: resolvedIntegrationId,
     });
 
-    if (!integrationId) {
+    if (!resolvedIntegrationId) {
       hasLoadedRef.current = true;
       setLoading(false);
       setSourceState((current) => {
@@ -455,8 +524,8 @@ function NewReportFlowSyncPageContent() {
         sourceKeys.map(async (selectedSource) => {
           const accountData =
             selectedSource === "instagram_business"
-              ? await fetchMetaInstagramAccounts(integrationId)
-              : await fetchMetaPages(integrationId);
+              ? await fetchMetaInstagramAccounts(resolvedIntegrationId)
+              : await fetchMetaPages(resolvedIntegrationId);
 
           return [selectedSource, accountData] as const;
         })
@@ -521,9 +590,10 @@ function NewReportFlowSyncPageContent() {
     }
   }, [
     hasSelectedSources,
-    integrationId,
+    metaDisconnected,
     messages.reports.loadPagesError,
     messages.reports.missingIntegration,
+    resolvedIntegrationId,
     selectedSources,
   ]);
 
@@ -547,7 +617,7 @@ function NewReportFlowSyncPageContent() {
         ...selectedAccountsBySource[sourceKey],
         accountId,
         accountName: selectedAccount?.name || "",
-        integrationId,
+        integrationId: resolvedIntegrationId,
         integrationAccountId: accountId || undefined,
         datasetId: undefined,
         syncStatus: accountId ? "idle" : "error",
@@ -560,7 +630,7 @@ function NewReportFlowSyncPageContent() {
   }
 
   async function handleRefreshSource(sourceKey: SourceKey) {
-    if (!integrationId) {
+    if (!resolvedIntegrationId) {
       setError(messages.reports.missingIntegration);
       return;
     }
@@ -576,7 +646,7 @@ function NewReportFlowSyncPageContent() {
       }));
 
       await refreshMetaPages({
-        integrationId,
+        integrationId: resolvedIntegrationId,
         workspaceId: workspaceId || undefined,
       });
 
@@ -585,7 +655,7 @@ function NewReportFlowSyncPageContent() {
       setError("");
     } catch (refreshError) {
       console.error("meta pages refresh error:", refreshError);
-      setError("Usaremos las páginas guardadas. Puedes intentar actualizar de nuevo.");
+      setError("We’ll use the saved pages. You can try refreshing again.");
       setSourceState((current) => ({
         ...current,
         [sourceKey]: {
@@ -597,7 +667,7 @@ function NewReportFlowSyncPageContent() {
   }
 
   async function handleSync(sourceKey: SourceKey) {
-    if (!integrationId) {
+    if (!resolvedIntegrationId) {
       setError(
         "We could not find the Meta integration_id in the current session. Reconnect the integration and try again."
       );
@@ -627,7 +697,7 @@ function NewReportFlowSyncPageContent() {
       setError("");
       const normalizedSelection = normalizeCurrentTimeframe();
       const syncInput = {
-        integrationId,
+        integrationId: resolvedIntegrationId,
         timeframe: normalizedSelection.key,
         startDate: normalizedSelection.startDate,
         endDate: normalizedSelection.endDate,
@@ -640,7 +710,7 @@ function NewReportFlowSyncPageContent() {
             })
           : await (async () => {
               await selectMetaPage({
-                integrationId,
+                integrationId: resolvedIntegrationId,
                 pageId: selectedAccount.accountId,
               });
 
@@ -659,7 +729,7 @@ function NewReportFlowSyncPageContent() {
         ...selectedAccountsBySource,
         [sourceKey]: {
           ...selectedAccount,
-          integrationId: response.integrationId || integrationId,
+          integrationId: response.integrationId || resolvedIntegrationId,
           integrationAccountId: selectedAccount.accountId,
           datasetId: nextDatasetId,
           syncStatus: "synced" as const,
@@ -799,6 +869,30 @@ function NewReportFlowSyncPageContent() {
 
             {hasSelectedSources ? (
               <>
+                {metaDisconnected ? (
+                  <section className="rounded-[28px] border border-slate-200 bg-slate-50 p-6 shadow-sm">
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
+                      Meta disconnected
+                    </p>
+                    <h3 className="mt-3 text-2xl font-semibold text-slate-950">
+                      Connect Meta to load your pages and create reports.
+                    </h3>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">
+                      Facebook Pages and Instagram Business must be reconnected before continuing.
+                    </p>
+                    <div className="mt-5 flex flex-wrap items-center gap-3">
+                      <Link
+                        href="/reports/new/flow"
+                        className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                      >
+                        Connect Meta
+                      </Link>
+                    </div>
+                  </section>
+                ) : null}
+
+                {!metaDisconnected ? (
+                  <>
                 <section className="rounded-2xl border border-slate-200 bg-white p-4">
                   <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
                     {messages.reports.timeframe}
@@ -909,7 +1003,7 @@ function NewReportFlowSyncPageContent() {
                             {sourceSelectorState.loadingSlow ? (
                               <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600">
                                 <p>
-                                  Estamos cargando tus páginas. Esto puede tardar si tienes muchas cuentas conectadas.
+                                  We’re loading your pages. This may take longer if you have many connected accounts.
                                 </p>
                                 <button
                                   type="button"
@@ -919,7 +1013,7 @@ function NewReportFlowSyncPageContent() {
                                   }}
                                   className="mt-4 inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
                                 >
-                                  Intentar de nuevo
+                                  Try again
                                 </button>
                               </div>
                             ) : null}
@@ -956,13 +1050,13 @@ function NewReportFlowSyncPageContent() {
                                   <div>
                                     <p className="font-medium text-slate-900">
                                       {sourceSelectorState.lastUpdatedAt
-                                        ? "Tus páginas guardadas están listas."
-                                        : "Tus páginas están listas."}
+                                        ? "Your saved pages are ready."
+                                        : "Your pages are ready."}
                                     </p>
                                     <p className="mt-1 text-xs text-slate-500">
                                       {sourceSelectorState.lastUpdatedAt
-                                        ? `Última actualización: ${formatRelativeLastUpdated(sourceSelectorState.lastUpdatedAt)}`
-                                        : "Puedes actualizarlas si hiciste cambios recientes en Meta."}
+                                        ? `Last updated: ${formatRelativeLastUpdated(sourceSelectorState.lastUpdatedAt)}`
+                                        : "You can refresh them if you made recent changes in Meta."}
                                     </p>
                                   </div>
                                   <button
@@ -976,7 +1070,7 @@ function NewReportFlowSyncPageContent() {
                                 </div>
                                 {sourceSelectorState.accounts.length > 10 ? (
                                   <p className="mt-2 text-xs text-slate-500">
-                                    Tienes varias páginas conectadas. Usa el buscador para encontrar la correcta.
+                                    You have multiple connected pages. Use search to find the right one.
                                   </p>
                                 ) : null}
                               </div>
@@ -991,7 +1085,7 @@ function NewReportFlowSyncPageContent() {
                                   {config.selectorTitle}
                                 </h3>
                                 <p className="mt-2 text-sm leading-6 text-slate-500">
-                                  No encontramos páginas guardadas. Carga tus páginas desde Meta para continuar.
+                                  We couldn’t find any saved pages. Load your pages from Meta to continue.
                                 </p>
                                 <button
                                   type="button"
@@ -1076,6 +1170,8 @@ function NewReportFlowSyncPageContent() {
                     {messages.common.back}
                   </Link>
                 </div>
+                  </>
+                ) : null}
               </>
             ) : (
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500">

@@ -676,7 +676,7 @@ export default function ReportsPage() {
               type="text"
               value={newFolderName}
               onChange={(event) => setNewFolderName(event.target.value)}
-              placeholder={language === "es" ? "ej. Reportes 2025" : "e.g. 2025 Reports"}
+              placeholder="e.g. 2025 Reports"
               className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
               autoFocus
             />

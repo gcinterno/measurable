@@ -4480,7 +4480,7 @@ function ReportBlockSlide({
           title={title || "Fin del reporte"}
           subtitle={text || "Gracias por revisar este resumen de desempeno"}
           meta={getBlockTimeframeLabel(block, locale)}
-          footer={<FooterMeta text="Reporte generado con Measurable." />}
+          footer={<FooterMeta text="Report generated with Measurable." />}
           templateId={templateId}
           rightSlot={<CoverLogo logoDataUrl={logoUrl} dark={tone.dark} />}
         />

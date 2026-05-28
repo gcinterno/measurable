@@ -8,6 +8,7 @@ import type { ReportTemplateId } from "@/lib/reports/template-selection";
 
 const INTEGRATION_REPORT_CONTEXT_KEY = "integrationReportContext";
 const PENDING_META_SOURCE_KEY = "pendingMetaSource";
+export const META_SELECTOR_CACHE_KEY = "measurable.meta.sync.selectorCache";
 
 export type PendingMetaSource = "facebook_pages" | "instagram_business";
 export type SourceKey = PendingMetaSource;
@@ -325,6 +326,54 @@ export function clearStoredMetaIntegrationState() {
     pageName: undefined,
     synced: false,
   });
+}
+
+export function clearMetaSelectorCache() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(META_SELECTOR_CACHE_KEY);
+}
+
+export function clearMetaIntegrationSessionState() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const currentContext = getIntegrationReportContext();
+
+  clearPendingMetaSource();
+  clearMetaSelectorCache();
+
+  if (!currentContext) {
+    clearIntegrationReportContext();
+    return;
+  }
+
+  const nextContext = normalizeIntegrationReportContext({
+    ...currentContext,
+    source: "",
+    integration: "",
+    integrationId: undefined,
+    datasetId: undefined,
+    businessId: undefined,
+    adAccountId: undefined,
+    pageId: undefined,
+    pageName: undefined,
+    synced: false,
+    postConnectRedirect: undefined,
+    selectedSources: [],
+    selectedAccountsBySource: createEmptySelectedAccountsBySource(),
+    reportKind: "single_source",
+  });
+
+  if (!nextContext) {
+    clearIntegrationReportContext();
+    return;
+  }
+
+  setIntegrationReportContext(nextContext);
 }
 
 export function getPendingMetaSource() {

@@ -873,7 +873,7 @@ function NewReportFlowGeneratePageContent() {
                       >
                         {planCapabilities.canUseAiAgents
                           ? "Usa agentes para proponer estructura, insights y estilo del reporte."
-                          : "Disponible en Advanced."}
+                          : "Available on Advanced."}
                       </span>
                     </button>
                   </div>

@@ -314,7 +314,7 @@ export function SlideDeckViewport({ children, slides }: SlideDeckViewportProps) 
               disabled={activeSlideIndex === slides.length - 1}
               className="inline-flex min-w-[7rem] items-center justify-center rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 disabled:opacity-35"
             >
-              Siguiente
+              Next
             </button>
           </div>
         </div>

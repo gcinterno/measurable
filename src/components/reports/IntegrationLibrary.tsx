@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/components/providers/LanguageProvider";
 import {
   connectMetaIntegration,
+  disconnectMetaIntegration,
   fetchIntegrationsConnectionStatus,
   fetchMetaInstagramAccounts,
   fetchMetaPages,
@@ -33,8 +34,8 @@ import {
 } from "@/lib/integrations/catalog";
 import {
   createEmptySelectedAccountsBySource,
-  clearPendingMetaSource,
   clearIntegrationReportContext,
+  clearMetaIntegrationSessionState,
   clearStoredMetaIntegrationState,
   getIntegrationReportContext,
   type SelectedAccountsBySource,
@@ -182,6 +183,7 @@ export function IntegrationLibrary({
   const storedIntegrationContext = getIntegrationReportContext();
   const { workspace, loading: workspaceLoading } = useActiveWorkspace();
   const [connectingIntegrationKey, setConnectingIntegrationKey] = useState<string | null>(null);
+  const [disconnectingIntegrationKey, setDisconnectingIntegrationKey] = useState<string | null>(null);
   const [connectError, setConnectError] = useState("");
   const [metaFlowState, setMetaFlowState] = useState<MetaFlowState>(
     embedded && mode === "report-flow" ? "checking" : "not_connected"
@@ -227,6 +229,9 @@ export function IntegrationLibrary({
       const connectionStatus = await fetchIntegrationsConnectionStatus();
 
       if (!connectionStatus.metaConnected || !connectionStatus.integrationId) {
+        clearMetaIntegrationSessionState();
+        setCurrentSelectedSources([]);
+        setMetaIntegrationId("");
         setMetaCounts({
           facebook_pages: 0,
           instagram_business: 0,
@@ -314,6 +319,9 @@ export function IntegrationLibrary({
             resolvedIntegrationId = connectionStatus.integrationId;
             setMetaIntegrationId(connectionStatus.integrationId);
           } else {
+            clearMetaIntegrationSessionState();
+            setCurrentSelectedSources([]);
+            setMetaIntegrationId("");
             setMetaCounts({
               facebook_pages: 0,
               instagram_business: 0,
@@ -345,6 +353,7 @@ export function IntegrationLibrary({
           facebook_pages: 0,
           instagram_business: 0,
         });
+        setMetaIntegrationId("");
         setMetaFlowState("not_connected");
       }
     }
@@ -382,13 +391,13 @@ export function IntegrationLibrary({
           await refreshMetaState();
         } catch (error) {
           console.error("integration library popup refresh error:", error);
-          setConnectError("La conexión terminó, pero no pudimos refrescar el estado.");
+          setConnectError("The connection finished, but we couldn’t refresh the status.");
         }
 
         return;
       }
 
-      setConnectError(event.data.message || "No se pudo completar la conexión con Meta.");
+      setConnectError(event.data.message || "We couldn’t complete the Meta connection.");
     }
 
     window.addEventListener("message", handleMetaWindowMessage);
@@ -543,7 +552,7 @@ export function IntegrationLibrary({
           connectInFlightRef.current = false;
           setConnectingIntegrationKey(null);
           setConnectError(
-            "Si terminaste la conexión, ya puedes cerrar la pestaña de Meta."
+            "If you finished connecting, you can now close the Meta tab."
           );
         }, 90000);
         popupPollRef.current = window.setInterval(async () => {
@@ -566,7 +575,7 @@ export function IntegrationLibrary({
             console.error("integration library popup closed refresh error:", error);
           }
 
-          setConnectError("La ventana de conexión se cerró antes de completar la autorización.");
+          setConnectError("The connection window closed before authorization was completed.");
         }, 2500);
       }
     } catch (error) {
@@ -642,6 +651,43 @@ export function IntegrationLibrary({
       })
     );
     router.push(`/reports/new/flow/sync?integration=${currentSelectedSources[0]}`);
+  }
+
+  async function handleMetaDisconnect() {
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(
+        "Do you want to disconnect Meta? This will disconnect Facebook Pages and Instagram Business from this workspace. Your existing reports will not be deleted."
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    try {
+      const currentContext = getIntegrationReportContext();
+      setDisconnectingIntegrationKey("meta");
+      setConnectError("");
+      await disconnectMetaIntegration({
+        workspaceId: activeWorkspaceId || currentContext?.workspaceId || "",
+      });
+      clearMetaIntegrationSessionState();
+      setCurrentSelectedSources([]);
+      setMetaIntegrationId("");
+      setMetaCounts({
+        facebook_pages: 0,
+        instagram_business: 0,
+      });
+      setMetaFlowState("not_connected");
+      const nextParams = new URLSearchParams(searchParams.toString());
+      nextParams.delete("resume");
+      router.replace(`/reports/new/flow${nextParams.toString() ? `?${nextParams.toString()}` : ""}`);
+    } catch (error) {
+      console.error("integration library disconnect error:", error);
+      setConnectError("We couldn’t disconnect Meta right now. Please try again.");
+    } finally {
+      setDisconnectingIntegrationKey(null);
+    }
   }
 
   function renderCardActions(input: {
@@ -750,6 +796,7 @@ export function IntegrationLibrary({
                 ? "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
                 : "bg-slate-950 !text-white hover:bg-slate-800"
             }`}
+            disabled={disconnectingIntegrationKey === "meta"}
           >
             {isSelected ? "Selected" : "Select"}
           </button>
@@ -757,22 +804,12 @@ export function IntegrationLibrary({
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-              clearPendingMetaSource();
-              clearIntegrationReportContext();
-              setCurrentSelectedSources([]);
-              setMetaIntegrationId("");
-              setMetaCounts({
-                facebook_pages: 0,
-                instagram_business: 0,
-              });
-              setMetaFlowState("not_connected");
-              const nextParams = new URLSearchParams(searchParams.toString());
-              nextParams.set("integration", integration.integrationKey);
-              router.replace(`/reports/new/flow?${nextParams.toString()}`);
+              void handleMetaDisconnect();
             }}
-            className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+            disabled={disconnectingIntegrationKey === "meta"}
+            className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Disconnect
+            {disconnectingIntegrationKey === "meta" ? "Disconnecting..." : "Disconnect"}
           </button>
         </>
       );

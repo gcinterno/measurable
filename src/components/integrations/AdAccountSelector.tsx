@@ -228,7 +228,7 @@ export function AdAccountSelector({
                 type="text"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Buscar página..."
+                placeholder="Search page..."
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
               />
             </div>
@@ -266,7 +266,7 @@ export function AdAccountSelector({
                 })}
                 {filteredAccounts.length === 0 ? (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-                    No encontramos resultados para tu búsqueda.
+                    We couldn’t find any results for your search.
                   </div>
                 ) : null}
               </div>
@@ -347,7 +347,7 @@ export function AdAccountSelector({
                     type="text"
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Buscar página..."
+                    placeholder="Search page..."
                     className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
                   />
                 ) : null}
@@ -384,7 +384,7 @@ export function AdAccountSelector({
                 })}
                 {filteredAccounts.length === 0 ? (
                   <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-500">
-                    No encontramos resultados para tu búsqueda.
+                    We couldn’t find any results for your search.
                   </div>
                 ) : null}
               </div>

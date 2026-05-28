@@ -51,7 +51,7 @@ import type { SourceKey } from "@/lib/integrations/session";
 import type { ReportDescription, ReportDetail, ReportVersionBlock } from "@/types/report";
 
 const REPORT_PDF_DOWNLOADS_LOCKED = true;
-const REPORT_PDF_LOCKED_TOOLTIP = "Proximamente";
+const REPORT_PDF_LOCKED_TOOLTIP = "Coming soon";
 
 const loadingQuotes = [
   {
@@ -224,7 +224,7 @@ function NewReportFlowReviewPageContent() {
   const [showFreeWatermark, setShowFreeWatermark] = useState(false);
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const [upgradeModalMessage, setUpgradeModalMessage] = useState(
-    "Has alcanzado el límite de 10 reportes gratuitos."
+    "You’ve reached the limit of 10 free reports."
   );
   const [upgradeModalUrl, setUpgradeModalUrl] = useState("/wishlist");
   const generationStartedRef = useRef(false);
@@ -502,7 +502,7 @@ function NewReportFlowReviewPageContent() {
         if (err instanceof ApiError && err.code === "FREE_REPORT_LIMIT_REACHED") {
           setGenerationLimitReached(true);
           setUpgradeModalMessage(
-            err.message || "Has alcanzado el límite de 10 reportes gratuitos."
+            err.message || "You’ve reached the limit of 10 free reports."
           );
           setUpgradeModalUrl(err.upgradeUrl || "https://measurableapp.com/wishlist");
           setUpgradeModalOpen(true);
@@ -792,7 +792,7 @@ function NewReportFlowReviewPageContent() {
         integrationLabel:
           integration?.name ||
           (sourceKey === "instagram_business" ? "Instagram Business" : "Facebook Page"),
-        sourceLabel: selectedAccount?.accountName || "Fuente no disponible",
+        sourceLabel: selectedAccount?.accountName || "Source unavailable",
         channelLabel: sourceKey === "instagram_business" ? "Instagram" : "Facebook",
       };
     });
@@ -978,7 +978,7 @@ function NewReportFlowReviewPageContent() {
             {selectedSourceCards.length > 0 ? (
               <section className="mb-6 rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
                 <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
-                  Integración utilizada
+                  Integration used
                 </p>
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
                   {selectedSourceCards.map((card) => (
@@ -986,7 +986,7 @@ function NewReportFlowReviewPageContent() {
                       <p className="text-base font-semibold text-slate-950">{card.integrationLabel}</p>
                       <p className="mt-2 text-sm text-slate-600">{card.sourceLabel}</p>
                       <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                        Canal: {card.channelLabel}
+                        Channel: {card.channelLabel}
                       </p>
                     </div>
                   ))}
@@ -1005,7 +1005,7 @@ function NewReportFlowReviewPageContent() {
                       {messages.reports.generateReport}
                     </h2>
                     <p className="mt-2 text-sm text-slate-500">
-                      Generando tu reporte...
+                      Generating your report...
                     </p>
                   </div>
 
@@ -1014,7 +1014,7 @@ function NewReportFlowReviewPageContent() {
                       <div className="flex min-h-[400px] w-full flex-col items-center justify-center rounded-[24px] border border-slate-800/80 bg-[#07111f] px-6 text-center md:aspect-[16/9] md:min-h-0 md:rounded-[28px]">
                         <span className="h-12 w-12 animate-spin rounded-full border-[3px] border-white/15 border-t-sky-300" />
                         <p className="mt-5 text-base font-semibold text-white">
-                          Generando tu reporte...
+                          Generating your report...
                         </p>
                         <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">
                           &ldquo;{loadingQuotes[loadingIndex]?.quote}&rdquo;
@@ -1041,7 +1041,7 @@ function NewReportFlowReviewPageContent() {
                       href="/pricing"
                       className="mt-4 inline-flex rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
                     >
-                      Ver planes
+                      View plans
                     </Link>
                   ) : (
                     <button
@@ -1049,7 +1049,7 @@ function NewReportFlowReviewPageContent() {
                       onClick={handleRetryReview}
                       className="mt-4 inline-flex rounded-2xl bg-red-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-800"
                     >
-                      Reintentar
+                      Try again
                     </button>
                   )}
                 </div>
@@ -1066,7 +1066,7 @@ function NewReportFlowReviewPageContent() {
                     onClick={handleRetryReview}
                     className="mt-5 inline-flex rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
                   >
-                    Reintentar
+                    Try again
                   </button>
                 </div>
               ) : reviewStatus === "loading" ? (
@@ -1079,7 +1079,7 @@ function NewReportFlowReviewPageContent() {
                       {messages.reports.generateReport}
                     </h2>
                     <p className="mt-2 text-sm text-slate-500">
-                      Generando tu reporte...
+                      Generating your report...
                     </p>
                   </div>
 
@@ -1088,7 +1088,7 @@ function NewReportFlowReviewPageContent() {
                       <div className="flex min-h-[400px] w-full flex-col items-center justify-center rounded-[24px] border border-slate-800/80 bg-[#07111f] px-6 text-center md:aspect-[16/9] md:min-h-0 md:rounded-[28px]">
                         <span className="h-12 w-12 animate-spin rounded-full border-[3px] border-white/15 border-t-sky-300" />
                         <p className="mt-5 text-base font-semibold text-white">
-                          Generando tu reporte...
+                          Generating your report...
                         </p>
                         <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">
                           &ldquo;{loadingQuotes[loadingIndex]?.quote}&rdquo;
@@ -1117,7 +1117,7 @@ function NewReportFlowReviewPageContent() {
                         <p className="mt-1 text-xs font-medium text-slate-500">
                           AI mode:{" "}
                           {aiModeMetadata.aiMode === "agents" ? "Agents" : "Standard"}
-                          {aiModeMetadata.fallbackUsed ? " · Se usó fallback estándar" : ""}
+                          {aiModeMetadata.fallbackUsed ? " · Standard fallback applied" : ""}
                         </p>
                       ) : null}
                     </div>
@@ -1206,7 +1206,7 @@ function NewReportFlowReviewPageContent() {
                         report={reportDetail}
                         templateId={selectedTemplate}
                         templateOverride={activeTemplate}
-                        watermarkText={showFreeWatermark ? "Reporte creado con measurableapp.com" : undefined}
+                        watermarkText={showFreeWatermark ? "Report created with measurableapp.com" : undefined}
                       />
                     </div>
                   </div>

@@ -36,7 +36,7 @@ export function PublicSharedReportActions({
         template: template || null,
         error: error instanceof Error ? error.message : String(error),
       });
-      window.alert("No pudimos descargar el PDF. Intenta de nuevo.");
+      window.alert("We couldn’t download the PDF. Please try again.");
     } finally {
       setDownloading(false);
     }
@@ -51,7 +51,7 @@ export function PublicSharedReportActions({
               href="https://www.measurableapp.com/?utm_source=shared_report&utm_medium=cta&utm_campaign=public_report_view"
               className="inline-flex h-14 w-[min(80vw,280px)] items-center justify-center rounded-full bg-[var(--measurable-blue)] px-6 text-[15px] font-semibold !text-white shadow-[0_18px_40px_rgba(23,73,255,0.22)] transition hover:scale-[1.01] hover:bg-[var(--measurable-blue-hover)] active:scale-[0.99] visited:!text-white sm:h-14 sm:min-w-[292px] sm:w-auto sm:px-8 sm:text-base"
             >
-              Visitar Plataforma
+              Visit Platform
             </a>
 
             <div className="group relative">
@@ -91,7 +91,7 @@ export function PublicSharedReportActions({
               </button>
               {REPORT_PDF_DOWNLOADS_LOCKED ? (
                 <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 rounded-full bg-slate-950 px-3 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100">
-                  Proximamente
+                  Coming soon
                 </span>
               ) : null}
             </div>

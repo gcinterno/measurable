@@ -566,6 +566,34 @@ export async function connectMetaIntegration(input?: {
   return getRedirectUrl(text);
 }
 
+export async function disconnectMetaIntegration(input?: {
+  workspaceId?: string | null;
+}) {
+  const activeWorkspaceId = await getRequiredWorkspaceId(input?.workspaceId);
+  const endpoint = "/integrations/meta/disconnect";
+  const res = await fetch(apiUrl(endpoint), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(getAuthHeaders() || {}),
+    },
+    body: JSON.stringify({
+      workspace_id: activeWorkspaceId,
+    }),
+  });
+
+  const text = await readApiResponseText(endpoint, res);
+  const payload = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+
+  return {
+    ok: res.ok,
+    message:
+      (typeof payload.message === "string" && payload.message) ||
+      (typeof payload.detail === "string" && payload.detail) ||
+      "Integration disconnected successfully.",
+  };
+}
+
 export async function fetchIntegrationsConnectionStatus() {
   const endpoint = "/integrations";
   const res = await fetch(apiUrl(endpoint), {

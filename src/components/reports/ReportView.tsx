@@ -56,7 +56,7 @@ type ReportFolder = {
 const REPORT_FOLDERS_KEY = "reportFolders";
 const REPORT_FOLDER_ASSIGNMENTS_KEY = "reportFolderAssignments";
 const REPORT_PDF_DOWNLOADS_LOCKED = true;
-const REPORT_PDF_LOCKED_TOOLTIP = "Proximamente";
+const REPORT_PDF_LOCKED_TOOLTIP = "Coming soon";
 
 function loadStoredFolders() {
   if (typeof window === "undefined") {
@@ -208,13 +208,13 @@ function ReportAssistantPrompt({ onClose }: { onClose: () => void }) {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold">AI Assistant</p>
           <p className="mt-1 text-sm font-medium text-slate-700">
-            Hablemos de tu Reporte! 🤖📊
+            Let’s talk about your report.
           </p>
         </div>
         <button
           type="button"
           onClick={onClose}
-          aria-label="Cerrar aviso del AI Assistant"
+          aria-label="Close AI Assistant notice"
           className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
         >
           x
@@ -905,7 +905,7 @@ export default function ReportView({
             </div>
             {FEATURES.ENABLE_AI_AGENTS_MODE && aiModeMetadata.fallbackUsed ? (
               <p className="mt-3 text-xs font-medium text-slate-500">
-                Fallback estándar aplicado
+                Standard fallback applied
               </p>
             ) : null}
             <div className="mt-4 rounded-[24px] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600 shadow-sm">
@@ -916,15 +916,15 @@ export default function ReportView({
                 {getReportTemplateLabel(selectedTemplateId)}
               </p>
               <p className="mt-3 sm:mt-1">
-                <span className="font-semibold text-slate-900">Integración:</span>{" "}
+                <span className="font-semibold text-slate-900">Integration:</span>{" "}
                 {reportIntegration.integrationLabel}
               </p>
               <p>
-                <span className="font-semibold text-slate-900">Fuente:</span>{" "}
+                <span className="font-semibold text-slate-900">Source:</span>{" "}
                 {reportIntegration.sourceLabel}
               </p>
               <p className="mt-1">
-                <span className="font-semibold text-slate-900">Canal:</span>{" "}
+                <span className="font-semibold text-slate-900">Channel:</span>{" "}
                 {reportIntegration.channelLabel}
               </p>
             </div>
@@ -990,7 +990,7 @@ export default function ReportView({
               branding={resolvedBranding}
               report={reportDetail}
               templateId={selectedTemplateId}
-              watermarkText={showFreeWatermark ? "Reporte creado con measurableapp.com" : undefined}
+              watermarkText={showFreeWatermark ? "Report created with measurableapp.com" : undefined}
             />
           </div>
         </div>
@@ -1229,9 +1229,9 @@ export default function ReportView({
       {deleteConfirmOpen ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/35 px-4">
           <div className="w-full max-w-md rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_24px_70px_rgba(15,23,42,0.18)]">
-            <h3 className="text-xl font-semibold text-slate-950">Eliminar reporte</h3>
+            <h3 className="text-xl font-semibold text-slate-950">Delete report</h3>
             <p className="mt-3 text-sm leading-6 text-slate-600">
-              ¿Seguro que quieres eliminar este reporte? Esta acción no se puede deshacer.
+              Are you sure you want to delete this report? This action cannot be undone.
             </p>
             <div className="mt-5 flex items-center justify-end gap-3">
               <button
@@ -1240,7 +1240,7 @@ export default function ReportView({
                 disabled={deletingReport}
                 className="rounded-2xl px-4 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-slate-50"
               >
-                Cancelar
+                Cancel
               </button>
               <button
                 type="button"
@@ -1248,7 +1248,7 @@ export default function ReportView({
                 disabled={deletingReport}
                 className="rounded-2xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
               >
-                {deletingReport ? "Eliminando..." : "Eliminar reporte"}
+                {deletingReport ? "Deleting..." : "Delete report"}
               </button>
             </div>
           </div>

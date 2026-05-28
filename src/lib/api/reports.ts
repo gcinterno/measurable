@@ -312,7 +312,7 @@ function normalizeReport(report: BackendReport, index: number): Report {
     report.reportTitle ||
     report.title ||
     report.name ||
-    `Reporte ${index + 1}`;
+    `Report ${index + 1}`;
   const normalizedSourceSummary =
     formatReportSourceSummary(reportSources) ||
     report.source_name ||

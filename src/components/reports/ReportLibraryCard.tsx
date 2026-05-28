@@ -271,7 +271,7 @@ export function ReportLibraryCard({
       }, 1200);
     } catch (error) {
       console.error("report folder update error:", error);
-      setFolderError("No se pudo guardar la carpeta.");
+      setFolderError("The folder could not be saved.");
     } finally {
       setSavingFolder(false);
     }
@@ -288,7 +288,7 @@ export function ReportLibraryCard({
       setDeleting(true);
       await deleteReport(report.id);
       await onDeleted?.(report.id);
-      setDeleteFeedback("Reporte eliminado correctamente.");
+      setDeleteFeedback("Report deleted successfully.");
       setDeleteConfirmOpen(false);
       setMenuOpen(false);
     } catch (error) {
@@ -326,7 +326,7 @@ export function ReportLibraryCard({
       }, 1200);
     } catch (error) {
       console.error("report library pdf download error:", error);
-      setQuickActionError("No se pudo descargar el PDF. Intenta nuevamente.");
+      setQuickActionError("The PDF could not be downloaded. Please try again.");
     } finally {
       setPdfLoading(false);
     }
@@ -346,7 +346,7 @@ export function ReportLibraryCard({
       }, 1200);
     } catch (error) {
       console.error("report library share error:", error);
-      setQuickActionError("No se pudo copiar el link.");
+      setQuickActionError("The link could not be copied.");
     } finally {
       setShareLoading(false);
     }
@@ -435,9 +435,9 @@ export function ReportLibraryCard({
       {deleteConfirmOpen ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/35 px-4">
           <div className="w-full max-w-md rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_24px_70px_rgba(15,23,42,0.18)]">
-            <h3 className="text-xl font-semibold text-slate-950">Eliminar reporte</h3>
+            <h3 className="text-xl font-semibold text-slate-950">Delete report</h3>
             <p className="mt-3 text-sm leading-6 text-slate-600">
-              ¿Seguro que quieres eliminar este reporte? Esta acción no se puede deshacer.
+              Are you sure you want to delete this report? This action cannot be undone.
             </p>
             <div className="mt-5 flex items-center justify-end gap-3">
               <button
@@ -446,7 +446,7 @@ export function ReportLibraryCard({
                 disabled={deleting}
                 className="rounded-2xl px-4 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-slate-50"
               >
-                Cancelar
+                Cancel
               </button>
               <button
                 type="button"
@@ -454,7 +454,7 @@ export function ReportLibraryCard({
                 disabled={deleting}
                 className="rounded-2xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
               >
-                {deleting ? "Eliminando..." : "Eliminar reporte"}
+                {deleting ? "Deleting..." : "Delete report"}
               </button>
             </div>
           </div>

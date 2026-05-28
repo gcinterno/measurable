@@ -136,7 +136,7 @@ export function ReportActionsMenu({
                 </button>
                 {pdfDownloadLocked ? (
                   <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 rounded-full bg-slate-950 px-3 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100">
-                    Proximamente
+                    Coming soon
                   </span>
                 ) : null}
               </div>

@@ -40,12 +40,12 @@ export function MobileFlowHeader({
                 : "border border-slate-200 bg-white text-slate-700"
             }`}
           >
-            Atrás
+            Back
           </Link>
         ) : null}
 
         <p className="text-center text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--measurable-blue)]">
-          Paso {currentStep} de {totalSteps}
+          Step {currentStep} of {totalSteps}
         </p>
         <h1 className={`mx-auto mt-2 max-w-[17rem] text-center text-[1.75rem] font-semibold tracking-tight ${darkMode ? "text-white" : "text-slate-950"}`}>
           {title}

@@ -9,7 +9,7 @@ import { useI18n } from "@/components/providers/LanguageProvider";
 import { DesktopFlowSteps } from "@/components/reports/flow/DesktopFlowSteps";
 import { MobileFlowHeader } from "@/components/reports/flow/MobileFlowHeader";
 import { IntegrationLibrary } from "@/components/reports/IntegrationLibrary";
-import { integrationCatalog, isMetaFrontendIntegrationKey } from "@/lib/integrations/catalog";
+import { integrationCatalog } from "@/lib/integrations/catalog";
 import {
   createEmptySelectedAccountsBySource,
   getIntegrationReportContext,
@@ -26,11 +26,6 @@ function NewReportFlowPageContent() {
       ? storedIntegrationContext.selectedSources
       : []
     : [];
-  const connectedIntegrationKey =
-    storedIntegrationContext?.integrationId &&
-      isMetaFrontendIntegrationKey(storedIntegrationContext?.source)
-      ? storedIntegrationContext.source
-      : undefined;
   const currentStep = 1;
   const flowSteps = [
     {
@@ -105,7 +100,6 @@ function NewReportFlowPageContent() {
             integrations={integrationCatalog}
             selectedIntegrationKeys={selectedIntegrationKeys}
             embedded
-            connectedIntegrationKey={connectedIntegrationKey}
             mode="report-flow"
           />
         </section>

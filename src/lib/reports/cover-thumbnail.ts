@@ -10,17 +10,14 @@ export function getCoverThumbnailTitle(title: string, language: AppLanguage) {
   const normalizedTitle = normalizeReportTitle(title);
 
   if (!normalizedTitle) {
-    return language === "es" ? "Reporte de Marketing" : "Marketing Report";
+    return "Marketing Report";
   }
 
-  if (
-    /^marketing report/i.test(normalizedTitle) ||
-    /^reporte de marketing/i.test(normalizedTitle)
-  ) {
+  if (/^marketing report/i.test(normalizedTitle)) {
     return normalizedTitle;
   }
 
-  return `${language === "es" ? "Reporte de Marketing" : "Marketing Report"} ${normalizedTitle}`.trim();
+  return `Marketing Report ${normalizedTitle}`.trim();
 }
 
 export function getCoverThumbnailSubtitle(language: AppLanguage) {
@@ -29,27 +26,19 @@ export function getCoverThumbnailSubtitle(language: AppLanguage) {
   const integration = context?.integration?.trim().toLowerCase() || "";
 
   if (source === "facebook_pages") {
-    return language === "es"
-      ? "Reporte de Facebook Pages - Resumen e insights"
-      : "Facebook Pages Report - Summary & Insights";
+    return "Facebook Pages Report - Summary & Insights";
   }
 
   if (source === "instagram_business") {
-    return language === "es"
-      ? "Reporte de Instagram Business - Resumen e insights"
-      : "Instagram Business Report - Summary & Insights";
+    return "Instagram Business Report - Summary & Insights";
   }
 
   if (integration === "meta") {
-    return language === "es"
-      ? "Reporte social - Resumen e insights"
-      : "Social Report - Summary & Insights";
+    return "Social Report - Summary & Insights";
   }
 
   if (!integration) {
-    return language === "es"
-      ? "Reporte social - Resumen e insights"
-      : "Social Report - Summary & Insights";
+    return "Social Report - Summary & Insights";
   }
 
   const label = integration
@@ -58,9 +47,7 @@ export function getCoverThumbnailSubtitle(language: AppLanguage) {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 
-  return language === "es"
-    ? `Reporte de ${label} - Resumen e insights`
-    : `${label} Report - Summary & Insights`;
+  return `${label} Report - Summary & Insights`;
 }
 
 function formatThumbnailDateRange(

@@ -8,6 +8,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { UserSuggestionModal } from "@/components/suggestions/UserSuggestionModal";
 import {
   connectMetaIntegration,
+  disconnectMetaIntegration,
   fetchMetaPages,
   fetchIntegrationsConnectionStatus,
   validateMetaAuthUrl,
@@ -26,8 +27,7 @@ import {
   storeMetaOAuthDebugUrl,
 } from "@/lib/integrations/meta-oauth";
 import {
-  clearPendingMetaSource,
-  clearIntegrationReportContext,
+  clearMetaIntegrationSessionState,
   clearStoredMetaIntegrationState,
   getIntegrationReportContext,
   setPendingMetaSource,
@@ -46,6 +46,7 @@ function IntegrationsPageContent() {
   const [metaError, setMetaError] = useState("");
   const [metaStatusMessage, setMetaStatusMessage] = useState("");
   const [metaConnected, setMetaConnected] = useState(false);
+  const [disconnectLoading, setDisconnectLoading] = useState(false);
   const [suggestionOpen, setSuggestionOpen] = useState(false);
   const activeWorkspaceId = workspace?.id || null;
   const connectInFlightRef = useRef(false);
@@ -72,19 +73,14 @@ function IntegrationsPageContent() {
       return false;
     }
 
-    let hasAuthorizedPages = true;
+    setMetaConnected(true);
 
     if (response.integrationId && (storedContext?.workspaceId || activeWorkspaceId)) {
       const authorizedPages = await fetchMetaPages(
         response.integrationId,
         storedContext?.workspaceId || activeWorkspaceId || ""
       );
-      hasAuthorizedPages = authorizedPages.length > 0;
-    }
 
-    setMetaConnected(hasAuthorizedPages);
-
-    if (response.integrationId && hasAuthorizedPages) {
       setIntegrationReportContext({
         source:
           storedContext && isMetaFrontendIntegrationKey(storedContext.source)
@@ -100,9 +96,15 @@ function IntegrationsPageContent() {
         requestedSlides: storedContext?.requestedSlides,
         aiMode: storedContext?.aiMode,
       });
+
+      if (authorizedPages.length === 0) {
+        setMetaStatusMessage(
+          "Meta is connected, but we couldn’t find any authorized pages yet."
+        );
+      }
     }
 
-    return hasAuthorizedPages;
+    return true;
   }, [activeWorkspaceId]);
 
   useEffect(() => {
@@ -172,18 +174,18 @@ function IntegrationsPageContent() {
           const connected = await refreshMetaIntegrationState();
           setMetaStatusMessage(
             connected
-              ? "Integración conectada correctamente."
-              : "La conexión terminó, pero no se encontraron páginas autorizadas todavía."
+              ? "Integration connected successfully."
+              : "The connection finished, but we couldn’t confirm the status."
           );
         } catch (error) {
           console.error("meta popup refresh error:", error);
-          setMetaError("La conexión terminó, pero no pudimos refrescar el estado.");
+          setMetaError("The connection finished, but we couldn’t refresh the status.");
         }
         return;
         }
 
       setMetaStatusMessage("");
-      setMetaError(event.data.message || "No se pudo completar la conexión con Meta.");
+      setMetaError(event.data.message || "We couldn’t complete the Meta connection.");
     }
 
     window.addEventListener("message", handleMetaWindowMessage);
@@ -316,7 +318,7 @@ function IntegrationsPageContent() {
           connectInFlightRef.current = false;
           setMetaLoading(false);
           setMetaStatusMessage(
-            "Si terminaste la conexión, ya puedes cerrar la pestaña de Meta."
+            "If you finished connecting, you can now close the Meta tab."
           );
         }, 90000);
         popupPollRef.current = window.setInterval(async () => {
@@ -333,7 +335,7 @@ function IntegrationsPageContent() {
             const connected = await refreshMetaIntegrationState();
             if (connected) {
               setMetaError("");
-              setMetaStatusMessage("Integración conectada correctamente.");
+              setMetaStatusMessage("Integration connected successfully.");
               return;
             }
           } catch (error) {
@@ -341,7 +343,7 @@ function IntegrationsPageContent() {
           }
 
           setMetaStatusMessage("");
-          setMetaError("La ventana de conexión se cerró antes de completar la autorización.");
+          setMetaError("The connection window closed before authorization was completed.");
         }, 2500);
         return;
       }
@@ -362,14 +364,40 @@ function IntegrationsPageContent() {
   }
 
   function handleMetaDisconnect() {
-    clearPendingMetaSource();
-    clearIntegrationReportContext();
-    clearPendingMetaOAuth();
-    clearMetaOAuthDebugUrl();
-    stopPopupPolling();
-    setMetaConnected(false);
-    setMetaError("");
-    setMetaStatusMessage("");
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(
+        "Do you want to disconnect Meta? This will disconnect Facebook Pages and Instagram Business from this workspace. Your existing reports will not be deleted."
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    void (async () => {
+      try {
+        setDisconnectLoading(true);
+        setMetaError("");
+        setMetaStatusMessage("");
+        await disconnectMetaIntegration({
+          workspaceId: activeWorkspaceId || getIntegrationReportContext()?.workspaceId || "",
+        });
+        clearMetaIntegrationSessionState();
+        clearPendingMetaOAuth();
+        clearMetaOAuthDebugUrl();
+        stopPopupPolling();
+        setMetaConnected(false);
+        await refreshMetaIntegrationState();
+        setMetaStatusMessage("Integration disconnected successfully.");
+      } catch (error) {
+        console.error("meta disconnect error:", error);
+        setMetaError("We couldn’t disconnect Meta right now. Please try again.");
+      } finally {
+        setDisconnectLoading(false);
+        setMetaStatusLoading(false);
+        setMetaLoading(false);
+      }
+    })();
   }
 
   function handleMetaConnectSource(source: "facebook_pages" | "instagram_business") {
@@ -469,7 +497,9 @@ function IntegrationsPageContent() {
               isMetaFrontendIntegrationKey(integration.integrationKey) &&
               !metaStatusLoading &&
               metaConnected
-                ? "Disconnect"
+                ? disconnectLoading
+                  ? "Disconnecting..."
+                  : "Disconnect"
                 : undefined
             }
             onSecondaryAction={
@@ -482,7 +512,10 @@ function IntegrationsPageContent() {
             disabled={!isMetaFrontendIntegrationKey(integration.integrationKey)}
             loading={
               isMetaFrontendIntegrationKey(integration.integrationKey) &&
-              (metaLoading || metaStatusLoading)
+              (metaLoading || metaStatusLoading || disconnectLoading)
+            }
+            secondaryLoading={
+              isMetaFrontendIntegrationKey(integration.integrationKey) && disconnectLoading
             }
             error={isMetaFrontendIntegrationKey(integration.integrationKey) ? metaError : ""}
             />
@@ -505,7 +538,7 @@ function IntegrationsPageContent() {
               Measurable
             </p>
             <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-950 sm:text-2xl">
-              ¿Qué más integraciones te gustaría obtener?
+              Which other integrations would you like to get?
             </h3>
           </div>
         </div>
@@ -514,7 +547,7 @@ function IntegrationsPageContent() {
           onClick={() => setSuggestionOpen(true)}
           className="inline-flex h-11 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-950 shadow-sm hover:bg-slate-50 sm:w-auto"
         >
-          Enviar sugerencia
+          Send suggestion
         </button>
       </section>
 

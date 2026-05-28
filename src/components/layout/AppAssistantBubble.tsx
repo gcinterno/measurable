@@ -394,7 +394,7 @@ export function AppAssistantBubble() {
           id: assistantId,
           role: "assistant",
           content:
-            response.reply || "No se pudo obtener respuesta del assistant.",
+            response.reply || "I couldn’t get a response from the assistant.",
         },
       ]);
     } catch (error) {
@@ -482,7 +482,7 @@ export function AppAssistantBubble() {
                         </svg>
                       </span>
                       <span className={`text-[11px] font-medium ${darkMode ? "text-slate-400" : "text-slate-500"}`}>
-                        Measurable AI Asisstant
+                        Measurable AI Assistant
                       </span>
                     </div>
                     <div
@@ -567,7 +567,7 @@ export function AppAssistantBubble() {
       <button
         type="button"
         onClick={() => setSuggestionOpen(true)}
-        aria-label="Enviar sugerencia"
+        aria-label="Send suggestion"
         className={`fixed bottom-[12.5rem] right-5 z-40 inline-flex h-11 w-11 items-center justify-center rounded-full text-white shadow-[0_14px_32px_rgba(15,23,42,0.22)] transition sm:right-6 lg:bottom-[5.5rem] ${
           darkMode
             ? "border border-white/10 bg-slate-950 hover:bg-slate-900"

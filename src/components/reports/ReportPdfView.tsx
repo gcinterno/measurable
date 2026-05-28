@@ -583,7 +583,7 @@ export function ReportPdfView({ reportId, exportAuthToken }: ReportPdfViewProps)
             branding={resolvedBranding}
             report={reportDetail}
             templateId={selectedTemplateId}
-            watermarkText={showFreeWatermark ? "Reporte creado con measurableapp.com" : undefined}
+            watermarkText={showFreeWatermark ? "Report created with measurableapp.com" : undefined}
           />
         </div>
       </main>

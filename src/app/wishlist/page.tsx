@@ -6,7 +6,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { createWishlistLead } from "@/lib/api/wishlist";
 import { useAuthStore } from "@/lib/store/auth-store";
 
-type WishlistPlanOption = "Starter" | "Pro" | "Advanced" | "Aun no estoy seguro";
+type WishlistPlanOption = "Starter" | "Pro" | "Advanced" | "Not sure yet";
 
 type WishlistFormState = {
   name: string;
@@ -20,21 +20,21 @@ const planOptions: WishlistPlanOption[] = [
   "Starter",
   "Pro",
   "Advanced",
-  "Aun no estoy seguro",
+  "Not sure yet",
 ];
 
 const infoItems = [
   {
-    title: "Que obtienes",
-    body: "Acceso a la oferta de lanzamiento con 50% de descuento en la membresia anual.",
+    title: "What you get",
+    body: "Access to the launch offer with 50% off your annual membership.",
   },
   {
-    title: "Necesito pagar hoy?",
-    body: "No. Solo te registras para recibir acceso anticipado cuando abramos la oferta.",
+    title: "Do I need to pay today?",
+    body: "No. You’re only signing up to get early access when the offer opens.",
   },
   {
-    title: "Para quien es",
-    body: "Para agencias, freelancers y equipos que crean reportes de marketing de forma recurrente.",
+    title: "Who it’s for",
+    body: "For agencies, freelancers, and teams that create marketing reports on a recurring basis.",
   },
 ] as const;
 
@@ -43,10 +43,10 @@ function isValidEmail(value: string) {
 }
 
 function buildWishlistMessage(input: { plan: WishlistPlanOption; message: string }) {
-  const sections = [`Plan de interes: ${input.plan}`];
+  const sections = [`Plan of interest: ${input.plan}`];
 
   if (input.message.trim()) {
-    sections.push(`Tipo de reportes actuales:\n${input.message.trim()}`);
+    sections.push(`Current report types:\n${input.message.trim()}`);
   }
 
   return sections.join("\n\n");
@@ -97,17 +97,17 @@ export default function WishlistPage() {
     const email = form.email.trim();
 
     if (!name) {
-      setError("El nombre es obligatorio.");
+      setError("Name is required.");
       return;
     }
 
     if (!email) {
-      setError("El email es obligatorio.");
+      setError("Email is required.");
       return;
     }
 
     if (!isValidEmail(email)) {
-      setError("Ingresa un email valido.");
+      setError("Enter a valid email.");
       return;
     }
 
@@ -122,7 +122,7 @@ export default function WishlistPage() {
         message: buildWishlistMessage({ plan: form.plan, message: form.message }),
         source: "wishlist_launch_offer",
       });
-      setSuccess("Listo. Te avisaremos cuando abramos el acceso con 50% de descuento anual.");
+      setSuccess("You’re in. We’ll let you know when annual access opens with 50% off.");
       setForm((current) => ({
         ...current,
         company: "",
@@ -131,7 +131,7 @@ export default function WishlistPage() {
       }));
     } catch (submitError) {
       console.error("wishlist submit error:", submitError);
-      setError("No pudimos registrar tu solicitud. Intenta de nuevo.");
+      setError("We couldn’t register your request. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -149,13 +149,13 @@ export default function WishlistPage() {
               Early Access · Launch Offer
             </div>
             <h1 className="mx-auto mt-5 max-w-[12ch] text-[2.7rem] font-semibold leading-[0.94] tracking-[-0.07em] text-slate-950 sm:text-[3.6rem]">
-              Obten 50% de descuento en tu membresia anual
+              Get 50% off your annual membership
             </h1>
             <p className="mx-auto mt-4 max-w-[58ch] text-base leading-8 text-slate-600 sm:text-lg">
-              Unete a la wishlist de Measurable y se de los primeros en acceder a reportes de marketing con IA, branding personalizado y funciones premium para agencias.
+              Join the Measurable wishlist and be among the first to access AI-powered marketing reports, custom branding, and premium features for agencies.
             </p>
             <p className="mt-3 text-sm text-slate-500">
-              Cupos limitados durante el lanzamiento.
+              Limited spots during launch.
             </p>
           </section>
 
@@ -166,25 +166,25 @@ export default function WishlistPage() {
             <div className="pointer-events-none absolute inset-x-8 top-0 h-24 rounded-full bg-[#2454FF]/10 blur-3xl" />
             <div className="relative">
               <div className="inline-flex rounded-full border border-[#2454FF]/12 bg-[#2454FF]/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#2454FF]">
-                Reserva tu descuento
+                Reserve your discount
               </div>
               <h2 className="mt-4 text-3xl font-semibold tracking-[-0.05em] text-slate-950">
-                Obten 50% de descuento anual
+                Get 50% off annually
               </h2>
               <p className="mt-3 text-sm leading-7 text-slate-600">
-                Dejanos tus datos y te avisaremos cuando abramos el acceso anual con descuento.
+                Leave your details and we’ll notify you when discounted annual access opens.
               </p>
 
               <form onSubmit={(event) => void handleSubmit(event)} className="mt-7 space-y-5">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="flex flex-col gap-2">
-                    <span className="text-sm font-medium text-slate-700">Nombre</span>
+                    <span className="text-sm font-medium text-slate-700">Name</span>
                     <input
                       type="text"
                       value={form.name}
                       onChange={(event) => updateField("name", event.target.value)}
                       className={fieldClasses(Boolean(form.name.trim()))}
-                      placeholder="Tu nombre"
+                      placeholder="Your name"
                     />
                   </label>
 
@@ -201,18 +201,18 @@ export default function WishlistPage() {
                 </div>
 
                 <label className="flex flex-col gap-2">
-                  <span className="text-sm font-medium text-slate-700">Empresa</span>
+                    <span className="text-sm font-medium text-slate-700">Company</span>
                   <input
                     type="text"
                     value={form.company}
                     onChange={(event) => updateField("company", event.target.value)}
                     className={fieldClasses(Boolean(form.company.trim()))}
-                    placeholder="Nombre de tu empresa o agencia"
+                    placeholder="Your company or agency name"
                   />
                 </label>
 
                 <label className="flex flex-col gap-2">
-                  <span className="text-sm font-medium text-slate-700">Que plan te interesa?</span>
+                  <span className="text-sm font-medium text-slate-700">Which plan are you interested in?</span>
                   <select
                     value={form.plan}
                     onChange={(event) => updateField("plan", event.target.value as WishlistPlanOption)}
@@ -228,14 +228,14 @@ export default function WishlistPage() {
 
                 <label className="flex flex-col gap-2">
                   <span className="text-sm font-medium text-slate-700">
-                    Cuentanos que tipo de reportes haces hoy
+                    Tell us what kind of reports you create today
                   </span>
                   <textarea
                     value={form.message}
                     onChange={(event) => updateField("message", event.target.value)}
                     rows={4}
                     className="min-h-[132px] rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm leading-7 text-slate-950 outline-none transition focus:border-[#2454FF] focus:bg-white focus:ring-4 focus:ring-[#2454FF]/10"
-                    placeholder="Ej. reportes mensuales, resumenes ejecutivos, resultados por canal..."
+                    placeholder="E.g. monthly reports, executive summaries, channel performance..."
                   />
                 </label>
 
@@ -256,19 +256,19 @@ export default function WishlistPage() {
                   disabled={submitting}
                   className="inline-flex min-h-14 w-full items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#08111F_0%,#2454FF_100%)] px-6 text-sm font-semibold text-white shadow-[0_18px_42px_rgba(36,84,255,0.24)] transition hover:-translate-y-0.5 hover:shadow-[0_22px_48px_rgba(36,84,255,0.30)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {submitting ? "Guardando tu lugar..." : "Obten 50% de descuento anual"}
+                  {submitting ? "Saving your spot..." : "Get 50% off annually"}
                 </button>
               </form>
 
               <p className="mt-4 text-sm text-slate-500">
-                Sin tarjeta de credito. Solo acceso anticipado.
+                No credit card required. Early access only.
               </p>
             </div>
           </section>
 
           <section className="mt-6 rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_16px_38px_rgba(15,23,42,0.04)] sm:p-7">
             <p className="text-sm font-semibold uppercase tracking-[0.22em] text-[#2454FF]">
-              Informacion rapida
+              Quick info
             </p>
             <div className="mt-5 grid gap-4 md:grid-cols-3">
               {infoItems.map((item) => (

@@ -15,6 +15,7 @@ type IntegrationCardProps = {
   onAction?: () => void;
   secondaryActionLabel?: string;
   onSecondaryAction?: () => void;
+  secondaryLoading?: boolean;
   disabled?: boolean;
   loading?: boolean;
   error?: string;
@@ -44,6 +45,7 @@ export function IntegrationCard({
   onAction,
   secondaryActionLabel,
   onSecondaryAction,
+  secondaryLoading = false,
   disabled = false,
   loading = false,
   error = "",
@@ -112,8 +114,12 @@ export function IntegrationCard({
           <button
             type="button"
             onClick={onSecondaryAction}
-            className="inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto sm:px-4"
+            disabled={loading || secondaryLoading}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-4"
           >
+            {secondaryLoading ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+            ) : null}
             {secondaryActionLabel}
           </button>
         ) : null}

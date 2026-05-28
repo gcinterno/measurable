@@ -7,18 +7,18 @@ type SharedReportExpiredStateProps = {
 
 const VARIANT_COPY = {
   expired: {
-    title: "Este link de reporte ha expirado",
+    title: "This report link has expired",
     description:
-      "Por seguridad, los reportes compartidos de Measurable están disponibles durante 3 días. Puedes volver a generar un link desde tu cuenta.",
+      "For security, shared Measurable reports are available for 3 days. You can generate a new link from your account.",
   },
   not_found: {
-    title: "No encontramos este reporte compartido",
+    title: "We couldn’t find this shared report",
     description:
-      "El link pudo haber sido eliminado, revocado o escrito incorrectamente.",
+      "The link may have been deleted, revoked, or entered incorrectly.",
   },
   generic: {
-    title: "No pudimos cargar este reporte compartido.",
-    description: "Intenta abrir el enlace de nuevo en unos minutos.",
+    title: "We couldn’t load this shared report.",
+    description: "Try opening the link again in a few minutes.",
   },
 } as const;
 
@@ -54,7 +54,7 @@ export function SharedReportExpiredState({
               href="https://www.measurableapp.com"
               className="inline-flex h-14 items-center justify-center rounded-[22px] bg-[var(--measurable-blue)] px-8 text-base font-semibold text-white shadow-[0_18px_40px_rgba(23,73,255,0.22)] transition hover:scale-[1.01] hover:bg-[var(--measurable-blue-hover)]"
             >
-              Visita la página
+              Visit the website
             </a>
           </div>
         </section>

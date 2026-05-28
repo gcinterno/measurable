@@ -13,9 +13,9 @@ import { formatDisplayNumber, formatNumber } from "@/lib/formatters";
 import { getIntegrationReportContext } from "@/lib/integrations/session";
 import type { Report, ReportDetail } from "@/types/report";
 
-const DEFAULT_AI_INSIGHT_FALLBACK = "Dato no disponible en este momento.";
+const DEFAULT_AI_INSIGHT_FALLBACK = "Not available right now.";
 const PAGE_VIEWS_UNAVAILABLE_MESSAGE =
-  "Dato no disponible en este momento con los permisos actuales de Meta.";
+  "Not available right now with the current Meta permissions.";
 
 export type DefaultTemplateContext = {
   reportId?: string;
@@ -833,7 +833,7 @@ export function buildSummarySlideModel(
     : formatMetricSummaryValue(summaryPageViewsMetric);
 
   return {
-    title: "Resumen final",
+    title: "Final Summary",
     branding: context.branding,
     aiSummary: context.report.finalSummaryAiText || DEFAULT_AI_INSIGHT_FALLBACK,
     recommendation: context.report.finalRecommendationText || DEFAULT_AI_INSIGHT_FALLBACK,

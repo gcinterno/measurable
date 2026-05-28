@@ -491,7 +491,7 @@ export default function SettingsPage() {
   }
 
   async function handleDeleteAccount() {
-    if (!deleteReason || deleteConfirmation !== "Eliminar") {
+    if (!deleteReason || deleteConfirmation !== "DELETE") {
       return;
     }
 
@@ -547,7 +547,7 @@ export default function SettingsPage() {
 
                 <label className="block">
                   <span className="text-sm font-medium text-slate-950">
-                    Nombre de cuenta
+                    Account name
                   </span>
                   <input
                     type="text"
@@ -908,7 +908,7 @@ export default function SettingsPage() {
             onClick={openDeleteModal}
             className="inline-flex items-center justify-center rounded-[16px] border border-red-500/20 bg-red-500/10 px-5 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-500/15"
           >
-            Eliminar cuenta
+            Delete account
           </button>
         </div>
       </form>
@@ -1055,7 +1055,7 @@ export default function SettingsPage() {
             {deleteStep === 1 ? (
               <>
                 <h3 className="text-2xl font-semibold tracking-tight text-[var(--text-primary)]">
-                  Eliminar cuenta
+                  Delete account
                 </h3>
                 <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
                   Permanently delete your Measurable account, reports, integrations, and saved settings. This action cannot be undone.
@@ -1135,7 +1135,7 @@ export default function SettingsPage() {
                   Confirm deletion
                 </h3>
                 <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
-                  Type <span className="font-semibold text-red-600">Eliminar</span> to permanently delete your account.
+                  Type <span className="font-semibold text-red-600">DELETE</span> to permanently delete your account.
                 </p>
 
                 <label className="mt-5 block">
@@ -1147,7 +1147,7 @@ export default function SettingsPage() {
                       setDeleteError("");
                     }}
                     className="brand-input mt-3 w-full px-4 py-3"
-                    placeholder="Eliminar"
+                    placeholder="DELETE"
                   />
                 </label>
 
@@ -1169,7 +1169,7 @@ export default function SettingsPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={deleteSubmitting || deleteConfirmation !== "Eliminar"}
+                    disabled={deleteSubmitting || deleteConfirmation !== "DELETE"}
                     onClick={() => void handleDeleteAccount()}
                     className="rounded-[16px] bg-red-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >

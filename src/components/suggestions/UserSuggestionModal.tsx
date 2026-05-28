@@ -38,12 +38,12 @@ export function UserSuggestionModal({ open, onClose }: UserSuggestionModalProps)
     const trimmed = message.trim();
 
     if (!trimmed) {
-      setError("Escribe una sugerencia antes de enviarla.");
+      setError("Write a suggestion before sending it.");
       return;
     }
 
     if (trimmed.length > MAX_SUGGESTION_LENGTH) {
-      setError(`La sugerencia debe tener máximo ${MAX_SUGGESTION_LENGTH} caracteres.`);
+      setError(`Your suggestion must be ${MAX_SUGGESTION_LENGTH} characters or fewer.`);
       return;
     }
 
@@ -53,13 +53,13 @@ export function UserSuggestionModal({ open, onClose }: UserSuggestionModalProps)
       setSuccess("");
       await createSuggestion(trimmed);
       setMessage("");
-      setSuccess("Gracias, recibimos tu sugerencia.");
+      setSuccess("Thanks, we received your suggestion.");
       closeTimerRef.current = window.setTimeout(() => {
         onClose();
       }, 1500);
     } catch (submitError) {
       console.error("suggestion submit error:", submitError);
-      setError("No pudimos enviar tu sugerencia. Inténtalo de nuevo.");
+      setError("We couldn’t send your suggestion. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -77,16 +77,16 @@ export function UserSuggestionModal({ open, onClose }: UserSuggestionModalProps)
       >
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-950 px-4 py-4 text-white">
           <div>
-            <h2 className="text-sm font-semibold">Enviar sugerencia</h2>
+            <h2 className="text-sm font-semibold">Send suggestion</h2>
             <p className="mt-1 text-xs text-slate-300">
-              Tu mensaje se envía al equipo de administración.
+              Your message is sent to the admin team.
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-white/10 text-sm font-semibold text-white hover:bg-white/15"
-            aria-label="Cerrar sugerencia"
+            aria-label="Close suggestion"
           >
             x
           </button>
@@ -94,7 +94,7 @@ export function UserSuggestionModal({ open, onClose }: UserSuggestionModalProps)
 
         <div className="space-y-4 bg-white p-4">
           <label className="block">
-            <span className="sr-only">Mensaje sugerencia</span>
+            <span className="sr-only">Suggestion message</span>
             <textarea
               value={message}
               onChange={(event) => {
@@ -102,7 +102,7 @@ export function UserSuggestionModal({ open, onClose }: UserSuggestionModalProps)
                 setError("");
                 setSuccess("");
               }}
-              placeholder="Mensaje sugerencia"
+              placeholder="Suggestion message"
               rows={5}
               maxLength={MAX_SUGGESTION_LENGTH}
               className="min-h-[132px] w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-950 outline-none placeholder:text-slate-400 focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
@@ -130,7 +130,7 @@ export function UserSuggestionModal({ open, onClose }: UserSuggestionModalProps)
             className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 px-4 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? (
-              "Enviando..."
+              "Sending..."
             ) : (
               <>
                 <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 stroke-current">
@@ -147,7 +147,7 @@ export function UserSuggestionModal({ open, onClose }: UserSuggestionModalProps)
                     strokeLinejoin="round"
                   />
                 </svg>
-                <span>Enviar recomendación</span>
+                <span>Send suggestion</span>
               </>
             )}
           </button>

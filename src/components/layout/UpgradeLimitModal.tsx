@@ -9,7 +9,7 @@ type UpgradeLimitModalProps = {
 
 export function UpgradeLimitModal({
   open,
-  message = "Has alcanzado el límite de 10 reportes gratuitos.",
+  message = "You’ve reached the limit of 10 free reports.",
   onClose,
   onUpgrade,
 }: UpgradeLimitModalProps) {
@@ -38,7 +38,7 @@ export function UpgradeLimitModal({
                 Coming soon
               </p>
               <h2 className="mt-1 text-xl font-semibold tracking-tight">
-                Límite gratuito alcanzado
+                Free limit reached
               </h2>
             </div>
           </div>
@@ -66,7 +66,7 @@ export function UpgradeLimitModal({
               onClick={onClose}
               className="inline-flex h-12 w-full items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto sm:flex-1"
             >
-              Cerrar
+              Close
             </button>
           </div>
         </div>

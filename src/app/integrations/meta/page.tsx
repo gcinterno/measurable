@@ -88,7 +88,7 @@ function MetaIntegrationPageContent() {
   const [syncCompleted, setSyncCompleted] = useState(false);
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const [upgradeModalMessage, setUpgradeModalMessage] = useState(
-    "Has alcanzado el límite de 10 reportes gratuitos."
+    "You’ve reached the limit of 10 free reports."
   );
   const [upgradeModalUrl, setUpgradeModalUrl] = useState("/wishlist");
   const connectInFlightRef = useRef(false);
@@ -279,7 +279,7 @@ function MetaIntegrationPageContent() {
 
       if (event.data.type === "MEASURABLE_META_CONNECT_SUCCESS") {
         setError("");
-        setStatusMessage("Integración conectada correctamente.");
+        setStatusMessage("Integration connected successfully.");
 
         if (event.data.integrationId) {
           setIntegrationId(event.data.integrationId);
@@ -292,14 +292,14 @@ function MetaIntegrationPageContent() {
           });
         } catch (error) {
           console.error("meta page popup refresh error:", error);
-          setError("La conexión terminó, pero no pudimos refrescar las páginas.");
+          setError("The connection finished, but we couldn’t refresh the pages.");
         }
 
         return;
       }
 
       setStatusMessage("");
-      setError(event.data.message || "No se pudo completar la conexión con Meta.");
+      setError(event.data.message || "We couldn’t complete the Meta connection.");
     }
 
     window.addEventListener("message", handleMetaWindowMessage);
@@ -572,7 +572,7 @@ function MetaIntegrationPageContent() {
           connectInFlightRef.current = false;
           setConnectLoading(false);
           setStatusMessage(
-            "Si terminaste la conexión, ya puedes cerrar la pestaña de Meta."
+            "If you finished connecting, you can now close the Meta tab."
           );
         }, 90000);
         popupPollRef.current = window.setInterval(async () => {
@@ -589,7 +589,7 @@ function MetaIntegrationPageContent() {
             const connectedAfterClose = await refreshMetaPagesState({ quiet: true });
             if (connectedAfterClose) {
               setError("");
-              setStatusMessage("Integración conectada correctamente.");
+              setStatusMessage("Integration connected successfully.");
               return;
             }
           } catch (error) {
@@ -597,7 +597,7 @@ function MetaIntegrationPageContent() {
           }
 
           setStatusMessage("");
-          setError("La ventana de conexión se cerró antes de completar la autorización.");
+          setError("The connection window closed before authorization was completed.");
         }, 2500);
         return;
       }
@@ -751,7 +751,7 @@ function MetaIntegrationPageContent() {
       console.error("meta pages create report error:", err);
       if (err instanceof ApiError && err.code === "FREE_REPORT_LIMIT_REACHED") {
         setUpgradeModalMessage(
-          err.message || "Has alcanzado el límite de 10 reportes gratuitos."
+          err.message || "You’ve reached the limit of 10 free reports."
         );
         setUpgradeModalUrl(err.upgradeUrl || "https://measurableapp.com/wishlist");
         setUpgradeModalOpen(true);
