@@ -30,13 +30,13 @@ export function TopBar() {
     workspace?.name ||
     preferenceBrandName;
   const logoDataUrl = workspace?.branding?.logoUrl || preferenceLogoUrl;
+  const fallbackLogoUrl = "/brand/measurable-logo-white.svg";
   const darkMode = theme === "dark";
-  const initials = brandName
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() || "")
-    .join("");
+  const [logoLoadFailed, setLogoLoadFailed] = useState(false);
+
+  useEffect(() => {
+    setLogoLoadFailed(false);
+  }, [logoDataUrl]);
 
   useEffect(() => {
     let active = true;
@@ -137,15 +137,21 @@ export function TopBar() {
             }`}
           >
             <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-[#07111f] text-xs font-semibold text-white sm:h-10 sm:w-10 sm:text-sm">
-              {logoDataUrl ? (
+              {logoDataUrl && !logoLoadFailed ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={logoDataUrl}
                   alt="Logo"
                   className="h-full w-full object-contain"
+                  onError={() => setLogoLoadFailed(true)}
                 />
               ) : (
-                initials || "AL"
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={fallbackLogoUrl}
+                  alt="Measurable"
+                  className="h-full w-full object-contain p-1"
+                />
               )}
             </div>
             <div className="min-w-0">
