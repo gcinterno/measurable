@@ -51,6 +51,7 @@ import type { SourceKey } from "@/lib/integrations/session";
 import type { ReportDescription, ReportDetail, ReportVersionBlock } from "@/types/report";
 
 const REPORT_PDF_DOWNLOADS_LOCKED = true;
+const REPORT_SHARE_LOCKED = REPORT_PDF_DOWNLOADS_LOCKED;
 const REPORT_PDF_LOCKED_TOOLTIP = "Coming soon";
 
 const loadingQuotes = [
@@ -840,6 +841,10 @@ function NewReportFlowReviewPageContent() {
   }
 
   async function handleShare() {
+    if (REPORT_SHARE_LOCKED) {
+      return;
+    }
+
     try {
       setShareLoading(true);
       console.info("[ShareReport][ui.start]", {
@@ -1158,10 +1163,26 @@ function NewReportFlowReviewPageContent() {
                           <button
                             type="button"
                             onClick={handleShare}
-                            disabled={shareLoading || !reportId}
-                            className="hidden items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100 md:inline-flex"
+                            disabled={REPORT_SHARE_LOCKED || shareLoading || !reportId}
+                            aria-disabled={REPORT_SHARE_LOCKED}
+                            className={`hidden items-center justify-center rounded-full border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed md:inline-flex ${
+                              REPORT_SHARE_LOCKED
+                                ? "border-amber-200 bg-[linear-gradient(135deg,#fffdf7_0%,#fff7ed_100%)] text-slate-800 shadow-[0_14px_34px_rgba(245,158,11,0.10)]"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:bg-slate-100"
+                            }`}
                           >
-                            {shareLoading ? messages.common.generating : messages.common.share}
+                            {REPORT_SHARE_LOCKED ? (
+                              <>
+                                <span className="mr-2 rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                                  Locked
+                                </span>
+                                {messages.common.share}
+                              </>
+                            ) : shareLoading ? (
+                              messages.common.generating
+                            ) : (
+                              messages.common.share
+                            )}
                           </button>
                           <Link
                             href={reportId ? `/reports/${reportId}` : "/reports"}
@@ -1256,10 +1277,26 @@ function NewReportFlowReviewPageContent() {
               <button
                 type="button"
                 onClick={handleShare}
-                disabled={shareLoading || !reportId}
-                className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+                disabled={REPORT_SHARE_LOCKED || shareLoading || !reportId}
+                aria-disabled={REPORT_SHARE_LOCKED}
+                className={`inline-flex items-center justify-center rounded-full border px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed ${
+                  REPORT_SHARE_LOCKED
+                    ? "border-amber-200 bg-[linear-gradient(135deg,#fffdf7_0%,#fff7ed_100%)] text-slate-800 shadow-[0_14px_34px_rgba(245,158,11,0.10)]"
+                    : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:bg-slate-100"
+                }`}
               >
-                {shareLoading ? messages.common.generating : messages.common.share}
+                {REPORT_SHARE_LOCKED ? (
+                  <>
+                    <span className="mr-2 rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                      Locked
+                    </span>
+                    {messages.common.share}
+                  </>
+                ) : shareLoading ? (
+                  messages.common.generating
+                ) : (
+                  messages.common.share
+                )}
               </button>
               <Link
                 href={reportId ? `/reports/${reportId}` : "/reports"}
@@ -1312,15 +1349,31 @@ function NewReportFlowReviewPageContent() {
             <button
               type="button"
               onClick={handleShare}
-              disabled={shareLoading || !reportId}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-100"
+              disabled={REPORT_SHARE_LOCKED || shareLoading || !reportId}
+              aria-disabled={REPORT_SHARE_LOCKED}
+              className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed ${
+                REPORT_SHARE_LOCKED
+                  ? "border-amber-200 bg-[linear-gradient(135deg,#fffdf7_0%,#fff7ed_100%)] text-slate-800 shadow-[0_14px_34px_rgba(245,158,11,0.10)]"
+                  : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:bg-slate-100"
+              }`}
             >
               <svg viewBox="0 0 24 24" fill="none" className="h-4.5 w-4.5 stroke-current">
                 <path d="M14 5.5h4.5V10" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                 <path d="M18.5 5.5l-7.25 7.25" strokeWidth="1.8" strokeLinecap="round" />
                 <path d="M10 7.5H8.25A2.75 2.75 0 0 0 5.5 10.25v5.5a2.75 2.75 0 0 0 2.75 2.75h5.5a2.75 2.75 0 0 0 2.75-2.75V14" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              {shareLoading ? messages.common.generating : messages.common.share}
+              {REPORT_SHARE_LOCKED ? (
+                <>
+                  <span className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                    Locked
+                  </span>
+                  {messages.common.share}
+                </>
+              ) : shareLoading ? (
+                messages.common.generating
+              ) : (
+                messages.common.share
+              )}
             </button>
           </div>
           <div className="mt-3 flex items-center gap-3">

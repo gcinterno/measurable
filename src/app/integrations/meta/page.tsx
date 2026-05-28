@@ -24,7 +24,10 @@ import {
   clearMetaOAuthDebugUrl,
   hasMetaConnectPrerequisites,
   isMetaOAuthWindowMessage,
+  logMetaOAuthDev,
   markMetaRedirectStarted,
+  META_OAUTH_POPUP_CLOSE_GRACE_MS,
+  META_OAUTH_POPUP_TIMEOUT_MS,
   normalizeMetaAuthUrl,
   openMetaOAuthPopup,
   showMetaOAuthReadyBanner,
@@ -92,7 +95,9 @@ function MetaIntegrationPageContent() {
   );
   const [upgradeModalUrl, setUpgradeModalUrl] = useState("/wishlist");
   const connectInFlightRef = useRef(false);
+  const popupCallbackReceivedRef = useRef(false);
   const popupPollRef = useRef<number | null>(null);
+  const popupCloseGraceRef = useRef<number | null>(null);
   const popupTimeoutRef = useRef<number | null>(null);
   const selectedPage = useMemo(
     () => pages.find((page) => page.id === selectedPageId),
@@ -116,6 +121,10 @@ function MetaIntegrationPageContent() {
     if (popupPollRef.current !== null && typeof window !== "undefined") {
       window.clearInterval(popupPollRef.current);
       popupPollRef.current = null;
+    }
+    if (popupCloseGraceRef.current !== null && typeof window !== "undefined") {
+      window.clearTimeout(popupCloseGraceRef.current);
+      popupCloseGraceRef.current = null;
     }
     if (popupTimeoutRef.current !== null && typeof window !== "undefined") {
       window.clearTimeout(popupTimeoutRef.current);
@@ -146,6 +155,11 @@ function MetaIntegrationPageContent() {
     quiet?: boolean;
     integrationIdOverride?: string;
   }) => {
+    logMetaOAuthDev("status refresh started", {
+      route: "/integrations/meta",
+      workspaceId,
+      integrationId: input?.integrationIdOverride || integrationId || storedContext?.integrationId || null,
+    });
     const nextIntegrationId =
       input?.integrationIdOverride || integrationId || storedContext?.integrationId || "";
 
@@ -153,6 +167,11 @@ function MetaIntegrationPageContent() {
       setConnected(false);
       setPages([]);
       setHasNoAuthorizedPages(false);
+      logMetaOAuthDev("status refresh completed", {
+        route: "/integrations/meta",
+        connected: false,
+        integrationId: null,
+      });
       return false;
     }
 
@@ -182,6 +201,13 @@ function MetaIntegrationPageContent() {
           "Connected but no authorized pages were found. Reconnect and approve at least one page."
         );
       }
+
+      logMetaOAuthDev("status refresh completed", {
+        route: "/integrations/meta",
+        connected: pageData.length > 0,
+        integrationId: nextIntegrationId,
+        pagesCount: pageData.length,
+      });
 
       return pageData.length > 0;
     } finally {
@@ -272,6 +298,12 @@ function MetaIntegrationPageContent() {
         return;
       }
 
+      popupCallbackReceivedRef.current = true;
+      logMetaOAuthDev("callback message received", {
+        route: "/integrations/meta",
+        type: event.data.type,
+        integrationId: "integrationId" in event.data ? event.data.integrationId || null : null,
+      });
       stopPopupPolling();
       clearPendingMetaOAuth();
       connectInFlightRef.current = false;
@@ -299,7 +331,9 @@ function MetaIntegrationPageContent() {
       }
 
       setStatusMessage("");
-      setError(event.data.message || "We couldn’t complete the Meta connection.");
+      setError(
+        event.data.message || "We couldn’t complete the Meta connection. Please try again."
+      );
     }
 
     window.addEventListener("message", handleMetaWindowMessage);
@@ -462,9 +496,10 @@ function MetaIntegrationPageContent() {
 
     try {
       connectInFlightRef.current = true;
+      popupCallbackReceivedRef.current = false;
       setConnectLoading(true);
       setError("");
-      setStatusMessage("");
+      setStatusMessage("Connecting...");
       const storedContext = getIntegrationReportContext();
       const { tokenReady } = hasMetaConnectPrerequisites();
       clearMetaOAuthDebugUrl();
@@ -486,7 +521,7 @@ function MetaIntegrationPageContent() {
           pageId: undefined,
           pageName: undefined,
           synced: false,
-          postConnectRedirect: undefined,
+          postConnectRedirect: "/integrations/meta",
         });
       }
 
@@ -561,44 +596,67 @@ function MetaIntegrationPageContent() {
         const popup = openMetaOAuthPopup(authUrl);
 
         if (!popup) {
+          logMetaOAuthDev("popup blocked, using same-tab fallback", {
+            route: "/integrations/meta",
+            source: currentMetaSource,
+          });
           window.location.href = authUrl;
           return;
         }
 
+        logMetaOAuthDev("popup opened", {
+          route: "/integrations/meta",
+          source: currentMetaSource,
+        });
         popupStarted = true;
-        setStatusMessage("Waiting for Meta connection...");
+        setStatusMessage("Connecting...");
         stopPopupPolling();
         popupTimeoutRef.current = window.setTimeout(() => {
-          connectInFlightRef.current = false;
-          setConnectLoading(false);
+          logMetaOAuthDev("timeout reached", {
+            route: "/integrations/meta",
+            source: currentMetaSource,
+          });
           setStatusMessage(
-            "If you finished connecting, you can now close the Meta tab."
+            "This is taking longer than expected. Finish the Facebook flow in the popup and we’ll update the connection automatically."
           );
-        }, 90000);
+        }, META_OAUTH_POPUP_TIMEOUT_MS);
         popupPollRef.current = window.setInterval(async () => {
           if (!popup.closed) {
             return;
           }
 
+          logMetaOAuthDev("popup closed", {
+            route: "/integrations/meta",
+            source: currentMetaSource,
+            callbackReceived: popupCallbackReceivedRef.current,
+          });
           stopPopupPolling();
-          clearPendingMetaOAuth();
-          connectInFlightRef.current = false;
-          setConnectLoading(false);
-
-          try {
-            const connectedAfterClose = await refreshMetaPagesState({ quiet: true });
-            if (connectedAfterClose) {
-              setError("");
-              setStatusMessage("Integration connected successfully.");
+          popupCloseGraceRef.current = window.setTimeout(async () => {
+            if (popupCallbackReceivedRef.current) {
               return;
             }
-          } catch (error) {
-            console.error("meta page popup closed refresh error:", error);
-          }
 
-          setStatusMessage("");
-          setError("The connection window closed before authorization was completed.");
-        }, 2500);
+            clearPendingMetaOAuth();
+            connectInFlightRef.current = false;
+            setConnectLoading(false);
+
+            try {
+              const connectedAfterClose = await refreshMetaPagesState({ quiet: true });
+              if (connectedAfterClose) {
+                setError("");
+                setStatusMessage("Integration connected successfully.");
+                return;
+              }
+            } catch (error) {
+              console.error("meta page popup closed refresh error:", error);
+            }
+
+            setStatusMessage("");
+            setError(
+              "The connection window was closed before authorization was completed. Please try again."
+            );
+          }, META_OAUTH_POPUP_CLOSE_GRACE_MS);
+        }, 500);
         return;
       }
     } catch (err: unknown) {

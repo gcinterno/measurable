@@ -10,6 +10,8 @@ export const META_OAUTH_POPUP_NAME = "measurable_meta_oauth";
 export const META_OAUTH_POPUP_FEATURES = "width=720,height=780";
 export const META_OAUTH_CONNECT_SUCCESS = "MEASURABLE_META_CONNECT_SUCCESS";
 export const META_OAUTH_CONNECT_ERROR = "MEASURABLE_META_CONNECT_ERROR";
+export const META_OAUTH_POPUP_CLOSE_GRACE_MS = 1500;
+export const META_OAUTH_POPUP_TIMEOUT_MS = 90000;
 
 type MetaOAuthTransport = "same_tab" | "popup";
 
@@ -279,6 +281,14 @@ export function openMetaOAuthPopup(authUrl: string) {
   }
 
   return window.open(authUrl, META_OAUTH_POPUP_NAME, META_OAUTH_POPUP_FEATURES);
+}
+
+export function logMetaOAuthDev(event: string, payload?: Record<string, unknown>) {
+  if (process.env.NODE_ENV !== "development") {
+    return;
+  }
+
+  console.info(`[MetaOAuth][dev] ${event}`, payload || {});
 }
 
 export function isMetaOAuthWindowMessage(

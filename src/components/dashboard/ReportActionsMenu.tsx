@@ -11,6 +11,7 @@ type ReportFolder = {
 };
 
 const REPORT_PDF_DOWNLOADS_LOCKED = true;
+const REPORT_SHARE_LOCKED = REPORT_PDF_DOWNLOADS_LOCKED;
 
 type ReportActionsMenuProps = {
   open: boolean;
@@ -60,6 +61,7 @@ export function ReportActionsMenu({
   const { language, messages } = useI18n();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const pdfDownloadLocked = REPORT_PDF_DOWNLOADS_LOCKED;
+  const shareLocked = REPORT_SHARE_LOCKED;
 
   useEffect(() => {
     if (!open) {
@@ -142,14 +144,31 @@ export function ReportActionsMenu({
               </div>
             ) : null}
             {onShare ? (
-              <button
-                type="button"
-                onClick={onShare}
-                disabled={shareLoading}
-                className="flex w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {shareLoading ? messages.common.generating : messages.common.share}
-              </button>
+              <div className="group relative">
+                <button
+                  type="button"
+                  onClick={onShare}
+                  disabled={shareLocked || shareLoading}
+                  aria-disabled={shareLocked}
+                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-medium transition disabled:cursor-not-allowed ${
+                    shareLocked
+                      ? "border border-amber-200 bg-[linear-gradient(135deg,#fffdf7_0%,#fff7ed_100%)] text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]"
+                      : "text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  }`}
+                >
+                  <span>{shareLoading ? messages.common.generating : messages.common.share}</span>
+                  {shareLocked ? (
+                    <span className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                      Locked
+                    </span>
+                  ) : null}
+                </button>
+                {shareLocked ? (
+                  <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 rounded-full bg-slate-950 px-3 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100">
+                    Coming soon
+                  </span>
+                ) : null}
+              </div>
             ) : null}
           </div>
           {quickActionFeedback ? (

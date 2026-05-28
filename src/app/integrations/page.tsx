@@ -20,7 +20,10 @@ import {
   clearMetaOAuthDebugUrl,
   hasMetaConnectPrerequisites,
   isMetaOAuthWindowMessage,
+  logMetaOAuthDev,
   markMetaRedirectStarted,
+  META_OAUTH_POPUP_CLOSE_GRACE_MS,
+  META_OAUTH_POPUP_TIMEOUT_MS,
   normalizeMetaAuthUrl,
   openMetaOAuthPopup,
   showMetaOAuthReadyBanner,
@@ -50,13 +53,19 @@ function IntegrationsPageContent() {
   const [suggestionOpen, setSuggestionOpen] = useState(false);
   const activeWorkspaceId = workspace?.id || null;
   const connectInFlightRef = useRef(false);
+  const popupCallbackReceivedRef = useRef(false);
   const popupPollRef = useRef<number | null>(null);
+  const popupCloseGraceRef = useRef<number | null>(null);
   const popupTimeoutRef = useRef<number | null>(null);
 
   const stopPopupPolling = useCallback(() => {
     if (popupPollRef.current !== null && typeof window !== "undefined") {
       window.clearInterval(popupPollRef.current);
       popupPollRef.current = null;
+    }
+    if (popupCloseGraceRef.current !== null && typeof window !== "undefined") {
+      window.clearTimeout(popupCloseGraceRef.current);
+      popupCloseGraceRef.current = null;
     }
     if (popupTimeoutRef.current !== null && typeof window !== "undefined") {
       window.clearTimeout(popupTimeoutRef.current);
@@ -65,11 +74,20 @@ function IntegrationsPageContent() {
   }, []);
 
   const refreshMetaIntegrationState = useCallback(async () => {
+    logMetaOAuthDev("status refresh started", {
+      route: "/integrations",
+      workspaceId: activeWorkspaceId,
+    });
     const storedContext = getIntegrationReportContext();
     const response = await fetchIntegrationsConnectionStatus();
 
     if (!response.metaConnected) {
       setMetaConnected(false);
+      logMetaOAuthDev("status refresh completed", {
+        route: "/integrations",
+        connected: false,
+        integrationId: response.integrationId || null,
+      });
       return false;
     }
 
@@ -103,6 +121,12 @@ function IntegrationsPageContent() {
         );
       }
     }
+
+    logMetaOAuthDev("status refresh completed", {
+      route: "/integrations",
+      connected: true,
+      integrationId: response.integrationId || null,
+    });
 
     return true;
   }, [activeWorkspaceId]);
@@ -163,10 +187,17 @@ function IntegrationsPageContent() {
         return;
       }
 
+      popupCallbackReceivedRef.current = true;
+      logMetaOAuthDev("callback message received", {
+        route: "/integrations",
+        type: event.data.type,
+        integrationId: "integrationId" in event.data ? event.data.integrationId || null : null,
+      });
       stopPopupPolling();
       clearPendingMetaOAuth();
       connectInFlightRef.current = false;
       setMetaLoading(false);
+      setMetaStatusLoading(false);
 
       if (event.data.type === "MEASURABLE_META_CONNECT_SUCCESS") {
         setMetaError("");
@@ -182,10 +213,12 @@ function IntegrationsPageContent() {
           setMetaError("The connection finished, but we couldn’t refresh the status.");
         }
         return;
-        }
+      }
 
       setMetaStatusMessage("");
-      setMetaError(event.data.message || "We couldn’t complete the Meta connection.");
+      setMetaError(
+        event.data.message || "We couldn’t complete the Meta connection. Please try again."
+      );
     }
 
     window.addEventListener("message", handleMetaWindowMessage);
@@ -208,9 +241,10 @@ function IntegrationsPageContent() {
 
     try {
       connectInFlightRef.current = true;
+      popupCallbackReceivedRef.current = false;
       setMetaLoading(true);
       setMetaError("");
-      setMetaStatusMessage("");
+      setMetaStatusMessage("Connecting...");
       setMetaStatusLoading(true);
       const storedContext = getIntegrationReportContext();
       const connectWorkspaceId = activeWorkspaceId || storedContext?.workspaceId || "";
@@ -307,44 +341,68 @@ function IntegrationsPageContent() {
         const popup = openMetaOAuthPopup(authUrl);
 
         if (!popup) {
+          logMetaOAuthDev("popup blocked, using same-tab fallback", {
+            route: "/integrations",
+            source,
+          });
           window.location.href = authUrl;
           return;
         }
 
+        logMetaOAuthDev("popup opened", {
+          route: "/integrations",
+          source,
+        });
         popupStarted = true;
-        setMetaStatusMessage("Waiting for Meta connection...");
+        setMetaStatusMessage("Connecting...");
         stopPopupPolling();
         popupTimeoutRef.current = window.setTimeout(() => {
-          connectInFlightRef.current = false;
-          setMetaLoading(false);
+          logMetaOAuthDev("timeout reached", {
+            route: "/integrations",
+            source,
+          });
           setMetaStatusMessage(
-            "If you finished connecting, you can now close the Meta tab."
+            "This is taking longer than expected. Finish the Facebook flow in the popup and we’ll update the connection automatically."
           );
-        }, 90000);
+        }, META_OAUTH_POPUP_TIMEOUT_MS);
         popupPollRef.current = window.setInterval(async () => {
           if (!popup.closed) {
             return;
           }
 
+          logMetaOAuthDev("popup closed", {
+            route: "/integrations",
+            source,
+            callbackReceived: popupCallbackReceivedRef.current,
+          });
           stopPopupPolling();
-          clearPendingMetaOAuth();
-          connectInFlightRef.current = false;
-          setMetaLoading(false);
-
-          try {
-            const connected = await refreshMetaIntegrationState();
-            if (connected) {
-              setMetaError("");
-              setMetaStatusMessage("Integration connected successfully.");
+          popupCloseGraceRef.current = window.setTimeout(async () => {
+            if (popupCallbackReceivedRef.current) {
               return;
             }
-          } catch (error) {
-            console.error("meta popup closed refresh error:", error);
-          }
 
-          setMetaStatusMessage("");
-          setMetaError("The connection window closed before authorization was completed.");
-        }, 2500);
+            clearPendingMetaOAuth();
+            connectInFlightRef.current = false;
+            setMetaLoading(false);
+            setMetaStatusLoading(false);
+
+            try {
+              const connected = await refreshMetaIntegrationState();
+              if (connected) {
+                setMetaError("");
+                setMetaStatusMessage("Integration connected successfully.");
+                return;
+              }
+            } catch (error) {
+              console.error("meta popup closed refresh error:", error);
+            }
+
+            setMetaStatusMessage("");
+            setMetaError(
+              "The connection window was closed before authorization was completed. Please try again."
+            );
+          }, META_OAUTH_POPUP_CLOSE_GRACE_MS);
+        }, 500);
         return;
       }
     } catch (err: unknown) {

@@ -121,6 +121,10 @@ function MetaIntegrationCallbackContent() {
       const errorParam = searchParams.get("error");
       const message = searchParams.get("message");
       const fallbackReturnHref = storedContext?.postConnectRedirect || "/integrations";
+      const callbackErrorMessage =
+        message?.trim() ||
+        errorParam?.trim() ||
+        "We couldn’t complete the Meta connection. Please try again.";
 
       updateFallback({
         title: "Completing Meta connection...",
@@ -146,7 +150,7 @@ function MetaIntegrationCallbackContent() {
           window.opener &&
           notifyAndClose({
             type: META_OAUTH_CONNECT_ERROR,
-            message: "Meta authorization was canceled or failed. Try again.",
+            message: callbackErrorMessage,
             redirectTo: fallbackReturnHref,
           })
         ) {
@@ -163,7 +167,7 @@ function MetaIntegrationCallbackContent() {
 
         router.replace(
           `/integrations/meta?meta_error=${encodeURIComponent(
-            "Meta authorization was canceled or failed. Try again."
+            callbackErrorMessage
           )}`
         );
         return;

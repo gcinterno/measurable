@@ -24,6 +24,8 @@ type ReportFolder = {
   name: string;
 };
 
+const REPORT_SHARE_LOCKED = true;
+
 type ReportLibraryCardProps = {
   report: Report;
   folders: ReportFolder[];
@@ -333,6 +335,10 @@ export function ReportLibraryCard({
   }
 
   async function handleShareReport() {
+    if (REPORT_SHARE_LOCKED) {
+      return;
+    }
+
     try {
       setShareLoading(true);
       setQuickActionError("");

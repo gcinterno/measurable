@@ -56,6 +56,7 @@ type ReportFolder = {
 const REPORT_FOLDERS_KEY = "reportFolders";
 const REPORT_FOLDER_ASSIGNMENTS_KEY = "reportFolderAssignments";
 const REPORT_PDF_DOWNLOADS_LOCKED = true;
+const REPORT_SHARE_LOCKED = REPORT_PDF_DOWNLOADS_LOCKED;
 const REPORT_PDF_LOCKED_TOOLTIP = "Coming soon";
 
 function loadStoredFolders() {
@@ -278,6 +279,7 @@ export default function ReportView({
   const latestLoadRequestRef = useRef(0);
   const { workspace } = useActiveWorkspace();
   const pdfDownloadLocked = REPORT_PDF_DOWNLOADS_LOCKED;
+  const shareLocked = REPORT_SHARE_LOCKED;
 
   useEffect(() => {
     setFolders(loadStoredFolders());
@@ -596,6 +598,10 @@ export default function ReportView({
   }, [activeSlideId, blocks, slideNavigationItems.length, template.slides.length]);
 
   async function handleShare() {
+    if (shareLocked) {
+      return;
+    }
+
     try {
       setShareLoading(true);
       console.info("[ShareReport][ui.start]", {
@@ -1051,29 +1057,54 @@ export default function ReportView({
               ) : null}
 
               {showShareAction ? (
-                <button
-                  type="button"
-                  onClick={handleShare}
-                  disabled={shareLoading || !reportId}
-                  className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-50"
-                >
-                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-white ring-1 ring-slate-900/10">
-                    <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 stroke-current">
-                      <path d="M8.5 12.5 15.5 8.5M8.5 11.5l7 4" strokeWidth="1.8" strokeLinecap="round" />
-                      <circle cx="18" cy="7" r="2.5" strokeWidth="1.8" />
-                      <circle cx="6" cy="12" r="2.5" strokeWidth="1.8" />
-                      <circle cx="18" cy="17" r="2.5" strokeWidth="1.8" />
-                    </svg>
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-slate-950">
-                      {messages.common.share}
+                <div className="group relative">
+                  <button
+                    type="button"
+                    onClick={handleShare}
+                    disabled={shareLocked || shareLoading || !reportId}
+                    aria-disabled={shareLocked}
+                    className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition disabled:cursor-not-allowed ${
+                      shareLocked
+                        ? "border-amber-200 bg-[linear-gradient(135deg,#fffdf7_0%,#fff7ed_100%)] text-slate-800 shadow-[0_12px_28px_rgba(245,158,11,0.08)]"
+                        : "border-slate-200 bg-slate-50 hover:bg-slate-100 disabled:bg-slate-50"
+                    }`}
+                  >
+                    <span className={`flex h-10 w-10 items-center justify-center rounded-2xl ring-1 ${
+                      shareLocked
+                        ? "bg-amber-100 text-amber-700 ring-amber-200"
+                        : "bg-slate-950 text-white ring-slate-900/10"
+                    }`}>
+                      <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 stroke-current">
+                        <path d="M8.5 12.5 15.5 8.5M8.5 11.5l7 4" strokeWidth="1.8" strokeLinecap="round" />
+                        <circle cx="18" cy="7" r="2.5" strokeWidth="1.8" />
+                        <circle cx="6" cy="12" r="2.5" strokeWidth="1.8" />
+                        <circle cx="18" cy="17" r="2.5" strokeWidth="1.8" />
+                      </svg>
                     </span>
-                    <span className="block text-xs text-slate-500">
-                      {shareLoading ? messages.common.generating : messages.reports.shareLinkDescription}
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-slate-950">
+                        {messages.common.share}
+                      </span>
+                      <span className="block text-xs text-slate-500">
+                        {shareLocked
+                          ? "Opcion bloqueada"
+                          : shareLoading
+                            ? messages.common.generating
+                            : messages.reports.shareLinkDescription}
+                      </span>
                     </span>
-                  </span>
-                </button>
+                    {shareLocked ? (
+                      <span className="ml-auto rounded-full border border-amber-300 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                        Locked
+                      </span>
+                    ) : null}
+                  </button>
+                  {shareLocked ? (
+                    <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 rounded-full bg-slate-950 px-3 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100">
+                      {REPORT_PDF_LOCKED_TOOLTIP}
+                    </span>
+                  ) : null}
+                </div>
               ) : null}
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -1202,24 +1233,40 @@ export default function ReportView({
               ) : null}
 
               {showShareAction ? (
-                <button
-                  type="button"
-                  onClick={handleShare}
-                  disabled={shareLoading || !reportId}
-                  aria-label="Share report"
-                  className="inline-flex h-[60px] w-[60px] flex-none items-center justify-center rounded-full bg-white text-slate-900 shadow-[0_18px_40px_rgba(15,23,42,0.16)] ring-1 ring-slate-200 transition hover:bg-slate-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {shareLoading ? (
-                    <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900" />
-                  ) : (
-                    <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6 stroke-current">
-                      <path d="M8.5 12.5 15.5 8.5M8.5 11.5l7 4" strokeWidth="1.8" strokeLinecap="round" />
-                      <circle cx="18" cy="7" r="2.5" strokeWidth="1.8" />
-                      <circle cx="6" cy="12" r="2.5" strokeWidth="1.8" />
-                      <circle cx="18" cy="17" r="2.5" strokeWidth="1.8" />
-                    </svg>
-                  )}
-                </button>
+                <div className="group relative">
+                  <button
+                    type="button"
+                    onClick={handleShare}
+                    disabled={shareLocked || shareLoading || !reportId}
+                    aria-label="Share report"
+                    aria-disabled={shareLocked}
+                    className={`inline-flex h-[60px] w-[60px] flex-none items-center justify-center rounded-full shadow-[0_18px_40px_rgba(15,23,42,0.16)] ring-1 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-70 ${
+                      shareLocked
+                        ? "border border-amber-200 bg-[linear-gradient(135deg,#fffdf7_0%,#fff7ed_100%)] text-amber-700 ring-amber-200"
+                        : "bg-white text-slate-900 ring-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    {shareLoading && !shareLocked ? (
+                      <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900" />
+                    ) : shareLocked ? (
+                      <span className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-700">
+                        L
+                      </span>
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6 stroke-current">
+                        <path d="M8.5 12.5 15.5 8.5M8.5 11.5l7 4" strokeWidth="1.8" strokeLinecap="round" />
+                        <circle cx="18" cy="7" r="2.5" strokeWidth="1.8" />
+                        <circle cx="6" cy="12" r="2.5" strokeWidth="1.8" />
+                        <circle cx="18" cy="17" r="2.5" strokeWidth="1.8" />
+                      </svg>
+                    )}
+                  </button>
+                  {shareLocked ? (
+                    <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 rounded-full bg-slate-950 px-3 py-1 text-[11px] font-medium text-white opacity-0 shadow-lg transition group-hover:opacity-100">
+                      {REPORT_PDF_LOCKED_TOOLTIP}
+                    </span>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           </div>
