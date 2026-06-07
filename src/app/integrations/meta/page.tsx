@@ -58,6 +58,12 @@ type MetaOption = {
   name: string;
 };
 
+type MetaRefreshStateResult = {
+  connected: boolean;
+  integrationId: string;
+  pagesCount: number;
+};
+
 type MetaUiState =
   | "not_connected"
   | "connected_no_pages"
@@ -97,6 +103,42 @@ function getAnalyticsIntegrationName(source: string) {
   return "meta";
 }
 
+function getAnalyticsPlan(plan?: string) {
+  return plan?.trim() ? normalizeBillingPlanCode(plan) : "unknown";
+}
+
+const META_CONNECT_ANALYTICS_KEY = "measurable.meta.connect.analytics.pending";
+
+function setPendingMetaConnectAnalytics(source: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.setItem(META_CONNECT_ANALYTICS_KEY, source);
+}
+
+function readPendingMetaConnectAnalytics() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  return window.sessionStorage.getItem(META_CONNECT_ANALYTICS_KEY) || "";
+}
+
+function clearPendingMetaConnectAnalytics() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(META_CONNECT_ANALYTICS_KEY);
+}
+
+function consumePendingMetaConnectAnalytics() {
+  const pendingSource = readPendingMetaConnectAnalytics();
+  clearPendingMetaConnectAnalytics();
+  return pendingSource;
+}
+
 function MetaIntegrationPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -130,7 +172,6 @@ function MetaIntegrationPageContent() {
   const popupPollRef = useRef<number | null>(null);
   const popupCloseGraceRef = useRef<number | null>(null);
   const popupTimeoutRef = useRef<number | null>(null);
-  const trackedIntegrationIdsRef = useRef<Set<string>>(new Set());
   const selectedPage = useMemo(
     () => pages.find((page) => page.id === selectedPageId),
     [pages, selectedPageId]
@@ -186,7 +227,7 @@ function MetaIntegrationPageContent() {
   const refreshMetaPagesState = useCallback(async (input?: {
     quiet?: boolean;
     integrationIdOverride?: string;
-  }) => {
+  }): Promise<MetaRefreshStateResult> => {
     logMetaOAuthDev("status refresh started", {
       route: "/integrations/meta",
       workspaceId,
@@ -204,7 +245,11 @@ function MetaIntegrationPageContent() {
         connected: false,
         integrationId: null,
       });
-      return false;
+      return {
+        connected: false,
+        integrationId: "",
+        pagesCount: 0,
+      };
     }
 
     if (!input?.quiet) {
@@ -241,7 +286,11 @@ function MetaIntegrationPageContent() {
         pagesCount: pageData.length,
       });
 
-      return pageData.length > 0;
+      return {
+        connected: pageData.length > 0,
+        integrationId: nextIntegrationId,
+        pagesCount: pageData.length,
+      };
     } finally {
       if (!input?.quiet) {
         setLoading(false);
@@ -299,17 +348,15 @@ function MetaIntegrationPageContent() {
       setStatusMessage(
         message || "Connection completed. Now choose the page you want to use."
       );
-      if (
-        callbackIntegrationId &&
-        !trackedIntegrationIdsRef.current.has(callbackIntegrationId)
-      ) {
-        trackedIntegrationIdsRef.current.add(callbackIntegrationId);
+      const pendingConnectSource = consumePendingMetaConnectAnalytics();
+      if (pendingConnectSource) {
         trackEvent("integration_connected", {
-          integration_name: getAnalyticsIntegrationName(currentMetaSource),
-          plan: normalizeBillingPlanCode(workspace?.plan),
+          integration_name: getAnalyticsIntegrationName(pendingConnectSource),
+          plan: getAnalyticsPlan(workspace?.plan),
         });
       }
     } else if (metaState === "no_authorized_pages") {
+      clearPendingMetaConnectAnalytics();
       setConnected(false);
       setHasNoAuthorizedPages(true);
       setPages([]);
@@ -318,6 +365,7 @@ function MetaIntegrationPageContent() {
           "Meta connected but no authorized pages were returned. Reconnect and approve at least one page."
       );
     } else if (metaError) {
+      clearPendingMetaConnectAnalytics();
       setConnected(false);
       setHasNoAuthorizedPages(false);
       setStatusMessage("");
@@ -361,19 +409,15 @@ function MetaIntegrationPageContent() {
         }
 
         try {
-          await refreshMetaPagesState({
+          const refreshResult = await refreshMetaPagesState({
             quiet: true,
             integrationIdOverride: event.data.integrationId,
           });
-          const resolvedIntegrationId = event.data.integrationId || integrationId;
-          if (
-            resolvedIntegrationId &&
-            !trackedIntegrationIdsRef.current.has(resolvedIntegrationId)
-          ) {
-            trackedIntegrationIdsRef.current.add(resolvedIntegrationId);
+          const pendingConnectSource = consumePendingMetaConnectAnalytics();
+          if (pendingConnectSource && refreshResult.connected) {
             trackEvent("integration_connected", {
-              integration_name: getAnalyticsIntegrationName(currentMetaSource),
-              plan: normalizeBillingPlanCode(workspace?.plan),
+              integration_name: getAnalyticsIntegrationName(pendingConnectSource),
+              plan: getAnalyticsPlan(workspace?.plan),
             });
           }
         } catch (error) {
@@ -385,6 +429,7 @@ function MetaIntegrationPageContent() {
       }
 
       setStatusMessage("");
+      clearPendingMetaConnectAnalytics();
       setError(
         event.data.message || "We couldn’t complete the Meta connection. Please try again."
       );
@@ -558,6 +603,7 @@ function MetaIntegrationPageContent() {
       const { tokenReady } = hasMetaConnectPrerequisites();
       clearMetaOAuthDebugUrl();
       setPendingMetaSource(currentMetaSource);
+      setPendingMetaConnectAnalytics(currentMetaSource);
       clearStoredMetaIntegrationState();
       setConnected(false);
       setHasNoAuthorizedPages(false);
@@ -695,8 +741,15 @@ function MetaIntegrationPageContent() {
             setConnectLoading(false);
 
             try {
-              const connectedAfterClose = await refreshMetaPagesState({ quiet: true });
-              if (connectedAfterClose) {
+              const refreshResult = await refreshMetaPagesState({ quiet: true });
+              if (refreshResult.connected) {
+                const pendingConnectSource = consumePendingMetaConnectAnalytics();
+                if (pendingConnectSource) {
+                  trackEvent("integration_connected", {
+                    integration_name: getAnalyticsIntegrationName(pendingConnectSource),
+                    plan: getAnalyticsPlan(workspace?.plan),
+                  });
+                }
                 setError("");
                 setStatusMessage("Integration connected successfully.");
                 return;
@@ -715,6 +768,7 @@ function MetaIntegrationPageContent() {
       }
     } catch (err: unknown) {
       console.error("meta connect pages error:", err);
+      clearPendingMetaConnectAnalytics();
       setConnected(false);
       setHasNoAuthorizedPages(false);
       setError(
@@ -831,6 +885,12 @@ function MetaIntegrationPageContent() {
         pageName: selectedPage?.name,
         synced: true,
       });
+      trackEvent("integration_sync_completed", {
+        integration_name: getAnalyticsIntegrationName(currentMetaSource),
+        plan: getAnalyticsPlan(workspace?.plan),
+        pages_count: pages.length || undefined,
+        status: "success",
+      });
     } catch (err: unknown) {
       console.error("meta pages sync error:", err);
       if (isLimitError(err)) {
@@ -873,7 +933,7 @@ function MetaIntegrationPageContent() {
 
       const report = await createMetaPagesReport({ datasetId });
       trackEvent("report_created", {
-        plan: normalizeBillingPlanCode(workspace?.plan),
+        plan: getAnalyticsPlan(workspace?.plan),
         report_type: "single_source",
         template_name: DEFAULT_REPORT_TEMPLATE.id,
         slides_count: DEFAULT_REPORT_TEMPLATE.slides.length,
@@ -977,6 +1037,11 @@ function MetaIntegrationPageContent() {
           title="Monthly report limit reached"
           message={upgradeModalMessage}
           onClose={() => setUpgradeModalOpen(false)}
+          analytics={{
+            currentPlan: workspace?.plan || "unknown",
+            targetPlan: "unknown",
+            ctaLocation: "free_limit_modal",
+          }}
           onUpgrade={() => {
             window.location.assign(upgradeModalUrl || "/pricing");
           }}
@@ -1049,6 +1114,13 @@ function MetaIntegrationPageContent() {
                 {showUpgradeCta ? (
                   <Link
                     href="/pricing"
+                    onClick={() =>
+                      trackEvent("upgrade_click", {
+                        current_plan: workspace?.plan || "unknown",
+                        target_plan: "unknown",
+                        cta_location: "free_limit_modal",
+                      })
+                    }
                     className="mt-3 inline-flex rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
                   >
                     Upgrade plan
