@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { GoogleTagManager } from "@next/third-parties/google";
 import { Poppins, Roboto } from "next/font/google";
 import { Suspense } from "react";
 import { AttributionTracker } from "@/components/providers/AttributionTracker";
@@ -22,6 +23,8 @@ export const metadata: Metadata = {
   description: "Measurable frontend MVP",
 };
 
+const gtmId = process.env.NEXT_PUBLIC_GTM_ID;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -30,6 +33,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${poppins.variable} ${roboto.variable}`}>
       <body className="antialiased">
+        {gtmId ? <GoogleTagManager gtmId={gtmId} /> : null}
         <LanguageProvider>
           <Suspense fallback={null}>
             <AttributionTracker />
