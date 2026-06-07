@@ -6,7 +6,11 @@ import { ChartBlock } from "@/components/reports/primitives/ChartBlock";
 import { InsightBox } from "@/components/reports/primitives/InsightBox";
 import { KPICard, KPIGrid } from "@/components/reports/primitives/KPIGrid";
 import { getTemplateTone } from "@/components/reports/slides/template";
-import { MetricDailyChart, SlideHeaderLogo } from "@/components/reports/slides/shared";
+import {
+  MetricDailyChart,
+  ReportWatermarkBadge,
+  SlideHeaderLogo,
+} from "@/components/reports/slides/shared";
 import { formatDisplayNumber, formatNumber } from "@/lib/formatters";
 import type { ReportTemplateId } from "@/lib/reports/template-selection";
 
@@ -25,6 +29,10 @@ type ImpressionsSlideProps = {
     logoUrl: string | null;
     brandName: string;
     workspaceId?: string | null;
+    watermarkEnabled?: boolean;
+    watermarkLabel?: string;
+    watermarkLogoLightUrl?: string | null;
+    watermarkLogoDarkUrl?: string | null;
   };
   reach_total: number;
   timeframe_since?: string;
@@ -618,13 +626,27 @@ export function ImpressionsSlide({
   return (
     <div className="grid h-full min-h-0 grid-cols-[346px_minmax(0,1fr)] gap-6">
         <div className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
-          <SlideHeaderLogo
-            logoUrl={branding.logoUrl}
-            brandName={branding.brandName}
-            workspaceId={branding.workspaceId}
-            slideNumber="03"
-            dark={tone.dark}
-          />
+          <div className="flex items-start justify-between gap-4">
+            <SlideHeaderLogo
+              logoUrl={branding.logoUrl}
+              brandName={branding.brandName}
+              workspaceId={branding.workspaceId}
+              slideNumber="03"
+              dark={tone.dark}
+              watermarkEnabled={branding.watermarkEnabled}
+              watermarkLogoLightUrl={branding.watermarkLogoLightUrl}
+              watermarkLogoDarkUrl={branding.watermarkLogoDarkUrl}
+            />
+            <ReportWatermarkBadge
+              enabled={branding.watermarkEnabled}
+              label={branding.watermarkLabel}
+              logoLightUrl={branding.watermarkLogoLightUrl}
+              logoDarkUrl={branding.watermarkLogoDarkUrl}
+              workspaceId={branding.workspaceId}
+              dark={tone.dark}
+              className="mt-0.5 shrink-0"
+            />
+          </div>
           <div className="mt-4">
           <h2 className={`max-w-[14rem] text-4xl font-semibold tracking-[-0.05em] ${tone.title}`}>
             {title || metric_label}

@@ -14,7 +14,10 @@ import { CoverSlide } from "@/components/reports/slides/CoverSlide";
 import { getTemplateTone } from "@/components/reports/slides/template";
 import { CoverLogo, MetricDailyChart } from "@/components/reports/slides/shared";
 import { formatMetaTimeframeDateRange } from "@/lib/integrations/timeframes";
-import { resolveReportBranding } from "@/lib/reports/branding";
+import {
+  resolveReportBranding,
+  resolveReportWatermarkBranding,
+} from "@/lib/reports/branding";
 import { normalizeDailySeries } from "@/lib/reports/daily-series";
 import type { ReportTemplateId } from "@/lib/reports/template-selection";
 import { getReportTemplate } from "@/lib/reports/templates";
@@ -43,6 +46,14 @@ type SlideRendererProps = {
     workspaceId?: string | null;
     source?: string;
     brandNameSource?: string;
+    watermarkEnabled?: boolean;
+    watermark_enabled?: boolean;
+    watermarkLabel?: string | null;
+    watermark_label?: string | null;
+    watermarkLogoLightUrl?: string | null;
+    watermark_logo_light_url?: string | null;
+    watermarkLogoDarkUrl?: string | null;
+    watermark_logo_dark_url?: string | null;
   };
   templateId?: ReportTemplateId;
   templateOverride?: string;
@@ -4639,6 +4650,18 @@ export function SlideRenderer({
           brandName: report.branding.brandName || null,
           source: report.branding.source,
           brandNameSource: report.branding.brandNameSource,
+          watermarkEnabled:
+            report.branding.watermarkEnabled ?? report.branding.watermark_enabled,
+          watermarkLabel:
+            report.branding.watermarkLabel ?? report.branding.watermark_label ?? null,
+          watermarkLogoLightUrl:
+            report.branding.watermarkLogoLightUrl ??
+            report.branding.watermark_logo_light_url ??
+            null,
+          watermarkLogoDarkUrl:
+            report.branding.watermarkLogoDarkUrl ??
+            report.branding.watermark_logo_dark_url ??
+            null,
         }
       : branding;
   const safeBranding = resolveReportBranding({
@@ -4654,6 +4677,15 @@ export function SlideRenderer({
           }
         : undefined,
   });
+  const resolvedWatermark = resolveReportWatermarkBranding([
+    { label: "preferredBranding", value: preferredBranding },
+    { label: "report.branding", value: report?.branding },
+    { label: "version.branding", value: branding },
+  ], {
+    workspaceId: renderWorkspaceId,
+    fallbackEnabled: Boolean(watermarkText?.trim()),
+    fallbackLabel: watermarkText,
+  });
   const coverSourceName = resolveReportCoverSourceName(report, safeBranding.brandName);
   const coverIntegrationLabel = resolveReportCoverIntegrationLabel(report);
   const context = buildDefaultTemplateContext(model, {
@@ -4661,6 +4693,10 @@ export function SlideRenderer({
     brandName: safeBranding.brandName,
     workspaceId: renderWorkspaceId,
     source: safeBranding.source,
+    watermarkEnabled: resolvedWatermark.enabled,
+    watermarkLabel: resolvedWatermark.label,
+    watermarkLogoLightUrl: resolvedWatermark.logoLightUrl,
+    watermarkLogoDarkUrl: resolvedWatermark.logoDarkUrl,
   }, reportId, coverSourceName, coverIntegrationLabel);
   const rootClassName =
     renderMode === "export"

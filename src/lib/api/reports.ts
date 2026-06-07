@@ -10,6 +10,7 @@ import type {
 } from "@/types/report";
 
 import { apiFetch, isAbortError, isAuthError, readApiResponseText } from "@/lib/api";
+import { refreshAccountSummary } from "@/lib/api/account";
 import { apiUrl } from "@/lib/api/config";
 import { FEATURES } from "@/config/features";
 import { usePreferencesStore } from "@/lib/store/preferences-store";
@@ -784,6 +785,9 @@ export async function deleteReport(reportId: string) {
       console.log("DELETE_REPORT_RESPONSE_BODY", rawResponseBody || null);
 
       await readApiResponseText(attempt.endpoint, response);
+      void refreshAccountSummary().catch((error) => {
+        console.error("account summary refresh after delete failed:", error);
+      });
       return;
     } catch (error) {
       lastError = error;

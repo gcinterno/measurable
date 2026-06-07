@@ -996,7 +996,7 @@ export default function ReportView({
               branding={resolvedBranding}
               report={reportDetail}
               templateId={selectedTemplateId}
-              watermarkText={showFreeWatermark ? "Report created with measurableapp.com" : undefined}
+              watermarkText={showFreeWatermark ? "Created with measurableapp.com" : undefined}
             />
           </div>
         </div>

@@ -32,6 +32,14 @@ export type Report = {
     brandName?: string;
     source?: string;
     brandNameSource?: string;
+    watermarkEnabled?: boolean;
+    watermark_enabled?: boolean;
+    watermarkLabel?: string;
+    watermark_label?: string;
+    watermarkLogoLightUrl?: string;
+    watermark_logo_light_url?: string;
+    watermarkLogoDarkUrl?: string;
+    watermark_logo_dark_url?: string;
   };
   rawIntegrationHints?: {
     integrationLabel?: string;
@@ -117,6 +125,14 @@ export type ReportVersion = {
     brandName?: string;
     source?: string;
     brandNameSource?: string;
+    watermarkEnabled?: boolean;
+    watermark_enabled?: boolean;
+    watermarkLabel?: string;
+    watermark_label?: string;
+    watermarkLogoLightUrl?: string;
+    watermark_logo_light_url?: string;
+    watermarkLogoDarkUrl?: string;
+    watermark_logo_dark_url?: string;
   };
   blocks: ReportBlock[];
   rawMetadata?: Record<string, unknown>;
@@ -129,6 +145,14 @@ export type ReportVersionView = {
     brandName?: string;
     source?: string;
     brandNameSource?: string;
+    watermarkEnabled?: boolean;
+    watermark_enabled?: boolean;
+    watermarkLabel?: string;
+    watermark_label?: string;
+    watermarkLogoLightUrl?: string;
+    watermark_logo_light_url?: string;
+    watermarkLogoDarkUrl?: string;
+    watermark_logo_dark_url?: string;
   };
   description?: ReportDescription | null;
   blocks: ReportVersionBlock[];

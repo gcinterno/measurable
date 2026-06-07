@@ -25,6 +25,10 @@ export type DefaultTemplateContext = {
     brandName: string;
     workspaceId?: string | null;
     source?: string;
+    watermarkEnabled?: boolean;
+    watermarkLabel?: string;
+    watermarkLogoLightUrl?: string | null;
+    watermarkLogoDarkUrl?: string | null;
   };
   coverSourceName: string;
   coverIntegrationLabel: string;
@@ -500,6 +504,10 @@ export function buildDefaultTemplateContext(
     brandName: string;
     workspaceId?: string | null;
     source?: string;
+    watermarkEnabled?: boolean;
+    watermarkLabel?: string;
+    watermarkLogoLightUrl?: string | null;
+    watermarkLogoDarkUrl?: string | null;
   },
   reportId?: string,
   coverSourceName?: string,

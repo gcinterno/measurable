@@ -40,8 +40,16 @@ export function SummarySlide({
             workspaceId={model.branding.workspaceId}
             slideNumber={slideId}
             dark={tone.dark}
+            watermarkEnabled={model.branding.watermarkEnabled}
+            watermarkLabel={model.branding.watermarkLabel}
+            watermarkLogoLightUrl={model.branding.watermarkLogoLightUrl}
+            watermarkLogoDarkUrl={model.branding.watermarkLogoDarkUrl}
           />
-          <h2 className={`mt-3 text-[2.6rem] font-semibold tracking-[-0.06em] ${tone.title}`}>
+          <h2
+            className={`${
+              model.branding.watermarkEnabled ? "mt-[14px]" : "mt-3"
+            } text-[2.6rem] font-semibold tracking-[-0.06em] ${tone.title}`}
+          >
             {model.title}
           </h2>
         </div>

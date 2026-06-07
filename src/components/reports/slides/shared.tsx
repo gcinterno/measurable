@@ -873,17 +873,41 @@ export function SlideHeaderLogo({
   workspaceId,
   slideNumber,
   dark = true,
+  watermarkEnabled = false,
+  watermarkLabel,
+  watermarkLogoLightUrl,
+  watermarkLogoDarkUrl,
 }: {
   logoUrl: string | null;
   brandName?: string;
   workspaceId?: string | null;
   slideNumber?: string;
   dark?: boolean;
+  watermarkEnabled?: boolean;
+  watermarkLabel?: string;
+  watermarkLogoLightUrl?: string | null;
+  watermarkLogoDarkUrl?: string | null;
 }) {
-  const rawLogoUrl = logoUrl?.trim() || "";
-  const requestedLogoUrl = resolveAssetUrl(rawLogoUrl, API_URL, { workspaceId });
-  const resolvedLogoUrl =
-    !requestedLogoUrl || requestedLogoUrl === MEASURABLE_BRAND_LOGO_URL
+  const watermarkWrapperClassName = "w-[190px] max-w-full";
+  const watermarkImageClassName = "block h-auto w-[190px] max-w-full object-contain object-left";
+  const watermarkLogoCandidate = dark ? watermarkLogoDarkUrl : watermarkLogoLightUrl;
+  const rawLogoUrl =
+    (watermarkEnabled ? watermarkLogoCandidate : logoUrl)?.trim() ||
+    logoUrl?.trim() ||
+    "";
+  const normalizedRawLogoUrl =
+    watermarkEnabled && dark && rawLogoUrl === "/brand/measurable-logo-white.png"
+      ? "/brand/measurable-watermark-logo-white-v2.png"
+      : rawLogoUrl;
+  const requestedLogoUrl = rawLogoUrl.startsWith("/brand/")
+    ? normalizedRawLogoUrl
+    : resolveAssetUrl(normalizedRawLogoUrl, API_URL, { workspaceId });
+  const resolvedLogoUrl = watermarkEnabled
+    ? requestedLogoUrl ||
+      (dark
+        ? "/brand/measurable-watermark-logo-white-v2.png"
+        : "/brand/measurable-watermark-logo-black.png")
+    : !requestedLogoUrl || requestedLogoUrl === MEASURABLE_BRAND_LOGO_URL
       ? SLIDE_HEADER_FALLBACK_LOGO_URL
       : requestedLogoUrl;
   const [logoFailed, setLogoFailed] = useState(false);
@@ -892,7 +916,7 @@ export function SlideHeaderLogo({
   if (process.env.NODE_ENV === "development") {
     console.debug("[report-logo]", {
       slideNumber,
-      rawLogoUrl,
+      rawLogoUrl: normalizedRawLogoUrl,
       resolvedLogoUrl,
       workspaceId: workspaceId || null,
       brandName,
@@ -900,27 +924,125 @@ export function SlideHeaderLogo({
   }
 
   return (
+    <div className="max-w-[14rem]">
+      {watermarkEnabled ? (
+        !logoFailed ? (
+          <div className={watermarkWrapperClassName}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={resolvedLogoUrl}
+              alt="Measurable"
+              data-report-logo="true"
+              loading="eager"
+              decoding="sync"
+              className={watermarkImageClassName}
+              onLoad={(event) => {
+                if (process.env.NODE_ENV === "development") {
+                  console.debug("[report-watermark-logo]", {
+                    slideNumber,
+                    resolvedWatermarkLogoUrl: resolvedLogoUrl,
+                    currentSrc: event.currentTarget.currentSrc || event.currentTarget.src,
+                    wrapperClassName: watermarkWrapperClassName,
+                    imageClassName: watermarkImageClassName,
+                  });
+                }
+              }}
+              onError={() => setLogoFailed(true)}
+            />
+          </div>
+        ) : null
+      ) : (
+        <div
+          className={`inline-flex h-11 w-fit max-w-[10rem] items-center justify-center rounded-full border px-4 py-2 ${
+            dark
+              ? usesWhiteFallbackLogo
+                ? "border-white/10 bg-white/10 shadow-[0_12px_28px_rgba(2,6,23,0.18)]"
+                : "border-white/10 bg-white/90 shadow-[0_12px_28px_rgba(2,6,23,0.18)]"
+              : "border-slate-200 bg-white shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
+          }`}
+        >
+          {!logoFailed ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={resolvedLogoUrl}
+              alt={brandName || "Brand logo"}
+              data-report-logo="true"
+              loading="eager"
+              decoding="sync"
+              className="h-full w-full object-contain"
+              onError={() => setLogoFailed(true)}
+            />
+          ) : null}
+        </div>
+      )}
+      {watermarkEnabled ? (
+        <p
+          className={`mt-2 pl-0.5 text-[0.72rem] font-medium tracking-[0.01em] ${
+            dark ? "text-white/58" : "text-slate-500"
+          }`}
+        >
+          {watermarkLabel || "Created with measurableapp.com"}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+export function ReportWatermarkBadge({
+  enabled,
+  label,
+  logoLightUrl,
+  logoDarkUrl,
+  workspaceId,
+  dark = true,
+  className = "",
+}: {
+  enabled?: boolean;
+  label?: string;
+  logoLightUrl?: string | null;
+  logoDarkUrl?: string | null;
+  workspaceId?: string | null;
+  dark?: boolean;
+  className?: string;
+}) {
+  const [logoFailed, setLogoFailed] = useState(false);
+  const rawLogoUrl = (dark ? logoDarkUrl : logoLightUrl)?.trim() || "";
+  const normalizedRawLogoUrl =
+    dark && rawLogoUrl === "/brand/measurable-logo-white.png"
+      ? "/brand/measurable-watermark-logo-white-v2.png"
+      : rawLogoUrl;
+  const resolvedLogoUrl =
+    (normalizedRawLogoUrl.startsWith("/brand/")
+      ? normalizedRawLogoUrl
+      : resolveAssetUrl(normalizedRawLogoUrl, API_URL, { workspaceId })) ||
+    (dark
+      ? "/brand/measurable-watermark-logo-white-v2.png"
+      : "/brand/measurable-watermark-logo-black.png");
+
+  if (!enabled) {
+    return null;
+  }
+
+  return (
     <div
-      className={`flex h-10 w-28 items-center justify-center rounded-2xl border px-3 py-2 ${
+      className={`inline-flex items-center gap-2.5 rounded-full border px-3.5 py-2 text-[11px] font-medium tracking-[0.01em] ${
         dark
-          ? usesWhiteFallbackLogo
-            ? "border-white/10 bg-white/10 shadow-[0_12px_28px_rgba(2,6,23,0.18)]"
-            : "border-white/10 bg-white/90 shadow-[0_12px_28px_rgba(2,6,23,0.18)]"
-          : "border-slate-200 bg-white shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
-      }`}
+          ? "border-white/14 bg-white/8 text-white/82 backdrop-blur"
+          : "border-slate-300/80 bg-white/88 text-slate-700 backdrop-blur"
+      } ${className}`.trim()}
     >
       {!logoFailed ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={resolvedLogoUrl}
-          alt={brandName || "Brand logo"}
-          data-report-logo="true"
+          alt="Measurable"
           loading="eager"
           decoding="sync"
-          className="h-full w-full object-contain"
+          className="h-4 w-auto shrink-0 object-contain"
           onError={() => setLogoFailed(true)}
         />
       ) : null}
+      <span className="whitespace-nowrap">{label || "Created with measurableapp.com"}</span>
     </div>
   );
 }

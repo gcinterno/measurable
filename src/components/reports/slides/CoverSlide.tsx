@@ -352,7 +352,9 @@ function ModernCover({
                   {model.meta}
                 </p>
                 <p className="mt-8 text-[1.05rem] font-medium tracking-[0.01em] text-white/92">
-                  {model.branding.brandName}
+                  {model.branding.watermarkEnabled
+                    ? model.branding.watermarkLabel || "Created with measurableapp.com"
+                    : model.branding.brandName}
                 </p>
               </div>
             </div>
@@ -482,7 +484,9 @@ function SimpleCover({
           <div className="relative overflow-hidden bg-white">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.03),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(249,250,251,0.98))]" />
             <div className="absolute right-[36px] top-[30px] text-[0.92rem] uppercase tracking-[0.14em] text-slate-200">
-              {model.branding.brandName}
+              {model.branding.watermarkEnabled
+                ? model.branding.watermarkLabel || "Created with measurableapp.com"
+                : model.branding.brandName}
             </div>
 
             <div className="relative flex h-full items-center justify-center px-16">
@@ -528,6 +532,9 @@ export function CoverSlide({
   model,
 }: SlideComponentProps<CoverSlideModel>) {
   const tone = getTemplateTone(templateId);
+  const coverBrandingText = model.branding.watermarkEnabled
+    ? model.branding.watermarkLabel || "Created with measurableapp.com"
+    : model.branding.brandName;
 
   if (templateId === "modern") {
     return <ModernCover slideId={slideId} renderMode={renderMode} reportId={reportId} model={model} />;
@@ -572,7 +579,7 @@ export function CoverSlide({
               isLightTemplate(templateId) ? tone.body : "text-white/92"
             }`}
           >
-            {model.branding.brandName}
+            {coverBrandingText}
           </p>
         </div>
 

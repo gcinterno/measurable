@@ -70,6 +70,18 @@ type ResolvedReportBranding = {
   brandNameSource: string;
 };
 
+export type ResolvedReportWatermarkBranding = {
+  enabled: boolean;
+  label: string;
+  logoLightUrl: string;
+  logoDarkUrl: string;
+  source: string;
+};
+
+const DEFAULT_REPORT_WATERMARK_LABEL = "Created with measurableapp.com";
+const DEFAULT_REPORT_WATERMARK_LOGO_LIGHT_URL = "/brand/measurable-watermark-logo-black.png";
+const DEFAULT_REPORT_WATERMARK_LOGO_DARK_URL = "/brand/measurable-watermark-logo-white-v2.png";
+
 export function resolveAssetUrl(
   logoUrl: string | null | undefined,
   apiBaseUrl: string,
@@ -151,6 +163,25 @@ function getFirstString(
 
     if (typeof value === "string" && value.trim()) {
       return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function getFirstBoolean(
+  input: BrandingInput,
+  keys: string[]
+) {
+  if (!input) {
+    return null;
+  }
+
+  for (const key of keys) {
+    const value = input[key];
+
+    if (typeof value === "boolean") {
+      return value;
     }
   }
 
@@ -343,4 +374,71 @@ export function resolveReportBranding(
     { label: "fallback", value: fallbackBranding },
     { label: "override", value: options?.overrideBranding },
   ]);
+}
+
+export function resolveReportWatermarkBranding(
+  candidates: Array<{ label: string; value: BrandingInput }>,
+  options?: {
+    workspaceId?: string | number | null;
+    fallbackEnabled?: boolean;
+    fallbackLabel?: string | null;
+  }
+): ResolvedReportWatermarkBranding {
+  const resolvedToggle = candidates
+    .map((candidate) => ({
+      label: candidate.label,
+      value: getFirstBoolean(candidate.value, [
+        "watermark_enabled",
+        "watermarkEnabled",
+      ]),
+    }))
+    .find((candidate) => candidate.value !== null);
+  const resolvedLabel =
+    candidates
+      .map((candidate) => ({
+        value: getFirstString(candidate.value, [
+          "watermark_label",
+          "watermarkLabel",
+        ]),
+      }))
+      .find((candidate) => candidate.value)?.value ||
+    options?.fallbackLabel?.trim() ||
+    DEFAULT_REPORT_WATERMARK_LABEL;
+  const resolvedLightLogo = candidates
+    .map((candidate) => ({
+      label: candidate.label,
+      value: getFirstString(candidate.value, [
+        "watermark_logo_light_url",
+        "watermarkLogoLightUrl",
+      ]),
+    }))
+    .find((candidate) => candidate.value);
+  const resolvedDarkLogo = candidates
+    .map((candidate) => ({
+      label: candidate.label,
+      value: getFirstString(candidate.value, [
+        "watermark_logo_dark_url",
+        "watermarkLogoDarkUrl",
+      ]),
+    }))
+    .find((candidate) => candidate.value);
+  const enabled = resolvedToggle?.value ?? Boolean(options?.fallbackEnabled);
+
+  return {
+    enabled,
+    label: resolvedLabel,
+    logoLightUrl:
+      normalizeBrandLogoUrl(resolvedLightLogo?.value, {
+        workspaceId: options?.workspaceId,
+      }) || DEFAULT_REPORT_WATERMARK_LOGO_LIGHT_URL,
+    logoDarkUrl:
+      normalizeBrandLogoUrl(resolvedDarkLogo?.value, {
+        workspaceId: options?.workspaceId,
+      }) || DEFAULT_REPORT_WATERMARK_LOGO_DARK_URL,
+    source: resolvedToggle
+      ? `${resolvedToggle.label}.watermark_enabled`
+      : options?.fallbackEnabled
+        ? "fallback.watermarkText"
+        : "disabled",
+  };
 }

@@ -5,7 +5,10 @@ import { InsightBox } from "@/components/reports/primitives/InsightBox";
 import { KPICard, KPIGrid } from "@/components/reports/primitives/KPIGrid";
 import { SlideCanvas } from "@/components/reports/SlideCanvas";
 import { getTemplateTone } from "@/components/reports/slides/template";
-import { MetricDailyChart, SlideHeaderLogo } from "@/components/reports/slides/shared";
+import {
+  MetricDailyChart,
+  SlideHeaderLogo,
+} from "@/components/reports/slides/shared";
 import type { ReachSlideModel, SlideComponentProps } from "@/components/reports/slides/types";
 
 export function ReachSlide({
@@ -17,6 +20,7 @@ export function ReachSlide({
   model,
 }: SlideComponentProps<ReachSlideModel>) {
   const tone = getTemplateTone(templateId);
+  const hasWatermark = Boolean(model.branding.watermarkEnabled);
   const metricKey = model.metricKey || "reach";
   const placeholderText =
     model.unavailableMessage ||
@@ -46,20 +50,28 @@ export function ReachSlide({
       templateId={templateId}
     >
       <div className="grid h-full min-h-0 grid-cols-[346px_minmax(0,1fr)] gap-6">
-        <div className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
+        <div
+          className={`grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] ${
+            hasWatermark ? "-mt-3" : ""
+          }`}
+        >
           <SlideHeaderLogo
             logoUrl={model.branding.logoUrl}
             brandName={model.branding.brandName}
             workspaceId={model.branding.workspaceId}
             slideNumber={slideId}
             dark={tone.dark}
+            watermarkEnabled={model.branding.watermarkEnabled}
+            watermarkLabel={model.branding.watermarkLabel}
+            watermarkLogoLightUrl={model.branding.watermarkLogoLightUrl}
+            watermarkLogoDarkUrl={model.branding.watermarkLogoDarkUrl}
           />
-          <div className="mt-4">
+          <div className={hasWatermark ? "mt-3" : "mt-4"}>
             <h2 className={`max-w-[14rem] text-4xl font-semibold tracking-[-0.05em] ${tone.title}`}>
               {model.metricTitle}
             </h2>
             <p className={`mt-2 text-xs ${tone.subtle}`}>{model.sourceCaption}</p>
-            <p className={`mt-8 text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.subtle}`}>
+            <p className={`${hasWatermark ? "mt-6" : "mt-8"} text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.subtle}`}>
               {model.totalLabel}
             </p>
             <p className={`mt-3 break-words text-[3.2rem] font-semibold tracking-[-0.06em] ${tone.title}`}>
@@ -74,7 +86,7 @@ export function ReachSlide({
           <InsightBox
             text={insightText}
             label="AI INSIGHT"
-            className="mt-7 max-h-[214px]"
+            className={`${hasWatermark ? "mt-5" : "mt-7"} max-h-[214px]`}
             bodyClassName="leading-[1.62]"
             clampLines={5}
             templateId={templateId}

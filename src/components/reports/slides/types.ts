@@ -26,6 +26,10 @@ export type CoverSlideModel = {
     logoUrl: string | null;
     brandName: string;
     workspaceId?: string | null;
+    watermarkEnabled?: boolean;
+    watermarkLabel?: string;
+    watermarkLogoLightUrl?: string | null;
+    watermarkLogoDarkUrl?: string | null;
   };
 };
 
@@ -39,6 +43,10 @@ export type SlideBrandingModel = {
   logoUrl: string | null;
   brandName: string;
   workspaceId?: string | null;
+  watermarkEnabled?: boolean;
+  watermarkLabel?: string;
+  watermarkLogoLightUrl?: string | null;
+  watermarkLogoDarkUrl?: string | null;
 };
 
 export type ReachSlideModel = {

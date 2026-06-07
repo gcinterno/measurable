@@ -7,6 +7,12 @@ type ApiErrorOptions = {
   status?: number;
   code?: string;
   upgradeUrl?: string;
+  reportsUsed?: number;
+  reportsLimit?: number;
+  reportsRemaining?: number;
+  limitReached?: boolean;
+  periodStart?: string;
+  periodEnd?: string;
   isAuthError?: boolean;
   isAbortError?: boolean;
 };
@@ -16,6 +22,12 @@ export class ApiError extends Error {
   status?: number;
   code?: string;
   upgradeUrl?: string;
+  reportsUsed?: number;
+  reportsLimit?: number;
+  reportsRemaining?: number;
+  limitReached?: boolean;
+  periodStart?: string;
+  periodEnd?: string;
   isAuthError: boolean;
   isAbortError: boolean;
 
@@ -26,6 +38,12 @@ export class ApiError extends Error {
     this.status = options.status;
     this.code = options.code;
     this.upgradeUrl = options.upgradeUrl;
+    this.reportsUsed = options.reportsUsed;
+    this.reportsLimit = options.reportsLimit;
+    this.reportsRemaining = options.reportsRemaining;
+    this.limitReached = options.limitReached;
+    this.periodStart = options.periodStart;
+    this.periodEnd = options.periodEnd;
     this.isAuthError = Boolean(options.isAuthError);
     this.isAbortError = Boolean(options.isAbortError);
   }
@@ -41,11 +59,23 @@ type BackendErrorPayload = {
         code?: string;
         message?: string;
         upgrade_url?: string;
+        reports_used?: number | string | null;
+        reports_limit?: number | string | null;
+        reports_remaining?: number | string | null;
+        limit_reached?: boolean | null;
+        period_start?: string | null;
+        period_end?: string | null;
       }
     | null;
   code?: string;
   message?: string;
   upgrade_url?: string;
+  reports_used?: number | string | null;
+  reports_limit?: number | string | null;
+  reports_remaining?: number | string | null;
+  limit_reached?: boolean | null;
+  period_start?: string | null;
+  period_end?: string | null;
 };
 
 const AUTH_ERROR_CODES = new Set([
@@ -75,6 +105,15 @@ function parseJsonSafely(rawText: string) {
   } catch {
     return null;
   }
+}
+
+function parseOptionalNumber(value: number | string | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return undefined;
+  }
+
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : undefined;
 }
 
 function getErrorCode(payload: BackendErrorPayload | null) {
@@ -115,6 +154,41 @@ function getUpgradeUrl(payload: BackendErrorPayload | null) {
   }
 
   return payload.upgrade_url;
+}
+
+function getQuotaValue<T extends keyof NonNullable<BackendErrorPayload["detail"]>>(
+  payload: BackendErrorPayload | null,
+  key: T
+) {
+  if (!payload) {
+    return undefined;
+  }
+
+  if (typeof payload.detail === "object" && payload.detail && key in payload.detail) {
+    return payload.detail[key];
+  }
+
+  return payload[key as keyof BackendErrorPayload];
+}
+
+function getQuotaSnapshot(payload: BackendErrorPayload | null) {
+  return {
+    reportsUsed: parseOptionalNumber(getQuotaValue(payload, "reports_used")),
+    reportsLimit: parseOptionalNumber(getQuotaValue(payload, "reports_limit")),
+    reportsRemaining: parseOptionalNumber(getQuotaValue(payload, "reports_remaining")),
+    limitReached:
+      typeof getQuotaValue(payload, "limit_reached") === "boolean"
+        ? Boolean(getQuotaValue(payload, "limit_reached"))
+        : undefined,
+    periodStart:
+      typeof getQuotaValue(payload, "period_start") === "string"
+        ? String(getQuotaValue(payload, "period_start")).trim()
+        : undefined,
+    periodEnd:
+      typeof getQuotaValue(payload, "period_end") === "string"
+        ? String(getQuotaValue(payload, "period_end")).trim()
+        : undefined,
+  };
 }
 
 function isAuthFailureStatus(status: number) {
@@ -225,6 +299,7 @@ export async function readApiResponseText(
       status: response.status,
       code: errorCode,
       upgradeUrl: getUpgradeUrl(payload),
+      ...getQuotaSnapshot(payload),
       isAuthError: authFailure,
     });
   }

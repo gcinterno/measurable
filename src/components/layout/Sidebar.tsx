@@ -6,7 +6,12 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { PlanLimitsSummary } from "@/components/workspace/PlanLimitsSummary";
 import { useI18n } from "@/components/providers/LanguageProvider";
-import { fetchAccountSummary, type AccountSummary } from "@/lib/api/account";
+import {
+  getLastAccountSummary,
+  refreshAccountSummary,
+  subscribeAccountSummary,
+  type AccountSummary,
+} from "@/lib/api/account";
 import { logoutUser } from "@/lib/api/auth";
 import { startLogoutInProgress } from "@/lib/auth/session";
 import { useAuthStore } from "@/lib/store/auth-store";
@@ -117,9 +122,7 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
   const { messages } = useI18n();
   const showPlanSummary = false;
   const logout = useAuthStore((state) => state.logout);
-  const { workspace, reportsUsedThisMonth } = useActiveWorkspace({
-    includeReportsUsage: true,
-  });
+  const { workspace } = useActiveWorkspace();
   const [collapsed, setCollapsed] = useState(false);
   const [accountSummary, setAccountSummary] = useState<AccountSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
@@ -128,11 +131,25 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
+    const unsubscribe = subscribeAccountSummary((summary) => {
+      if (!active) {
+        return;
+      }
+
+      setAccountSummary(summary);
+      setSummaryLoading(false);
+    });
+    const cachedSummary = getLastAccountSummary();
+
+    if (cachedSummary) {
+      setAccountSummary(cachedSummary);
+      setSummaryLoading(false);
+    }
 
     async function loadAccountSummary() {
       try {
-        setSummaryLoading(true);
-        const summary = await fetchAccountSummary({
+        setSummaryLoading((current) => current && !cachedSummary);
+        const summary = await refreshAccountSummary({
           signal: controller.signal,
         });
 
@@ -159,12 +176,13 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
 
     return () => {
       active = false;
+      unsubscribe();
       controller.abort();
     };
   }, []);
 
   const monthlyReportsSummary = useMemo(() => {
-    if (summaryLoading) {
+    if (summaryLoading && !accountSummary) {
       return {
         title: "Reports Generated",
         counter: "—/—",
@@ -179,22 +197,17 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
     }
 
     const hasMonthlyLimit =
-      typeof accountSummary.reportsLimitThisMonth === "number" &&
-      Number.isFinite(accountSummary.reportsLimitThisMonth) &&
-      accountSummary.reportsLimitThisMonth > 0;
+      typeof accountSummary.reportsLimit === "number" &&
+      Number.isFinite(accountSummary.reportsLimit) &&
+      accountSummary.reportsLimit > 0;
 
     if (hasMonthlyLimit) {
-      const total = accountSummary.reportsLimitThisMonth;
-      const fallbackRemaining =
-        typeof accountSummary.reportsAvailableCount === "number"
-          ? accountSummary.reportsAvailableCount
+      const total = accountSummary.reportsLimit;
+      const used =
+        typeof accountSummary.reportsUsed === "number" &&
+        Number.isFinite(accountSummary.reportsUsed)
+          ? Math.min(Math.max(accountSummary.reportsUsed, 0), total)
           : 0;
-      const rawRemaining =
-        typeof accountSummary.reportsRemainingThisMonth === "number"
-          ? accountSummary.reportsRemainingThisMonth
-          : fallbackRemaining;
-      const remaining = Math.max(rawRemaining, 0);
-      const used = Math.min(Math.max(total - remaining, 0), total);
       const progressPercent = total > 0 ? Math.min((used / total) * 100, 100) : 0;
 
       return {
@@ -208,7 +221,11 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
 
     return {
       title: "Reports Generated",
-      counter: `${accountSummary.reportsCreatedCount}`,
+      counter:
+        typeof accountSummary.reportsUsed === "number" &&
+        Number.isFinite(accountSummary.reportsUsed)
+          ? `${accountSummary.reportsUsed}`
+          : `${accountSummary.reportsCreatedCount}`,
       progressPercent: null,
       progressLabel: "Unlimited",
       unlimited: true,
@@ -348,7 +365,9 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
               <div className="mb-4">
                 <PlanLimitsSummary
                   workspace={workspace}
-                  reportsUsedThisMonth={reportsUsedThisMonth}
+                  reportsUsedThisMonth={
+                    typeof accountSummary?.reportsUsed === "number" ? accountSummary.reportsUsed : 0
+                  }
                   variant="sidebar"
                 />
               </div>
