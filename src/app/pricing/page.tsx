@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { FEATURES } from "@/config/features";
+import { trackEvent } from "@/lib/analytics";
 import { useBilling } from "@/lib/billing/useBilling";
 import { useAuthStore } from "@/lib/store/auth-store";
 import type { BillingPlanCode } from "@/lib/billing/plans";
@@ -215,7 +216,6 @@ export default function PricingPage() {
     pricingCards.find((plan) => plan.code === pendingPlanCode) || null;
   const updatedPlan =
     pricingCards.find((plan) => plan.code === updatedPlanCode) || null;
-  const isPaidWorkspace = currentPlanCode !== "free";
   const confirmLoading = Boolean(pendingPlanCode && checkoutLoadingPlan === pendingPlanCode);
   const postUpdateSummary = useMemo(() => {
     if (!updatedPlan || !billing) {
@@ -403,7 +403,17 @@ export default function PricingPage() {
 
                   <button
                     type="button"
-                    onClick={() => void handleSelectPlan(plan.code)}
+                    onClick={() => {
+                      if (!isFree && !isCurrent && !isLoading) {
+                        trackEvent("upgrade_click", {
+                          current_plan: currentPlanCode,
+                          target_plan: plan.code,
+                          cta_location: "pricing_plan_card",
+                        });
+                      }
+
+                      void handleSelectPlan(plan.code);
+                    }}
                     disabled={isCurrent || isLoading || (plan.code !== "free" && loading)}
                     className={`mt-8 inline-flex min-h-[3.5rem] w-full items-center justify-center rounded-[20px] px-5 py-3 text-sm font-semibold transition ${
                       isFree

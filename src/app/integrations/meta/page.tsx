@@ -10,6 +10,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { UpgradeLimitModal } from "@/components/layout/UpgradeLimitModal";
 import { PlanLimitsSummary } from "@/components/workspace/PlanLimitsSummary";
 import { ApiError, isLimitError } from "@/lib/api";
+import { applyAccountSummaryQuota, refreshAccountSummary } from "@/lib/api/account";
 import {
   connectMetaIntegration,
   fetchMetaPages,
@@ -34,6 +35,8 @@ import {
   storeMetaOAuthDebugUrl,
 } from "@/lib/integrations/meta-oauth";
 import { createMetaPagesReport } from "@/lib/api/reports";
+import { trackEvent } from "@/lib/analytics";
+import { normalizeBillingPlanCode } from "@/lib/billing/plans";
 import { formatNumber } from "@/lib/formatters";
 import {
   clearStoredMetaIntegrationState,
@@ -66,6 +69,34 @@ type MetaUiState =
   | "generating_report"
   | "error";
 
+function buildMonthlyLimitMessage(input?: {
+  reportsUsed?: number;
+  reportsLimit?: number;
+}) {
+  if (
+    typeof input?.reportsUsed === "number" &&
+    Number.isFinite(input.reportsUsed) &&
+    typeof input?.reportsLimit === "number" &&
+    Number.isFinite(input.reportsLimit)
+  ) {
+    return `You have used ${input.reportsUsed} of ${input.reportsLimit} reports for the current monthly cycle.`;
+  }
+
+  return "You have reached your monthly report limit.";
+}
+
+function getAnalyticsIntegrationName(source: string) {
+  if (source === "instagram_business") {
+    return "instagram";
+  }
+
+  if (source === "facebook_pages") {
+    return "facebook";
+  }
+
+  return "meta";
+}
+
 function MetaIntegrationPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -91,14 +122,15 @@ function MetaIntegrationPageContent() {
   const [syncCompleted, setSyncCompleted] = useState(false);
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const [upgradeModalMessage, setUpgradeModalMessage] = useState(
-    "You’ve reached the limit of 10 free reports."
+    "You have reached your monthly report limit."
   );
-  const [upgradeModalUrl, setUpgradeModalUrl] = useState("/wishlist");
+  const [upgradeModalUrl, setUpgradeModalUrl] = useState("/pricing");
   const connectInFlightRef = useRef(false);
   const popupCallbackReceivedRef = useRef(false);
   const popupPollRef = useRef<number | null>(null);
   const popupCloseGraceRef = useRef<number | null>(null);
   const popupTimeoutRef = useRef<number | null>(null);
+  const trackedIntegrationIdsRef = useRef<Set<string>>(new Set());
   const selectedPage = useMemo(
     () => pages.find((page) => page.id === selectedPageId),
     [pages, selectedPageId]
@@ -267,6 +299,16 @@ function MetaIntegrationPageContent() {
       setStatusMessage(
         message || "Connection completed. Now choose the page you want to use."
       );
+      if (
+        callbackIntegrationId &&
+        !trackedIntegrationIdsRef.current.has(callbackIntegrationId)
+      ) {
+        trackedIntegrationIdsRef.current.add(callbackIntegrationId);
+        trackEvent("integration_connected", {
+          integration_name: getAnalyticsIntegrationName(currentMetaSource),
+          plan: normalizeBillingPlanCode(workspace?.plan),
+        });
+      }
     } else if (metaState === "no_authorized_pages") {
       setConnected(false);
       setHasNoAuthorizedPages(true);
@@ -286,6 +328,7 @@ function MetaIntegrationPageContent() {
     currentMetaSource,
     router,
     searchParams,
+    workspace?.plan,
   ]);
 
   useEffect(() => {
@@ -322,6 +365,17 @@ function MetaIntegrationPageContent() {
             quiet: true,
             integrationIdOverride: event.data.integrationId,
           });
+          const resolvedIntegrationId = event.data.integrationId || integrationId;
+          if (
+            resolvedIntegrationId &&
+            !trackedIntegrationIdsRef.current.has(resolvedIntegrationId)
+          ) {
+            trackedIntegrationIdsRef.current.add(resolvedIntegrationId);
+            trackEvent("integration_connected", {
+              integration_name: getAnalyticsIntegrationName(currentMetaSource),
+              plan: normalizeBillingPlanCode(workspace?.plan),
+            });
+          }
         } catch (error) {
           console.error("meta page popup refresh error:", error);
           setError("The connection finished, but we couldn’t refresh the pages.");
@@ -342,7 +396,7 @@ function MetaIntegrationPageContent() {
       stopPopupPolling();
       window.removeEventListener("message", handleMetaWindowMessage);
     };
-  }, [refreshMetaPagesState, stopPopupPolling]);
+  }, [currentMetaSource, integrationId, refreshMetaPagesState, stopPopupPolling, workspace?.plan]);
 
   useEffect(() => {
     let active = true;
@@ -803,20 +857,70 @@ function MetaIntegrationPageContent() {
       setCreateReportLoading(true);
       setError("");
       setStatusMessage("");
+      const quota = await refreshAccountSummary();
+
+      if (quota.limitReached) {
+        setUpgradeModalMessage(
+          buildMonthlyLimitMessage({
+            reportsUsed: quota.reportsUsed ?? undefined,
+            reportsLimit: quota.reportsLimit ?? undefined,
+          })
+        );
+        setUpgradeModalUrl("/pricing");
+        setUpgradeModalOpen(true);
+        return;
+      }
+
       const report = await createMetaPagesReport({ datasetId });
+      trackEvent("report_created", {
+        plan: normalizeBillingPlanCode(workspace?.plan),
+        report_type: "single_source",
+        template_name: DEFAULT_REPORT_TEMPLATE.id,
+        slides_count: DEFAULT_REPORT_TEMPLATE.slides.length,
+        integration_name: getAnalyticsIntegrationName(currentMetaSource),
+        data_source_count: 1,
+      });
+      void refreshAccountSummary().catch((error) => {
+        console.error("account summary refresh after report create failed:", error);
+      });
       router.replace(`/reports/${report.reportId}`);
     } catch (err: unknown) {
       console.error("meta pages create report error:", err);
-      if (err instanceof ApiError && err.code === "FREE_REPORT_LIMIT_REACHED") {
+      if (
+        err instanceof ApiError &&
+        (err.code === "monthly_report_limit_reached" || err.limitReached === true)
+      ) {
+        applyAccountSummaryQuota({
+          reportsUsed: err.reportsUsed,
+          reportsLimit: err.reportsLimit,
+          reportsRemaining: err.reportsRemaining,
+          limitReached: err.limitReached,
+          periodStart: err.periodStart,
+          periodEnd: err.periodEnd,
+        });
         setUpgradeModalMessage(
-          err.message || "You’ve reached the limit of 10 free reports."
+          buildMonthlyLimitMessage({
+            reportsUsed: err.reportsUsed,
+            reportsLimit: err.reportsLimit,
+          })
         );
-        setUpgradeModalUrl(err.upgradeUrl || "https://measurableapp.com/wishlist");
+        setUpgradeModalUrl("/pricing");
         setUpgradeModalOpen(true);
         setError("");
         setStatusMessage("");
       } else if (isLimitError(err)) {
-        setError(err.message || "We could not generate the report with the synced data. Try again.");
+        applyAccountSummaryQuota({
+          reportsUsed: err instanceof ApiError ? err.reportsUsed : undefined,
+          reportsLimit: err instanceof ApiError ? err.reportsLimit : undefined,
+          reportsRemaining: err instanceof ApiError ? err.reportsRemaining : undefined,
+          limitReached: err instanceof ApiError ? err.limitReached : undefined,
+          periodStart: err instanceof ApiError ? err.periodStart : undefined,
+          periodEnd: err instanceof ApiError ? err.periodEnd : undefined,
+        });
+        setError(buildMonthlyLimitMessage({
+          reportsUsed: err instanceof ApiError ? err.reportsUsed : undefined,
+          reportsLimit: err instanceof ApiError ? err.reportsLimit : undefined,
+        }));
       } else if (err instanceof ApiError && err.message) {
         setError(err.message);
       } else {
@@ -870,10 +974,11 @@ function MetaIntegrationPageContent() {
       <div className="space-y-5 sm:space-y-6">
         <UpgradeLimitModal
           open={upgradeModalOpen}
+          title="Monthly report limit reached"
           message={upgradeModalMessage}
           onClose={() => setUpgradeModalOpen(false)}
           onUpgrade={() => {
-            window.location.assign(upgradeModalUrl || "https://measurableapp.com/wishlist");
+            window.location.assign(upgradeModalUrl || "/pricing");
           }}
         />
         <MetaStatusCard

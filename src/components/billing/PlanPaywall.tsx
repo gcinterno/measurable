@@ -115,6 +115,15 @@ export function PlanPaywall({
                   variant={isFree ? "secondary" : "primary"}
                   onClick={() => (isFree ? onSelectFree() : onSelectPlan(plan.code))}
                   className="w-full justify-center rounded-2xl py-3.5"
+                  analytics={
+                    !isFree && !isCurrent
+                      ? {
+                          currentPlan: currentPlanCode,
+                          targetPlan: plan.code,
+                          ctaLocation: "plan_paywall",
+                        }
+                      : undefined
+                  }
                 />
               </div>
             </article>

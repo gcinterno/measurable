@@ -8,6 +8,7 @@ import { useRef } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { UpgradeLimitModal } from "@/components/layout/UpgradeLimitModal";
 import { useI18n } from "@/components/providers/LanguageProvider";
+import { applyAccountSummaryQuota, refreshAccountSummary } from "@/lib/api/account";
 import { fetchAccountSummary } from "@/lib/api/account";
 import { DesktopFlowSteps } from "@/components/reports/flow/DesktopFlowSteps";
 import { MobileFlowHeader } from "@/components/reports/flow/MobileFlowHeader";
@@ -47,6 +48,8 @@ import {
   saveReportTemplateSelection,
 } from "@/lib/reports/template-selection";
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
+import { trackEvent } from "@/lib/analytics";
+import { normalizeBillingPlanCode } from "@/lib/billing/plans";
 import type { SourceKey } from "@/lib/integrations/session";
 import type { ReportDescription, ReportDetail, ReportVersionBlock } from "@/types/report";
 
@@ -172,6 +175,61 @@ function getAiModeMetadata(
   };
 }
 
+function normalizeUpgradeUrl(url: string | null | undefined, fallback: string) {
+  const trimmed = url?.trim() || "";
+
+  if (!trimmed) {
+    return fallback;
+  }
+
+  if (trimmed === "https://measurableapp.com/wishlist" || trimmed === "http://measurableapp.com/wishlist") {
+    return "/wishlist";
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+
+    if (
+      parsed.hostname === "measurableapp.com" &&
+      (parsed.pathname === "/wishlist" || parsed.pathname === "/wishlist/")
+    ) {
+      return "/wishlist";
+    }
+  } catch {
+    return trimmed;
+  }
+
+  return trimmed;
+}
+
+function buildMonthlyLimitMessage(input?: {
+  reportsUsed?: number;
+  reportsLimit?: number;
+}) {
+  if (
+    typeof input?.reportsUsed === "number" &&
+    Number.isFinite(input.reportsUsed) &&
+    typeof input?.reportsLimit === "number" &&
+    Number.isFinite(input.reportsLimit)
+  ) {
+    return `You have used ${input.reportsUsed} of ${input.reportsLimit} reports for the current monthly cycle.`;
+  }
+
+  return "You have reached your monthly report limit.";
+}
+
+function getAnalyticsIntegrationName(source: string) {
+  if (source === "instagram_business") {
+    return "instagram";
+  }
+
+  if (source === "facebook_pages") {
+    return "facebook";
+  }
+
+  return "meta";
+}
+
 function NewReportFlowReviewPageContent() {
   const showReviewActions = true;
   const { language, messages } = useI18n();
@@ -225,9 +283,9 @@ function NewReportFlowReviewPageContent() {
   const [showFreeWatermark, setShowFreeWatermark] = useState(false);
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const [upgradeModalMessage, setUpgradeModalMessage] = useState(
-    "You’ve reached the limit of 10 free reports."
+    "You have reached your monthly report limit."
   );
-  const [upgradeModalUrl, setUpgradeModalUrl] = useState("/wishlist");
+  const [upgradeModalUrl, setUpgradeModalUrl] = useState("/pricing");
   const generationStartedRef = useRef(false);
   const { workspace } = useActiveWorkspace();
   const activeTemplate = useMemo(
@@ -312,6 +370,26 @@ function NewReportFlowReviewPageContent() {
 
         setReviewStatus("loading");
         setError("");
+        const quota = await refreshAccountSummary();
+
+        if (!active) {
+          return;
+        }
+
+        if (quota.limitReached) {
+          setGenerationLimitReached(true);
+          setUpgradeModalMessage(
+            buildMonthlyLimitMessage({
+              reportsUsed: quota.reportsUsed ?? undefined,
+              reportsLimit: quota.reportsLimit ?? undefined,
+            })
+          );
+          setUpgradeModalUrl("/pricing");
+          setUpgradeModalOpen(true);
+          setGenerationErrorDetail("");
+          return;
+        }
+
         const normalizedSelection = normalizeMetaTimeframeSelection({
           preset: storedIntegrationContext.timeframe,
           startDate: storedIntegrationContext.startDate,
@@ -489,7 +567,20 @@ function NewReportFlowReviewPageContent() {
               ? report.raw
               : null,
         });
+        trackEvent("report_created", {
+          plan: normalizeBillingPlanCode(workspace?.plan),
+          report_type: isMultiSource ? "multi_source" : "single_source",
+          template_name: selectedTemplate,
+          slides_count: requestedSlides,
+          integration_name: isMultiSource
+            ? "meta"
+            : getAnalyticsIntegrationName(selectedSource),
+          data_source_count: selectedSources.length,
+        });
         setGeneratedReportId(report.reportId);
+        void refreshAccountSummary().catch((error) => {
+          console.error("account summary refresh after report create failed:", error);
+        });
         router.replace(
           `/reports/new/flow/review?integration=${integrationSource}&reportId=${report.reportId}&template=${selectedTemplate}`
         );
@@ -500,21 +591,45 @@ function NewReportFlowReviewPageContent() {
           return;
         }
 
-        if (err instanceof ApiError && err.code === "FREE_REPORT_LIMIT_REACHED") {
+        if (
+          err instanceof ApiError &&
+          (err.code === "monthly_report_limit_reached" || err.limitReached === true)
+        ) {
+          applyAccountSummaryQuota({
+            reportsUsed: err.reportsUsed,
+            reportsLimit: err.reportsLimit,
+            reportsRemaining: err.reportsRemaining,
+            limitReached: err.limitReached,
+            periodStart: err.periodStart,
+            periodEnd: err.periodEnd,
+          });
           setGenerationLimitReached(true);
-          setUpgradeModalMessage(
-            err.message || "You’ve reached the limit of 10 free reports."
-          );
-          setUpgradeModalUrl(err.upgradeUrl || "https://measurableapp.com/wishlist");
+          const message = buildMonthlyLimitMessage({
+            reportsUsed: err.reportsUsed,
+            reportsLimit: err.reportsLimit,
+          });
+          setUpgradeModalMessage(message);
+          setUpgradeModalUrl(normalizeUpgradeUrl(err.upgradeUrl, "/pricing"));
           setUpgradeModalOpen(true);
           setError("");
           setGenerationErrorDetail("");
           setReviewStatus("loading");
         } else if (isPlanLimitError(err)) {
-          const message = "Llegaste al limite mensual de reportes de tu plan.";
+          applyAccountSummaryQuota({
+            reportsUsed: err instanceof ApiError ? err.reportsUsed : undefined,
+            reportsLimit: err instanceof ApiError ? err.reportsLimit : undefined,
+            reportsRemaining: err instanceof ApiError ? err.reportsRemaining : undefined,
+            limitReached: err instanceof ApiError ? err.limitReached : undefined,
+            periodStart: err instanceof ApiError ? err.periodStart : undefined,
+            periodEnd: err instanceof ApiError ? err.periodEnd : undefined,
+          });
+          const message = buildMonthlyLimitMessage({
+            reportsUsed: err instanceof ApiError ? err.reportsUsed : undefined,
+            reportsLimit: err instanceof ApiError ? err.reportsLimit : undefined,
+          });
           setGenerationLimitReached(true);
           setUpgradeModalMessage(message);
-          setUpgradeModalUrl(err.upgradeUrl || "/pricing");
+          setUpgradeModalUrl(normalizeUpgradeUrl(err.upgradeUrl, "/pricing"));
           setUpgradeModalOpen(true);
           setError(message);
           setGenerationErrorDetail(message);
@@ -549,6 +664,7 @@ function NewReportFlowReviewPageContent() {
     selectedTemplate,
     storedIntegrationContext,
     workspace?.branding?.logoUrl,
+    workspace?.plan,
   ]);
 
   useEffect(() => {
@@ -930,6 +1046,7 @@ function NewReportFlowReviewPageContent() {
       <div className="-mx-4 -mt-4 space-y-5 bg-white px-4 pt-4 pb-6 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6 sm:pb-8">
         <UpgradeLimitModal
           open={upgradeModalOpen}
+          title="Monthly report limit reached"
           message={upgradeModalMessage}
           onClose={() => {
             setUpgradeModalOpen(false);
@@ -940,7 +1057,7 @@ function NewReportFlowReviewPageContent() {
             );
           }}
           onUpgrade={() => {
-            window.location.assign(upgradeModalUrl || "https://measurableapp.com/wishlist");
+            window.location.assign(upgradeModalUrl || "/pricing");
           }}
         />
         <MobileFlowHeader
@@ -1227,7 +1344,7 @@ function NewReportFlowReviewPageContent() {
                         report={reportDetail}
                         templateId={selectedTemplate}
                         templateOverride={activeTemplate}
-                        watermarkText={showFreeWatermark ? "Report created with measurableapp.com" : undefined}
+                        watermarkText={showFreeWatermark ? "Created with measurableapp.com" : undefined}
                       />
                     </div>
                   </div>

@@ -6,6 +6,7 @@ const PENDING_VERIFICATION_EMAIL_KEY = "pendingVerificationEmail";
 const LOGOUT_IN_PROGRESS_KEY = "logoutInProgress";
 const ONBOARDING_DISMISSED_KEY = "onboardingDismissed";
 const PENDING_REGISTRATION_KEY = "pendingRegistration";
+const PENDING_GOOGLE_AUTH_INTENT_KEY = "pendingGoogleAuthIntent";
 
 export function getToken() {
   if (typeof window === "undefined") {
@@ -151,6 +152,31 @@ export function clearPendingRegistrationCredentials() {
   }
 
   window.sessionStorage.removeItem(PENDING_REGISTRATION_KEY);
+}
+
+export function setPendingGoogleAuthIntent(intent: "login" | "signup") {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.setItem(PENDING_GOOGLE_AUTH_INTENT_KEY, intent);
+}
+
+export function getPendingGoogleAuthIntent() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const intent = window.sessionStorage.getItem(PENDING_GOOGLE_AUTH_INTENT_KEY);
+  return intent === "login" || intent === "signup" ? intent : null;
+}
+
+export function clearPendingGoogleAuthIntent() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.removeItem(PENDING_GOOGLE_AUTH_INTENT_KEY);
 }
 
 export function clearSession() {

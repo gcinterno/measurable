@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { AuthGuard } from "@/components/auth/AuthGuard";
@@ -14,10 +14,13 @@ import {
   RegisterApiError,
 } from "@/lib/api/auth";
 import {
+  clearPendingGoogleAuthIntent,
   clearLogoutInProgress,
   clearSession,
+  getPendingGoogleAuthIntent,
   setPendingVerificationEmail,
 } from "@/lib/auth/session";
+import { trackEvent } from "@/lib/analytics";
 import { useAuthStore } from "@/lib/store/auth-store";
 
 type OauthHashState = {
@@ -107,6 +110,7 @@ function LoginPageContent() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [quoteIndex, setQuoteIndex] = useState(0);
+  const googleSignupTrackedRef = useRef(false);
   const [oauthHashState, setOauthHashState] = useState<OauthHashState>({
     accessToken: "",
     errorCode: "",
@@ -167,6 +171,19 @@ function LoginPageContent() {
             return;
           }
 
+          const googleAuthIntent = getPendingGoogleAuthIntent();
+          if (
+            googleAuthIntent === "signup" &&
+            !googleSignupTrackedRef.current
+          ) {
+            googleSignupTrackedRef.current = true;
+            trackEvent("sign_up", {
+              method: "google",
+              plan: "free",
+            });
+          }
+
+          clearPendingGoogleAuthIntent();
           login(oauthToken, user);
           if (window.location.hash) {
             window.history.replaceState(
@@ -182,6 +199,7 @@ function LoginPageContent() {
             return;
           }
 
+          clearPendingGoogleAuthIntent();
           clearSession();
           setError("Google sign-in could not be completed. Please try again.");
         } finally {
@@ -202,10 +220,12 @@ function LoginPageContent() {
           normalizedMessage.includes("access denied") ||
           normalizedMessage.includes("cancel")
         ) {
+          clearPendingGoogleAuthIntent();
           setError("Google sign-in was cancelled before completion.");
           return;
         }
 
+        clearPendingGoogleAuthIntent();
         setError("Google sign-in could not be completed. Please try again.");
         return;
       }

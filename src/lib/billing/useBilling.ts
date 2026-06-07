@@ -9,7 +9,17 @@ import {
   type BillingSummary,
   type CheckoutSessionResult,
 } from "@/lib/api/billing";
-import { type BillingPlanCode, normalizeBillingPlanCode } from "@/lib/billing/plans";
+import {
+  getBillingPlanDefinition,
+  type BillingPlanCode,
+  normalizeBillingPlanCode,
+} from "@/lib/billing/plans";
+import { trackEvent } from "@/lib/analytics";
+
+function parsePlanValue(price: string) {
+  const numericPrice = Number(price.replace(/[^0-9.]/g, ""));
+  return Number.isFinite(numericPrice) ? numericPrice : 0;
+}
 
 export function useBilling() {
   const [billing, setBilling] = useState<BillingSummary | null>(null);
@@ -53,6 +63,13 @@ export function useBilling() {
           throw new Error("Checkout URL missing");
         }
 
+        const planDefinition = getBillingPlanDefinition(result.planCode);
+        trackEvent("begin_checkout", {
+          billing_plan: result.planCode,
+          billing_cycle: "monthly",
+          value: parsePlanValue(planDefinition.price),
+          currency: "USD",
+        });
         window.location.assign(result.checkoutUrl);
         return result;
       }

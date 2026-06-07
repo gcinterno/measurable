@@ -11,6 +11,7 @@ import {
   registerUser,
   RegisterApiError,
 } from "@/lib/api/auth";
+import { trackEvent } from "@/lib/analytics";
 import { getSignupAttributionFields } from "@/lib/attribution";
 import {
   setPendingRegistrationCredentials,
@@ -79,6 +80,10 @@ export default function RegisterPage() {
         password,
         fullName: fullName.trim(),
         ...attribution,
+      });
+      trackEvent("sign_up", {
+        method: "email",
+        plan: "free",
       });
 
       setPendingVerificationEmail(email.trim());
@@ -169,7 +174,7 @@ export default function RegisterPage() {
 
               {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
-              <AuthSocialPlaceholders />
+              <AuthSocialPlaceholders googleIntent="signup" />
 
               <div className="pt-2 text-center">
                 <p className="text-sm text-[var(--text-secondary)]">

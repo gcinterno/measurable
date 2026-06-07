@@ -1,5 +1,13 @@
 "use client";
 
+import { trackEvent } from "@/lib/analytics";
+
+type UpgradeClickAnalytics = {
+  currentPlan: string;
+  targetPlan: string;
+  ctaLocation: string;
+};
+
 type UpgradeCTAProps = {
   label: string;
   onClick?: () => void;
@@ -7,6 +15,7 @@ type UpgradeCTAProps = {
   disabled?: boolean;
   variant?: "primary" | "secondary";
   className?: string;
+  analytics?: UpgradeClickAnalytics;
 };
 
 export function UpgradeCTA({
@@ -16,11 +25,24 @@ export function UpgradeCTA({
   disabled = false,
   variant = "primary",
   className = "",
+  analytics,
 }: UpgradeCTAProps) {
+  function handleClick() {
+    if (analytics) {
+      trackEvent("upgrade_click", {
+        current_plan: analytics.currentPlan,
+        target_plan: analytics.targetPlan,
+        cta_location: analytics.ctaLocation,
+      });
+    }
+
+    onClick?.();
+  }
+
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={handleClick}
       disabled={disabled || loading}
       className={`inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
         variant === "primary"

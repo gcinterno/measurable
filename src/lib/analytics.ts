@@ -15,6 +15,10 @@ declare global {
 const BLOCKED_PARAM_NAMES = [
   "accessToken",
   "access_token",
+  "clientName",
+  "client_name",
+  "customerEmail",
+  "customer_email",
   "email",
   "fullName",
   "full_name",
@@ -25,6 +29,8 @@ const BLOCKED_PARAM_NAMES = [
   "raw_prompt",
   "reportContent",
   "report_content",
+  "stripeCustomerEmail",
+  "stripe_customer_email",
   "token",
 ] as const;
 
