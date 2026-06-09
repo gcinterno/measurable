@@ -2,45 +2,53 @@
 
 import { useEffect, useState } from "react";
 
-import { fetchReports } from "@/lib/api/reports";
+import {
+  getLastAccountSummary,
+  refreshAccountSummary,
+  subscribeAccountSummary,
+} from "@/lib/api/account";
 import { fetchWorkspaces, resolveActiveWorkspace } from "@/lib/api/workspaces";
 import { isAbortError, isAuthError } from "@/lib/api";
 import type { Workspace } from "@/types/workspace";
 
-function isReportFromCurrentMonth(createdAt: string) {
-  if (!createdAt) {
-    return false;
-  }
-
-  const createdDate = new Date(createdAt);
-
-  if (Number.isNaN(createdDate.getTime())) {
-    return false;
-  }
-
-  const now = new Date();
-
-  return (
-    createdDate.getFullYear() === now.getFullYear() &&
-    createdDate.getMonth() === now.getMonth()
-  );
-}
-
 export function useActiveWorkspace(options?: { includeReportsUsage?: boolean }) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
-  const [reportsUsedThisMonth, setReportsUsedThisMonth] = useState(0);
+  const [reportsUsedThisMonth, setReportsUsedThisMonth] = useState(() => {
+    const summary = getLastAccountSummary();
+    return typeof summary?.reportsUsed === "number" ? summary.reportsUsed : 0;
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
+    const unsubscribe = options?.includeReportsUsage
+      ? subscribeAccountSummary((summary) => {
+          if (!active) {
+            return;
+          }
+
+          setReportsUsedThisMonth(
+            typeof summary.reportsUsed === "number" ? summary.reportsUsed : 0
+          );
+        })
+      : () => {};
 
     async function loadWorkspaceSummary() {
       try {
         setLoading(true);
-
-        const [workspaces, reports] = await Promise.all([
+        const [workspaces, accountSummary] = await Promise.all([
           fetchWorkspaces(),
-          options?.includeReportsUsage ? fetchReports().catch(() => []) : Promise.resolve([]),
+          options?.includeReportsUsage
+            ? refreshAccountSummary({ signal: controller.signal }).catch((error) => {
+                if (isAbortError(error) || isAuthError(error)) {
+                  throw error;
+                }
+
+                console.error("workspace account summary load error:", error);
+                return getLastAccountSummary();
+              })
+            : Promise.resolve(null),
         ]);
 
         if (!active) {
@@ -49,7 +57,7 @@ export function useActiveWorkspace(options?: { includeReportsUsage?: boolean }) 
 
         setWorkspace(resolveActiveWorkspace(workspaces));
         setReportsUsedThisMonth(
-          reports.filter((report) => isReportFromCurrentMonth(report.createdAt)).length
+          typeof accountSummary?.reportsUsed === "number" ? accountSummary.reportsUsed : 0
         );
       } catch (error) {
         if (!active || isAbortError(error) || isAuthError(error)) {
@@ -68,6 +76,8 @@ export function useActiveWorkspace(options?: { includeReportsUsage?: boolean }) 
 
     return () => {
       active = false;
+      unsubscribe();
+      controller.abort();
     };
   }, [options?.includeReportsUsage]);
 

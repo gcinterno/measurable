@@ -217,6 +217,7 @@ export default function PricingPage() {
   const updatedPlan =
     pricingCards.find((plan) => plan.code === updatedPlanCode) || null;
   const confirmLoading = Boolean(pendingPlanCode && checkoutLoadingPlan === pendingPlanCode);
+  const isPaidUser = currentPlanCode !== "free";
   const postUpdateSummary = useMemo(() => {
     if (!updatedPlan || !billing) {
       return null;
@@ -250,7 +251,23 @@ export default function PricingPage() {
       return;
     }
 
-    router.push("/wishlist");
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+
+    if (planCode === currentPlanCode) {
+      return;
+    }
+
+    setUpdatedPlanCode(null);
+
+    if (isPaidUser) {
+      setPendingPlanCode(planCode);
+      return;
+    }
+
+    await startCheckout(planCode);
   }
 
   async function handleConfirmPlanChange() {
@@ -408,7 +425,7 @@ export default function PricingPage() {
                         trackEvent("upgrade_click", {
                           current_plan: currentPlanCode,
                           target_plan: plan.code,
-                          cta_location: "pricing_plan_card",
+                          cta_location: "pricing_card",
                         });
                       }
 
@@ -424,7 +441,9 @@ export default function PricingPage() {
                     {isCurrent
                       ? `Current plan: ${plan.name}`
                       : isLoading
-                        ? "Loading..."
+                        ? isPaidUser
+                          ? "Updating plan..."
+                          : "Redirecting to checkout..."
                         : plan.cta}
                   </button>
                 </div>
@@ -530,13 +549,13 @@ export default function PricingPage() {
               <div className="relative flex items-start justify-between gap-4">
                 <div className="max-w-[420px]">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-blue-100/85">
-                    Plan Upgrade
+                    Plan Change
                   </p>
                   <h2 className="mt-2 text-3xl font-semibold tracking-[-0.06em] text-white sm:mt-3 sm:text-[2.2rem]">
-                    Upgrade to {pendingPlan.name}
+                    Switch to {pendingPlan.name}
                   </h2>
                   <p className="mt-1.5 max-w-[300px] text-sm leading-5 text-blue-50/88 sm:mt-2 sm:max-w-none sm:text-[15px] sm:leading-6">
-                    Unlock more reports, multi-platform insights, and automated reporting.
+                    Confirm the change before we start the Stripe billing flow for this subscription.
                   </p>
                   <div className="mt-3 flex items-center gap-2 sm:hidden">
                     {pendingPlan.code === "pro" ? (
@@ -686,7 +705,7 @@ export default function PricingPage() {
                   disabled={confirmLoading}
                   className="inline-flex min-h-[48px] items-center justify-center rounded-xl bg-[linear-gradient(135deg,#1749ff_0%,#0f67ff_100%)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(23,73,255,0.24)] transition duration-200 hover:-translate-y-0.5 hover:brightness-[1.03] disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-12 sm:px-6 sm:py-3"
                 >
-                  {confirmLoading ? "Updating subscription..." : `Upgrade to ${pendingPlan.name}`}
+                  {confirmLoading ? "Updating plan..." : `Confirm ${pendingPlan.name}`}
                 </button>
               </div>
             </div>

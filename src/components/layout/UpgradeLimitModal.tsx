@@ -1,5 +1,13 @@
 "use client";
 
+import { trackEvent } from "@/lib/analytics";
+
+type UpgradeAnalytics = {
+  currentPlan?: string;
+  targetPlan?: string;
+  ctaLocation: string;
+};
+
 type UpgradeLimitModalProps = {
   open: boolean;
   title?: string;
@@ -7,6 +15,7 @@ type UpgradeLimitModalProps = {
   primaryLabel?: string;
   onClose: () => void;
   onUpgrade: () => void;
+  analytics?: UpgradeAnalytics;
 };
 
 export function UpgradeLimitModal({
@@ -16,6 +25,7 @@ export function UpgradeLimitModal({
   primaryLabel = "View plans",
   onClose,
   onUpgrade,
+  analytics,
 }: UpgradeLimitModalProps) {
   if (!open) {
     return null;
@@ -57,7 +67,17 @@ export function UpgradeLimitModal({
           <div className="space-y-3 sm:flex sm:flex-row sm:gap-3 sm:space-y-0">
             <button
               type="button"
-              onClick={onUpgrade}
+              onClick={() => {
+                if (analytics) {
+                  trackEvent("upgrade_click", {
+                    current_plan: analytics.currentPlan || "unknown",
+                    target_plan: analytics.targetPlan || "unknown",
+                    cta_location: analytics.ctaLocation,
+                  });
+                }
+
+                onUpgrade();
+              }}
               className="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#0f172a_0%,#1d4ed8_100%)] px-4 text-sm font-semibold text-white shadow-[0_16px_34px_rgba(29,78,216,0.24)] transition hover:opacity-95 sm:flex-1"
             >
               {primaryLabel}

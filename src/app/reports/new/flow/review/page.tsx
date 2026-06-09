@@ -1048,6 +1048,11 @@ function NewReportFlowReviewPageContent() {
           open={upgradeModalOpen}
           title="Monthly report limit reached"
           message={upgradeModalMessage}
+          analytics={{
+            currentPlan: workspace?.plan || "unknown",
+            targetPlan: "unknown",
+            ctaLocation: "free_limit_modal",
+          }}
           onClose={() => {
             setUpgradeModalOpen(false);
             router.replace(
@@ -1161,6 +1166,13 @@ function NewReportFlowReviewPageContent() {
                   {generationLimitReached ? (
                     <Link
                       href="/pricing"
+                      onClick={() =>
+                        trackEvent("upgrade_click", {
+                          current_plan: workspace?.plan || "unknown",
+                          target_plan: "unknown",
+                          cta_location: "free_limit_modal",
+                        })
+                      }
                       className="mt-4 inline-flex rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
                     >
                       View plans

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { useI18n } from "@/components/providers/LanguageProvider";
+import { trackEvent } from "@/lib/analytics";
 import { fetchAccountSummary, updateAccountDisplayName, type AccountSummary } from "@/lib/api/account";
 import { isAbortError, isAuthError } from "@/lib/api";
 import { API_URL } from "@/lib/api/config";
@@ -710,6 +711,13 @@ export default function SettingsPage() {
                         </p>
                         <Link
                           href="/pricing"
+                          onClick={() =>
+                            trackEvent("upgrade_click", {
+                              current_plan: workspace?.plan || "unknown",
+                              target_plan: "unknown",
+                              cta_location: "dashboard_cta",
+                            })
+                          }
                           className="mt-5 inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
                         >
                           Upgrade your plan

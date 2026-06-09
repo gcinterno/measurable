@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { AppShell } from "@/components/layout/AppShell";
+import { trackEvent } from "@/lib/analytics";
 
 export default function BillingCancelPage() {
   return (
@@ -21,6 +22,13 @@ export default function BillingCancelPage() {
         <div className="mt-8">
           <Link
             href="/pricing"
+            onClick={() =>
+              trackEvent("upgrade_click", {
+                current_plan: "unknown",
+                target_plan: "unknown",
+                cta_location: "billing_page",
+              })
+            }
             className="inline-flex items-center justify-center rounded-2xl bg-[var(--measurable-blue)] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_32px_rgba(23,73,255,0.22)] transition hover:bg-[var(--measurable-blue-hover)]"
           >
             Back to pricing

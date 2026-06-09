@@ -4,6 +4,8 @@ import Link from "next/link";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { UpgradeCTA } from "@/components/billing/UpgradeCTA";
+import { trackEvent } from "@/lib/analytics";
+import { useAccountSummary } from "@/lib/account/useAccountSummary";
 import { useBilling } from "@/lib/billing/useBilling";
 
 function formatPeriodEnd(value: string) {
@@ -104,10 +106,17 @@ function EmptyState({ message }: { message: string }) {
 
 export default function BillingPage() {
   const { billing, loading, error, portalLoading, openPortal, refresh } = useBilling();
+  const { accountSummary } = useAccountSummary();
 
   const isFreePlan = billing?.planCode === "free";
-  const reportsUsed = billing?.reportsUsedThisMonth ?? 0;
-  const reportLimit = billing?.reportsMonthlyLimit ?? null;
+  const reportsUsed =
+    typeof accountSummary?.reportsUsed === "number"
+      ? accountSummary.reportsUsed
+      : (billing?.reportsUsedThisMonth ?? 0);
+  const reportLimit =
+    typeof accountSummary?.reportsLimit === "number"
+      ? accountSummary.reportsLimit
+      : (billing?.reportsMonthlyLimit ?? null);
   const usageLabel = reportLimit === null ? `${reportsUsed} used` : `${reportsUsed} / ${reportLimit} used`;
   const usageProgress =
     reportLimit && reportLimit > 0 ? Math.min((reportsUsed / reportLimit) * 100, 100) : 0;
@@ -136,6 +145,13 @@ export default function BillingPage() {
               </button>
               <Link
                 href="/pricing"
+                onClick={() =>
+                  trackEvent("upgrade_click", {
+                    current_plan: "unknown",
+                    target_plan: "unknown",
+                    cta_location: "billing_page",
+                  })
+                }
                 className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
               >
                 View pricing
@@ -172,6 +188,13 @@ export default function BillingPage() {
                   {isFreePlan ? (
                     <Link
                       href="/pricing"
+                      onClick={() =>
+                        trackEvent("upgrade_click", {
+                          current_plan: billing.planCode || "unknown",
+                          target_plan: "unknown",
+                          cta_location: "billing_page",
+                        })
+                      }
                       className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-[var(--measurable-blue)] px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_32px_rgba(23,73,255,0.22)] transition hover:bg-[var(--measurable-blue-hover)]"
                     >
                       Upgrade
@@ -187,6 +210,13 @@ export default function BillingPage() {
                   )}
                   <Link
                     href="/pricing"
+                    onClick={() =>
+                      trackEvent("upgrade_click", {
+                        current_plan: billing.planCode || "unknown",
+                        target_plan: "unknown",
+                        cta_location: "billing_page",
+                      })
+                    }
                     className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                   >
                     View pricing
@@ -304,6 +334,13 @@ export default function BillingPage() {
                 {isFreePlan ? (
                   <Link
                     href="/pricing"
+                    onClick={() =>
+                      trackEvent("upgrade_click", {
+                        current_plan: billing.planCode || "unknown",
+                        target_plan: "unknown",
+                        cta_location: "billing_page",
+                      })
+                    }
                     className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                   >
                     View pricing

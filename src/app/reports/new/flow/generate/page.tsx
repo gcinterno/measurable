@@ -7,6 +7,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/layout/AppShell";
 import { useI18n } from "@/components/providers/LanguageProvider";
+import { trackEvent } from "@/lib/analytics";
 import { DesktopFlowSteps } from "@/components/reports/flow/DesktopFlowSteps";
 import { MobileFlowHeader } from "@/components/reports/flow/MobileFlowHeader";
 import { FEATURES } from "@/config/features";
@@ -1041,6 +1042,13 @@ function NewReportFlowGeneratePageContent() {
                           </p>
                           <Link
                             href="/pricing"
+                            onClick={() =>
+                              trackEvent("upgrade_click", {
+                                current_plan: workspace?.plan || "unknown",
+                                target_plan: "unknown",
+                                cta_location: "dashboard_cta",
+                              })
+                            }
                             className="mt-5 inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
                           >
                             Upgrade your plan

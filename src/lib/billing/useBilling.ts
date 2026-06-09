@@ -91,7 +91,7 @@ export function useBilling() {
       return result satisfies CheckoutSessionResult;
     } catch (checkoutError) {
       console.error("billing checkout start error:", checkoutError);
-      setError("We could not start checkout right now.");
+      setError("We couldn't start the billing flow. Please try again.");
       return null;
     } finally {
       setCheckoutLoadingPlan("");

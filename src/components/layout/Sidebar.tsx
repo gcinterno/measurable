@@ -1,19 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 import { PlanLimitsSummary } from "@/components/workspace/PlanLimitsSummary";
 import { useI18n } from "@/components/providers/LanguageProvider";
-import {
-  getLastAccountSummary,
-  refreshAccountSummary,
-  subscribeAccountSummary,
-  type AccountSummary,
-} from "@/lib/api/account";
+import { trackEvent } from "@/lib/analytics";
 import { logoutUser } from "@/lib/api/auth";
 import { startLogoutInProgress } from "@/lib/auth/session";
+import { useAccountSummary } from "@/lib/account/useAccountSummary";
 import { useAuthStore } from "@/lib/store/auth-store";
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 
@@ -124,62 +120,8 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
   const logout = useAuthStore((state) => state.logout);
   const { workspace } = useActiveWorkspace();
   const [collapsed, setCollapsed] = useState(false);
-  const [accountSummary, setAccountSummary] = useState<AccountSummary | null>(null);
-  const [summaryLoading, setSummaryLoading] = useState(true);
+  const { accountSummary, loading: summaryLoading } = useAccountSummary();
   const isCollapsed = !mobile && collapsed;
-
-  useEffect(() => {
-    let active = true;
-    const controller = new AbortController();
-    const unsubscribe = subscribeAccountSummary((summary) => {
-      if (!active) {
-        return;
-      }
-
-      setAccountSummary(summary);
-      setSummaryLoading(false);
-    });
-    const cachedSummary = getLastAccountSummary();
-
-    if (cachedSummary) {
-      setAccountSummary(cachedSummary);
-      setSummaryLoading(false);
-    }
-
-    async function loadAccountSummary() {
-      try {
-        setSummaryLoading((current) => current && !cachedSummary);
-        const summary = await refreshAccountSummary({
-          signal: controller.signal,
-        });
-
-        if (!active) {
-          return;
-        }
-
-        setAccountSummary(summary);
-      } catch (error) {
-        if (!active || controller.signal.aborted) {
-          return;
-        }
-
-        console.error("sidebar account summary load error:", error);
-        setAccountSummary(null);
-      } finally {
-        if (active) {
-          setSummaryLoading(false);
-        }
-      }
-    }
-
-    void loadAccountSummary();
-
-    return () => {
-      active = false;
-      unsubscribe();
-      controller.abort();
-    };
-  }, []);
 
   const monthlyReportsSummary = useMemo(() => {
     if (summaryLoading && !accountSummary) {
@@ -375,7 +317,17 @@ export function Sidebar({ items, mobile = false, onNavigate }: SidebarProps) {
 
             <Link
               href="/wishlist"
-              onClick={onNavigate}
+              onClick={() => {
+                trackEvent("upgrade_click", {
+                  current_plan:
+                    accountSummary?.currentPlanCode ||
+                    workspace?.plan ||
+                    "unknown",
+                  target_plan: "unknown",
+                  cta_location: mobile ? "mobile_menu" : "sidebar",
+                });
+                onNavigate?.();
+              }}
               className={`group inline-flex w-full items-center rounded-2xl border border-[#2f63ff]/22 bg-[linear-gradient(135deg,rgba(23,73,255,0.18),rgba(96,165,250,0.08)_58%,rgba(255,255,255,0.06))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_14px_30px_rgba(7,17,31,0.18)] transition hover:border-[#7fb1ff]/38 hover:bg-[linear-gradient(135deg,rgba(23,73,255,0.24),rgba(96,165,250,0.12)_58%,rgba(255,255,255,0.08))] ${
                 isCollapsed ? "justify-center px-2 py-3" : "gap-3 px-4 py-3.5"
               }`}

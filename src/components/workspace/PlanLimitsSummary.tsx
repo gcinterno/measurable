@@ -3,6 +3,8 @@
 import Link from "next/link";
 
 import { FEATURES } from "@/config/features";
+import { trackEvent } from "@/lib/analytics";
+import { useAccountSummary } from "@/lib/account/useAccountSummary";
 import { formatNumber } from "@/lib/formatters";
 import {
   formatReportsUsageLabel,
@@ -126,24 +128,32 @@ function ProgressStat({
 
 export function PlanLimitsSummary({
   workspace,
-  reportsUsedThisMonth = 0,
+  reportsUsedThisMonth,
   estimatedSlides = 0,
   compact = false,
   variant = "default",
 }: PlanLimitsSummaryProps) {
+  const { accountSummary } = useAccountSummary();
+
   if (!workspace) {
     return null;
   }
 
+  const effectiveReportsUsedThisMonth =
+    typeof reportsUsedThisMonth === "number"
+      ? reportsUsedThisMonth
+      : typeof accountSummary?.reportsUsed === "number"
+        ? accountSummary.reportsUsed
+        : 0;
   const reportsLimit = getReportsLimit(workspace);
   const reportsPercent =
     reportsLimit && reportsLimit > 0
-      ? Math.min((reportsUsedThisMonth / reportsLimit) * 100, 100)
+      ? Math.min((effectiveReportsUsedThisMonth / reportsLimit) * 100, 100)
       : 0;
   const premiumReports = !reportsLimit && workspace.plan?.toLowerCase() === "advanced";
   const storageLimit = getStorageLimit(workspace);
   const storagePercent = getStoragePercent(workspace);
-  const reportTone = isReportsNearLimit(workspace, reportsUsedThisMonth)
+  const reportTone = isReportsNearLimit(workspace, effectiveReportsUsedThisMonth)
     ? "warning"
     : "default";
   const storageTone = isStorageNearLimit(workspace) ? "warning" : "default";
@@ -153,10 +163,10 @@ export function PlanLimitsSummary({
   const planLabel = formatPlanName(workspace.plan);
   const showUpgrade = shouldShowUpgradeCta({
     workspace,
-    reportsUsedThisMonth,
+    reportsUsedThisMonth: effectiveReportsUsedThisMonth,
     estimatedSlides,
   });
-  const reportsLabel = formatReportsUsageLabel(workspace, reportsUsedThisMonth);
+  const reportsLabel = formatReportsUsageLabel(workspace, effectiveReportsUsedThisMonth);
   const slidesLabel = formatSlidesUsageLabel(workspace);
 
   if (variant === "sidebar") {
@@ -198,6 +208,13 @@ export function PlanLimitsSummary({
           {showUpgrade ? (
             <Link
               href="/wishlist"
+              onClick={() =>
+                trackEvent("upgrade_click", {
+                  current_plan: workspace.plan || "unknown",
+                  target_plan: "unknown",
+                  cta_location: "dashboard_cta",
+                })
+              }
               className="inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/8 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/12"
             >
               Join Wishlist
@@ -243,6 +260,13 @@ export function PlanLimitsSummary({
         {showUpgrade ? (
           <Link
             href="/wishlist"
+            onClick={() =>
+              trackEvent("upgrade_click", {
+                current_plan: workspace.plan || "unknown",
+                target_plan: "unknown",
+                cta_location: "dashboard_cta",
+              })
+            }
             className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold !text-white transition hover:bg-slate-800"
           >
             Join Wishlist
