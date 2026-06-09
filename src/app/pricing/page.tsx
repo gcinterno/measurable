@@ -251,23 +251,7 @@ export default function PricingPage() {
       return;
     }
 
-    if (!user) {
-      router.push("/login");
-      return;
-    }
-
-    if (planCode === currentPlanCode) {
-      return;
-    }
-
-    setUpdatedPlanCode(null);
-
-    if (isPaidUser) {
-      setPendingPlanCode(planCode);
-      return;
-    }
-
-    await startCheckout(planCode);
+    router.push("/wishlist");
   }
 
   async function handleConfirmPlanChange() {
