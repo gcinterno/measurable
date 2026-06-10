@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AdminPageShell } from "@/components/admin/AdminPageShell";
 import { fetchAdminUsers, type AdminUserRow } from "@/lib/api/admin";
 
-function formatDate(value: string) {
+function formatDate(value?: string | null) {
   if (!value) {
     return "—";
   }
@@ -22,7 +22,7 @@ function formatDate(value: string) {
       }).format(date);
 }
 
-function formatRelativeTime(value: string) {
+function formatRelativeTime(value?: string | null) {
   if (!value) {
     return "Never";
   }
@@ -461,18 +461,22 @@ export default function AdminUsersPage() {
                       </td>
                       <td className="border-b border-[var(--border-soft)] px-4 py-4">
                         <div className="text-sm text-[var(--text-secondary)]">
-                          {user.lastReportCreated ? formatRelativeTime(user.lastReportCreated) : "Never"}
+                          {user.lastReportCreatedAt
+                            ? formatRelativeTime(user.lastReportCreatedAt)
+                            : "Never"}
                         </div>
                         <div className="mt-1 text-xs text-[var(--text-muted)]">
-                          {user.lastReportCreated ? formatDate(user.lastReportCreated) : "No reports yet"}
+                          {user.lastReportCreatedAt
+                            ? formatDate(user.lastReportCreatedAt)
+                            : "No reports yet"}
                         </div>
                       </td>
                       <td className="border-b border-[var(--border-soft)] px-4 py-4">
                         <div className="text-sm text-[var(--text-secondary)]">
-                          {formatRelativeTime(user.lastLogin)}
+                          {formatRelativeTime(user.lastLoginAt)}
                         </div>
                         <div className="mt-1 text-xs text-[var(--text-muted)]">
-                          {user.lastLogin ? formatDate(user.lastLogin) : "No login recorded"}
+                          {user.lastLoginAt ? formatDate(user.lastLoginAt) : "No login recorded"}
                         </div>
                       </td>
                       <td className="border-b border-[var(--border-soft)] px-4 py-4 text-sm text-[var(--text-secondary)]">{formatDate(user.createdAt)}</td>

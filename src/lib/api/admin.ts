@@ -104,8 +104,8 @@ export type AdminUserRow = {
   onboardingCompleted: boolean;
   reportsCount: number;
   reports7d: number;
-  lastReportCreated: string;
-  lastLogin: string;
+  lastReportCreatedAt?: string | null;
+  lastLoginAt?: string | null;
   createdAt: string;
   status: string;
   deleted: boolean;
@@ -604,8 +604,19 @@ export async function fetchAdminUsers() {
     ),
     reportsCount: getNumber(item.reports_count || item.reportsCount),
     reports7d: getNumber(item.reports_7d || item.reportsLast7Days || item.reports_last_7_days),
-    lastReportCreated: getString(item.last_report_created || item.lastReportCreated),
-    lastLogin: getString(item.last_login || item.lastLogin),
+    lastReportCreatedAt: getString(
+      item.last_report_created_at ??
+        item.last_report_at ??
+        item.last_report_created ??
+        item.lastReportCreated,
+      ""
+    ) || null,
+    lastLoginAt: getString(
+      item.last_login_at ??
+        item.last_login ??
+        item.lastLogin,
+      ""
+    ) || null,
     createdAt: getString(item.created_at || item.createdAt),
     status: getString(item.status, getBoolean(item.deleted) ? "deleted" : "active"),
     deleted: getBoolean(item.deleted || item.is_deleted),
