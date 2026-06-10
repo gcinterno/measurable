@@ -526,16 +526,24 @@ function extractMetaConnectionStatus(payload: unknown): IntegrationsStatusResult
 export async function connectMetaIntegration(input?: {
   workspaceId?: string | null;
   source?: string | null;
+  reconnect?: boolean;
 }) {
   const activeWorkspaceId = await getRequiredWorkspaceId(input?.workspaceId);
-  const endpoint = `/integrations/meta/connect-pages?workspace_id=${encodeURIComponent(
-    activeWorkspaceId
-  )}`;
+  const searchParams = new URLSearchParams({
+    workspace_id: activeWorkspaceId,
+  });
+
+  if (input?.reconnect) {
+    searchParams.set("reconnect", "true");
+  }
+
+  const endpoint = `/integrations/meta/connect-pages?${searchParams.toString()}`;
   const connectUrl = apiUrl(endpoint);
 
   console.log("[MetaOAuth][connect]", {
     activeWorkspaceId,
     source: input?.source || null,
+    reconnect: input?.reconnect === true,
     connectUrl,
     hasAuthorization: Boolean(getAuthHeaders()?.Authorization),
   });
@@ -556,6 +564,7 @@ export async function connectMetaIntegration(input?: {
   console.info("META_CONNECT_RESPONSE", {
     workspace_id: activeWorkspaceId,
     source: input?.source || null,
+    reconnect: input?.reconnect === true,
     status: res.status,
     ok: res.ok,
     duration_ms: Date.now() - requestStartedAt,
@@ -652,6 +661,38 @@ export async function fetchMetaInstagramAccounts(
   console.log("meta instagram accounts response:", text);
 
   const payload = JSON.parse(text) as MetaPagesResponse;
+  return normalizePages(payload);
+}
+
+export async function fetchMetaPagesCatalog(integrationId: string) {
+  const endpoint = `/integrations/meta/pages/catalog?integration_id=${encodeURIComponent(
+    integrationId
+  )}`;
+  const res = await fetch(apiUrl(endpoint), {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+  });
+
+  const text = await readApiResponseText(endpoint, res);
+  const payload = JSON.parse(text) as MetaPagesResponse;
+
+  return normalizePages(payload);
+}
+
+export async function fetchMetaInstagramAccountsCatalog(integrationId: string) {
+  const endpoint = `/integrations/meta/instagram-accounts/catalog?integration_id=${encodeURIComponent(
+    integrationId
+  )}`;
+  const res = await fetch(apiUrl(endpoint), {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+  });
+
+  const text = await readApiResponseText(endpoint, res);
+  const payload = JSON.parse(text) as MetaPagesResponse;
+
   return normalizePages(payload);
 }
 

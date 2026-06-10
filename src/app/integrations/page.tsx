@@ -9,7 +9,8 @@ import { UserSuggestionModal } from "@/components/suggestions/UserSuggestionModa
 import {
   connectMetaIntegration,
   disconnectMetaIntegration,
-  fetchMetaPages,
+  fetchMetaInstagramAccountsCatalog,
+  fetchMetaPagesCatalog,
   fetchIntegrationsConnectionStatus,
   validateMetaAuthUrl,
 } from "@/lib/api/integrations";
@@ -42,13 +43,29 @@ import {
 } from "@/lib/integrations/catalog";
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 
+type MetaRefreshResult = {
+  connected: boolean;
+  integrationId: string;
+  facebookPagesCount: number;
+  instagramAccountsCount: number;
+  catalogsLoaded: boolean;
+};
+
 function IntegrationsPageContent() {
   const { workspace, loading: workspaceLoading } = useActiveWorkspace();
   const [metaLoading, setMetaLoading] = useState(false);
   const [metaStatusLoading, setMetaStatusLoading] = useState(true);
+  const [metaCatalogsLoading, setMetaCatalogsLoading] = useState(true);
   const [metaError, setMetaError] = useState("");
   const [metaStatusMessage, setMetaStatusMessage] = useState("");
+  const [metaReconnectMessage, setMetaReconnectMessage] = useState("");
   const [metaConnected, setMetaConnected] = useState(false);
+  const [metaConnectMode, setMetaConnectMode] = useState<"connect" | "reconnect" | null>(
+    null
+  );
+  const [facebookPagesCount, setFacebookPagesCount] = useState(0);
+  const [instagramAccountsCount, setInstagramAccountsCount] = useState(0);
+  const [metaCatalogsResolved, setMetaCatalogsResolved] = useState(false);
   const [disconnectLoading, setDisconnectLoading] = useState(false);
   const [suggestionOpen, setSuggestionOpen] = useState(false);
   const activeWorkspaceId = workspace?.id || null;
@@ -73,7 +90,7 @@ function IntegrationsPageContent() {
     }
   }, []);
 
-  const refreshMetaIntegrationState = useCallback(async () => {
+  const refreshMetaIntegrationState = useCallback(async (): Promise<MetaRefreshResult> => {
     logMetaOAuthDev("status refresh started", {
       route: "/integrations",
       workspaceId: activeWorkspaceId,
@@ -83,29 +100,96 @@ function IntegrationsPageContent() {
 
     if (!response.metaConnected) {
       setMetaConnected(false);
+      setFacebookPagesCount(0);
+      setInstagramAccountsCount(0);
+      setMetaCatalogsResolved(false);
+      setMetaReconnectMessage("");
       logMetaOAuthDev("status refresh completed", {
         route: "/integrations",
         connected: false,
         integrationId: response.integrationId || null,
       });
-      return false;
+      return {
+        connected: false,
+        integrationId: response.integrationId || "",
+        facebookPagesCount: 0,
+        instagramAccountsCount: 0,
+        catalogsLoaded: true,
+      };
     }
 
     setMetaConnected(true);
+    const resolvedWorkspaceId = storedContext?.workspaceId || activeWorkspaceId || "";
 
-    if (response.integrationId && (storedContext?.workspaceId || activeWorkspaceId)) {
-      const authorizedPages = await fetchMetaPages(
-        response.integrationId,
-        storedContext?.workspaceId || activeWorkspaceId || ""
-      );
+    if (!response.integrationId) {
+      setFacebookPagesCount(0);
+      setInstagramAccountsCount(0);
+      setMetaCatalogsResolved(false);
+      setMetaReconnectMessage("");
 
+      if (resolvedWorkspaceId) {
+        setIntegrationReportContext({
+          source:
+            storedContext && isMetaFrontendIntegrationKey(storedContext.source)
+              ? storedContext.source
+              : "facebook_pages",
+          integration: "meta",
+          workspaceId: resolvedWorkspaceId,
+          integrationId: undefined,
+          pageId: storedContext?.pageId,
+          pageName: storedContext?.pageName,
+          datasetId: storedContext?.datasetId,
+          synced: storedContext?.synced,
+          requestedSlides: storedContext?.requestedSlides,
+          aiMode: storedContext?.aiMode,
+        });
+      }
+
+      logMetaOAuthDev("status refresh completed without integration id", {
+        route: "/integrations",
+        connected: true,
+      });
+
+      return {
+        connected: true,
+        integrationId: "",
+        facebookPagesCount: 0,
+        instagramAccountsCount: 0,
+        catalogsLoaded: false,
+      };
+    }
+
+    let facebookPagesCount = 0;
+    let instagramAccountsCount = 0;
+    let catalogsLoaded = false;
+
+    try {
+      const [facebookPages, instagramAccounts] = await Promise.all([
+        fetchMetaPagesCatalog(response.integrationId),
+        fetchMetaInstagramAccountsCatalog(response.integrationId),
+      ]);
+
+      facebookPagesCount = facebookPages.length;
+      instagramAccountsCount = instagramAccounts.length;
+      catalogsLoaded = true;
+      setFacebookPagesCount(facebookPagesCount);
+      setInstagramAccountsCount(instagramAccountsCount);
+      setMetaCatalogsResolved(true);
+    } catch (error) {
+      console.error("meta catalog refresh error:", error);
+      setFacebookPagesCount(0);
+      setInstagramAccountsCount(0);
+      setMetaCatalogsResolved(false);
+    }
+
+    if (response.integrationId && resolvedWorkspaceId) {
       setIntegrationReportContext({
         source:
           storedContext && isMetaFrontendIntegrationKey(storedContext.source)
             ? storedContext.source
             : "facebook_pages",
         integration: "meta",
-        workspaceId: storedContext?.workspaceId || activeWorkspaceId || "",
+        workspaceId: resolvedWorkspaceId,
         integrationId: response.integrationId,
         pageId: storedContext?.pageId,
         pageName: storedContext?.pageName,
@@ -114,22 +198,32 @@ function IntegrationsPageContent() {
         requestedSlides: storedContext?.requestedSlides,
         aiMode: storedContext?.aiMode,
       });
-
-      if (authorizedPages.length === 0) {
-        setMetaStatusMessage(
-          "Meta is connected, but we couldn’t find any authorized pages yet."
-        );
-      }
     }
 
     logMetaOAuthDev("status refresh completed", {
       route: "/integrations",
       connected: true,
       integrationId: response.integrationId || null,
+      facebookPagesCount,
+      instagramAccountsCount,
+      catalogsLoaded,
     });
 
-    return true;
+    return {
+      connected: true,
+      integrationId: response.integrationId || "",
+      facebookPagesCount,
+      instagramAccountsCount,
+      catalogsLoaded,
+    };
   }, [activeWorkspaceId]);
+
+  const integrationsStateLoading = metaStatusLoading || metaCatalogsLoading;
+  const connectedButNoAuthorizedPages =
+    metaConnected &&
+    metaCatalogsResolved &&
+    facebookPagesCount === 0 &&
+    instagramAccountsCount === 0;
 
   useEffect(() => {
     const retryAuthUrl = consumePendingMetaOAuthForRetry({
@@ -150,9 +244,10 @@ function IntegrationsPageContent() {
     async function loadIntegrationStatus() {
       try {
         setMetaStatusLoading(true);
-        const connected = await refreshMetaIntegrationState();
+        setMetaCatalogsLoading(true);
+        const result = await refreshMetaIntegrationState();
 
-        if (!active || connected) {
+        if (!active || result.connected) {
           return;
         }
 
@@ -166,6 +261,7 @@ function IntegrationsPageContent() {
       } finally {
         if (active) {
           setMetaStatusLoading(false);
+          setMetaCatalogsLoading(false);
         }
       }
     }
@@ -198,26 +294,56 @@ function IntegrationsPageContent() {
       connectInFlightRef.current = false;
       setMetaLoading(false);
       setMetaStatusLoading(false);
+      setMetaCatalogsLoading(false);
 
       if (event.data.type === "MEASURABLE_META_CONNECT_SUCCESS") {
         setMetaError("");
         try {
-          const connected = await refreshMetaIntegrationState();
-          setMetaStatusMessage(
-            connected
-              ? "Integration connected successfully."
-              : "The connection finished, but we couldn’t confirm the status."
-          );
+          setMetaStatusLoading(true);
+          setMetaCatalogsLoading(true);
+          const result = await refreshMetaIntegrationState();
+          if (!result.connected) {
+            setMetaReconnectMessage("");
+            setMetaStatusMessage(
+              "The connection finished, but we couldn’t confirm the status."
+            );
+          } else if (!result.catalogsLoaded) {
+            setMetaReconnectMessage("");
+            setMetaStatusMessage(
+              metaConnectMode === "reconnect"
+                ? "Meta reconnected, but we couldn’t refresh authorized pages. Please reload or try again."
+                : "Meta connected, but we couldn’t refresh authorized pages. Please reload or try again."
+            );
+          } else if (
+            metaConnectMode === "reconnect" &&
+            result.facebookPagesCount === 0 &&
+            result.instagramAccountsCount === 0
+          ) {
+            setMetaStatusMessage("");
+            setMetaReconnectMessage(
+              "No authorized pages were found. Make sure you selected at least one Facebook Page during Meta authorization."
+            );
+          } else {
+            setMetaReconnectMessage("");
+            setMetaStatusMessage("Integration connected successfully.");
+          }
         } catch (error) {
           console.error("meta popup refresh error:", error);
           setMetaError("The connection finished, but we couldn’t refresh the status.");
+        } finally {
+          setMetaStatusLoading(false);
+          setMetaCatalogsLoading(false);
+          setMetaConnectMode(null);
         }
         return;
       }
 
       setMetaStatusMessage("");
+      setMetaConnectMode(null);
       setMetaError(
-        event.data.message || "We couldn’t complete the Meta connection. Please try again."
+        metaConnectMode === "reconnect"
+          ? "We couldn’t reconnect Meta. Please try again."
+          : "We couldn’t connect Meta. Please try again."
       );
     }
 
@@ -227,9 +353,12 @@ function IntegrationsPageContent() {
       stopPopupPolling();
       window.removeEventListener("message", handleMetaWindowMessage);
     };
-  }, [activeWorkspaceId, refreshMetaIntegrationState, stopPopupPolling]);
+  }, [activeWorkspaceId, metaConnectMode, refreshMetaIntegrationState, stopPopupPolling]);
 
-  async function handleMetaConnect() {
+  async function handleMetaConnect(input?: {
+    source?: "facebook_pages" | "instagram_business";
+    reconnect?: boolean;
+  }) {
     if (connectInFlightRef.current) {
       console.warn("META_CONNECT_DUPLICATE_IGNORED", {
         route: "/integrations",
@@ -240,12 +369,14 @@ function IntegrationsPageContent() {
     let popupStarted = false;
 
     try {
+      const reconnect = input?.reconnect === true;
       connectInFlightRef.current = true;
       popupCallbackReceivedRef.current = false;
       setMetaLoading(true);
+      setMetaConnectMode(reconnect ? "reconnect" : "connect");
       setMetaError("");
-      setMetaStatusMessage("Connecting...");
-      setMetaStatusLoading(true);
+      setMetaReconnectMessage("");
+      setMetaStatusMessage(reconnect ? "Reconnecting..." : "Connecting...");
       const storedContext = getIntegrationReportContext();
       const connectWorkspaceId = activeWorkspaceId || storedContext?.workspaceId || "";
       const { tokenReady } = hasMetaConnectPrerequisites();
@@ -263,9 +394,10 @@ function IntegrationsPageContent() {
       }
 
       const source =
-        storedContext && isMetaFrontendIntegrationKey(storedContext.source)
+        input?.source ||
+        (storedContext && isMetaFrontendIntegrationKey(storedContext.source)
           ? storedContext.source
-          : "facebook_pages";
+          : "facebook_pages");
 
       clearMetaOAuthDebugUrl();
       clearStoredMetaIntegrationState();
@@ -292,6 +424,7 @@ function IntegrationsPageContent() {
       const response = await connectMetaIntegration({
         workspaceId: connectWorkspaceId,
         source,
+        reconnect,
       });
 
       const rawAuthUrl = response.authUrlFromBackend || response.redirectUrl;
@@ -321,7 +454,6 @@ function IntegrationsPageContent() {
           starts_with_facebook: validation.startsWithFacebook,
           contains_dialog_oauth: validation.containsDialogOAuth,
         });
-        setMetaConnected(false);
         throw new Error(
           "The backend did not return a valid Meta OAuth URL with /dialog/oauth."
         );
@@ -354,7 +486,7 @@ function IntegrationsPageContent() {
           source,
         });
         popupStarted = true;
-        setMetaStatusMessage("Connecting...");
+        setMetaStatusMessage(reconnect ? "Reconnecting..." : "Connecting...");
         stopPopupPolling();
         popupTimeoutRef.current = window.setTimeout(() => {
           logMetaOAuthDev("timeout reached", {
@@ -385,21 +517,49 @@ function IntegrationsPageContent() {
             connectInFlightRef.current = false;
             setMetaLoading(false);
             setMetaStatusLoading(false);
+            setMetaCatalogsLoading(false);
+            setMetaConnectMode(null);
 
             try {
-              const connected = await refreshMetaIntegrationState();
-              if (connected) {
+              setMetaStatusLoading(true);
+              setMetaCatalogsLoading(true);
+              const result = await refreshMetaIntegrationState();
+              if (result.connected) {
                 setMetaError("");
-                setMetaStatusMessage("Integration connected successfully.");
+                if (!result.catalogsLoaded) {
+                  setMetaReconnectMessage("");
+                  setMetaStatusMessage(
+                    reconnect
+                      ? "Meta reconnected, but we couldn’t refresh authorized pages. Please reload or try again."
+                      : "Meta connected, but we couldn’t refresh authorized pages. Please reload or try again."
+                  );
+                } else if (
+                  reconnect &&
+                  result.facebookPagesCount === 0 &&
+                  result.instagramAccountsCount === 0
+                ) {
+                  setMetaStatusMessage("");
+                  setMetaReconnectMessage(
+                    "No authorized pages were found. Make sure you selected at least one Facebook Page during Meta authorization."
+                  );
+                } else {
+                  setMetaReconnectMessage("");
+                  setMetaStatusMessage("Integration connected successfully.");
+                }
                 return;
               }
             } catch (error) {
               console.error("meta popup closed refresh error:", error);
+            } finally {
+              setMetaStatusLoading(false);
+              setMetaCatalogsLoading(false);
             }
 
             setMetaStatusMessage("");
             setMetaError(
-              "The connection window was closed before authorization was completed. Please try again."
+              reconnect
+                ? "We couldn’t reconnect Meta. Please try again."
+                : "We couldn’t connect Meta. Please try again."
             );
           }, META_OAUTH_POPUP_CLOSE_GRACE_MS);
         }, 500);
@@ -407,16 +567,20 @@ function IntegrationsPageContent() {
       }
     } catch (err: unknown) {
       console.error("meta connect error:", err);
-      setMetaConnected(false);
       setMetaStatusMessage("");
+      setMetaConnectMode(null);
       setMetaError(
-        "We could not start the Facebook Pages connection. Try again."
+        input?.reconnect
+          ? "We couldn’t reconnect Meta. Please try again."
+          : "We couldn’t connect Meta. Please try again."
       );
     } finally {
       if (!popupStarted) {
         connectInFlightRef.current = false;
         setMetaLoading(false);
         setMetaStatusLoading(false);
+        setMetaCatalogsLoading(false);
+        setMetaConnectMode(null);
       }
     }
   }
@@ -445,6 +609,10 @@ function IntegrationsPageContent() {
         clearMetaOAuthDebugUrl();
         stopPopupPolling();
         setMetaConnected(false);
+        setFacebookPagesCount(0);
+        setInstagramAccountsCount(0);
+        setMetaCatalogsResolved(false);
+        setMetaReconnectMessage("");
         await refreshMetaIntegrationState();
         setMetaStatusMessage("Integration disconnected successfully.");
       } catch (error) {
@@ -453,7 +621,9 @@ function IntegrationsPageContent() {
       } finally {
         setDisconnectLoading(false);
         setMetaStatusLoading(false);
+        setMetaCatalogsLoading(false);
         setMetaLoading(false);
+        setMetaConnectMode(null);
       }
     })();
   }
@@ -483,7 +653,43 @@ function IntegrationsPageContent() {
       postConnectRedirect: "/integrations",
     });
 
-    void handleMetaConnect();
+    void handleMetaConnect({ source, reconnect: false });
+  }
+
+  function handleMetaReconnect(source?: "facebook_pages" | "instagram_business") {
+    const storedContext = getIntegrationReportContext();
+    const contextWorkspaceId = activeWorkspaceId || storedContext?.workspaceId || "";
+
+    if (!contextWorkspaceId) {
+      setMetaError(
+        "No active workspace selected. Please choose a workspace and try again."
+      );
+      return;
+    }
+
+    const reconnectSource =
+      source ||
+      (storedContext && isMetaFrontendIntegrationKey(storedContext.source)
+        ? storedContext.source
+        : "facebook_pages");
+
+    setPendingMetaSource(reconnectSource);
+
+    setIntegrationReportContext({
+      source: reconnectSource,
+      integration: "meta",
+      workspaceId: contextWorkspaceId,
+      integrationId: storedContext?.integrationId,
+      datasetId: storedContext?.datasetId,
+      pageId: storedContext?.pageId,
+      pageName: storedContext?.pageName,
+      synced: storedContext?.synced ?? false,
+      requestedSlides: storedContext?.requestedSlides,
+      aiMode: storedContext?.aiMode,
+      postConnectRedirect: "/integrations",
+    });
+
+    void handleMetaConnect({ source: reconnectSource, reconnect: true });
   }
 
   return (
@@ -497,7 +703,41 @@ function IntegrationsPageContent() {
         </h2>
       </div>
 
-      {!metaStatusLoading && !metaConnected ? (
+      {connectedButNoAuthorizedPages ? (
+        <section className="mb-5 overflow-hidden rounded-[28px] border border-sky-200 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_40%,#dbeafe_100%)] p-5 shadow-[0_18px_50px_rgba(29,78,216,0.12)] sm:mb-6 sm:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-3xl">
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-700">
+                Meta permissions
+              </p>
+              <h3 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">
+                Meta is connected, but no authorized pages were found.
+              </h3>
+              <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base">
+                Reconnect Meta to review permissions and select the pages you want to use
+                in Measurable.
+              </p>
+              {metaReconnectMessage ? (
+                <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  {metaReconnectMessage}
+                </p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => handleMetaReconnect()}
+              disabled={metaLoading || disconnectLoading}
+              className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#081327_0%,#1d4ed8_100%)] px-5 py-3 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(29,78,216,0.24)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {metaLoading && metaConnectMode === "reconnect"
+                ? "Reconnecting..."
+                : "Reconnect Meta"}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {!integrationsStateLoading && !metaConnected ? (
         <section className="mb-5 rounded-[28px] border border-dashed border-slate-300 bg-slate-50 p-5 sm:mb-6 sm:p-6">
           <h3 className="text-lg font-semibold text-slate-950">
             There are no connected integrations yet
@@ -514,6 +754,12 @@ function IntegrationsPageContent() {
         </section>
       ) : null}
 
+      {metaError ? (
+        <section className="mb-5 rounded-[24px] border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 sm:mb-6">
+          {metaError}
+        </section>
+      ) : null}
+
       <div className="grid grid-cols-2 gap-4 md:gap-6 xl:grid-cols-3">
         {integrationCatalog.map((integration) => (
           <IntegrationCard
@@ -525,7 +771,7 @@ function IntegrationsPageContent() {
             logoAlt={integration.logoAlt}
             status={
               isMetaFrontendIntegrationKey(integration.integrationKey)
-                ? metaStatusLoading
+                ? integrationsStateLoading
                   ? "Checking"
                   : metaConnected
                   ? "Connected"
@@ -534,26 +780,45 @@ function IntegrationsPageContent() {
             }
             actionLabel={
               isMetaFrontendIntegrationKey(integration.integrationKey)
-                ? metaStatusLoading
-                  ? "Checking..."
-                  : metaConnected
-                  ? undefined
-                  : "Connect"
+                ? integrationsStateLoading
+                  ? "Checking connection..."
+                  : connectedButNoAuthorizedPages
+                    ? "Reconnect"
+                    : metaConnected
+                      ? undefined
+                      : "Connect"
                 : integration.actionLabel
+            }
+            loadingLabel={
+              isMetaFrontendIntegrationKey(integration.integrationKey) &&
+              metaConnectMode === "reconnect"
+                ? "Reconnecting..."
+                : "Connecting..."
             }
             onAction={
               isMetaFrontendIntegrationKey(integration.integrationKey)
-                ? metaStatusLoading || metaConnected
+                ? integrationsStateLoading
                   ? undefined
-                  : () =>
-                      handleMetaConnectSource(
-                        integration.integrationKey as "facebook_pages" | "instagram_business"
-                      )
+                  : connectedButNoAuthorizedPages
+                    ? () =>
+                        handleMetaReconnect(
+                          integration.integrationKey as
+                            | "facebook_pages"
+                            | "instagram_business"
+                        )
+                    : metaConnected
+                      ? undefined
+                      : () =>
+                          handleMetaConnectSource(
+                            integration.integrationKey as
+                              | "facebook_pages"
+                              | "instagram_business"
+                          )
                 : undefined
             }
             secondaryActionLabel={
               isMetaFrontendIntegrationKey(integration.integrationKey) &&
-              !metaStatusLoading &&
+              !integrationsStateLoading &&
               metaConnected
                 ? disconnectLoading
                   ? "Disconnecting..."
@@ -562,20 +827,24 @@ function IntegrationsPageContent() {
             }
             onSecondaryAction={
               isMetaFrontendIntegrationKey(integration.integrationKey) &&
-              !metaStatusLoading &&
+              !integrationsStateLoading &&
               metaConnected
                 ? handleMetaDisconnect
                 : undefined
             }
-            disabled={!isMetaFrontendIntegrationKey(integration.integrationKey)}
+            disabled={
+              !isMetaFrontendIntegrationKey(integration.integrationKey) ||
+              integrationsStateLoading ||
+              disconnectLoading
+            }
             loading={
               isMetaFrontendIntegrationKey(integration.integrationKey) &&
-              (metaLoading || metaStatusLoading || disconnectLoading)
+              metaLoading
             }
             secondaryLoading={
               isMetaFrontendIntegrationKey(integration.integrationKey) && disconnectLoading
             }
-            error={isMetaFrontendIntegrationKey(integration.integrationKey) ? metaError : ""}
+            error=""
             />
         ))}
       </div>

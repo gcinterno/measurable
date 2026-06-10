@@ -12,6 +12,7 @@ type IntegrationCardProps = {
   description: string;
   status: IntegrationStatus;
   actionLabel?: string;
+  loadingLabel?: string;
   onAction?: () => void;
   secondaryActionLabel?: string;
   onSecondaryAction?: () => void;
@@ -42,6 +43,7 @@ export function IntegrationCard({
   description,
   status,
   actionLabel,
+  loadingLabel,
   onAction,
   secondaryActionLabel,
   onSecondaryAction,
@@ -104,7 +106,7 @@ export function IntegrationCard({
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/35 border-t-white" />
             ) : null}
             {loading
-              ? messages.integrationsPage.connecting
+              ? loadingLabel || messages.integrationsPage.connecting
               : blockedComingSoon
                 ? messages.common.comingSoon
                 : actionLabel}
