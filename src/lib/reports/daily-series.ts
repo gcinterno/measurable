@@ -155,6 +155,7 @@ function collectMetricSpecificSeries(
 ) {
   if (metricKey === "reach") {
     return [
+      ...collectSeries(record.daily_reach, metricKey),
       ...collectSeries(record.reach_daily, metricKey),
       ...collectSeries(record.viewers_daily, metricKey),
       ...collectSeries(record.viewer_daily, metricKey),
@@ -163,6 +164,7 @@ function collectMetricSpecificSeries(
 
   if (metricKey === "engagement") {
     return [
+      ...collectSeries(record.daily_engagement, metricKey),
       ...collectSeries(record.engagement_daily, metricKey),
       ...collectSeries(record.interactions_daily, metricKey),
       ...collectSeries(record.interaction_daily, metricKey),
@@ -171,6 +173,8 @@ function collectMetricSpecificSeries(
 
   if (metricKey === "page_views") {
     return [
+      ...collectSeries(record.daily_page_views, metricKey),
+      ...collectSeries(record.daily_page_visits, metricKey),
       ...collectSeries(record.page_views_daily, metricKey),
       ...collectSeries(record.pageViewsDaily, metricKey),
       ...collectSeries(record.page_visits_daily, metricKey),
@@ -183,6 +187,7 @@ function collectMetricSpecificSeries(
 
   if (metricKey === "impressions") {
     return [
+      ...collectSeries(record.daily_impressions, metricKey),
       ...collectSeries(record.impressions_daily, metricKey),
     ];
   }
