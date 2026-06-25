@@ -47,6 +47,17 @@ export type DefaultTemplateContext = {
   impressionsDailyPoints: ExecutiveDarkSeriesPoint[];
 };
 
+const REACH_UNAVAILABLE_MESSAGE =
+  "Meta did not return reach for the selected period.";
+const UNIQUE_REACH_UNAVAILABLE_MESSAGE =
+  "Meta did not return unique reach for the selected period.";
+const REACH_AND_IMPRESSIONS_UNAVAILABLE_MESSAGE =
+  "Meta did not return reach or impressions for the selected period.";
+const IMPRESSIONS_VISIBILITY_INSIGHT =
+  "Meta did not return unique reach for the selected period, so the report displays impressions as the available visibility metric.";
+const IMPRESSIONS_UNAVAILABLE_MESSAGE =
+  "Meta did not return impressions for the selected period.";
+
 function formatMetricSummaryValue(metric: unknown): string {
   if (metric === null || metric === undefined || metric === "") {
     return "N/A";
@@ -477,6 +488,135 @@ function buildSourceCaption(integrationLabel: string) {
   return `Based on synchronized ${normalizedLabel.toLowerCase()} data`;
 }
 
+function isFacebookPagesContext(context: DefaultTemplateContext) {
+  return context.coverIntegrationLabel.trim().toLowerCase() === "facebook pages";
+}
+
+function hasMetricValue(value: unknown) {
+  return formatMetricSummaryValue(value) !== "N/A";
+}
+
+function buildSummaryVisibilityNote(context: DefaultTemplateContext) {
+  return `Meta did not return unique reach for the selected period. ${context.impressionsDisplayLabel} are shown as the available visibility metric.`;
+}
+
+function appendVisibilityNote(text: string, note: string) {
+  return text.toLowerCase().includes("impression") ? text : `${text} ${note}`;
+}
+
+function getVisibilityMetricState(context: DefaultTemplateContext) {
+  const hasReach = hasMetricValue(context.report.viewersTotalValue);
+  const hasImpressions = !context.report.impressionsUnavailable && hasMetricValue(context.report.impressionsTotalValue);
+
+  return {
+    hasReach,
+    hasImpressions,
+    usesImpressionsFallback: !hasReach && hasImpressions,
+    hasNoVisibilityMetric: !hasReach && !hasImpressions,
+  };
+}
+
+function buildMetricSlideModel(input: {
+  metricKey: string;
+  branding: DefaultTemplateContext["branding"];
+  sourceCaption: string;
+  metricTitle: string;
+  totalLabel: string;
+  totalValue: string;
+  isAvailable: boolean;
+  unavailableMessage?: string;
+  insightText: string;
+  chartPoints: ExecutiveDarkSeriesPoint[];
+  chartAvailable: boolean;
+  chartMetricLabel: string;
+  highestDayPoint: { date: string; value: number; label?: string } | null;
+  lowestDayPoint: { date: string; value: number; label?: string } | null;
+}): ReachSlideModel {
+  return {
+    metricKey: input.metricKey,
+    branding: input.branding,
+    metricEyebrow: "Metric",
+    metricTitle: input.metricTitle,
+    sourceCaption: input.sourceCaption,
+    totalLabel: input.totalLabel,
+    totalValue: input.totalValue,
+    isAvailable: input.isAvailable,
+    unavailableMessage: input.unavailableMessage,
+    insightText: input.insightText,
+    chartPoints: input.chartPoints,
+    chartAvailable: input.chartAvailable,
+    chartMetricLabel: input.chartMetricLabel,
+    highestDayCard: buildReachCard(
+      "Highest day",
+      input.highestDayPoint,
+      input.chartMetricLabel
+    ),
+    lowestDayCard: buildReachCard(
+      "Lowest day",
+      input.lowestDayPoint,
+      input.chartMetricLabel
+    ),
+  };
+}
+
+function normalizeSummaryMetricValue(metric: unknown): string {
+  const direct = formatMetricSummaryValue(metric);
+  if (direct !== "N/A") {
+    return direct;
+  }
+
+  if (!metric || typeof metric !== "object") {
+    return "N/A";
+  }
+
+  const record = metric as Record<string, unknown>;
+  const candidates = [
+    record.formatted_total,
+    record.formattedTotal,
+    record.post_title,
+    record.postTitle,
+    record.title,
+    record.name,
+    record.caption,
+    record.text,
+    record.url,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return "N/A";
+}
+
+function buildSummaryMetricCard(
+  label: string,
+  metric: unknown,
+  fallbackValue: unknown,
+  fallbackMeta: string,
+  unavailableMeta?: string
+) {
+  const metricUnavailable = isMetricSummaryUnavailable(metric);
+  const metricValue = normalizeSummaryMetricValue(metric);
+  const fallbackFormattedValue = normalizeSummaryMetricValue(fallbackValue);
+  const value = metricUnavailable
+    ? "N/A"
+    : metricValue !== "N/A"
+      ? metricValue
+      : fallbackFormattedValue;
+
+  return {
+    label,
+    value: value !== "N/A" ? value : "N/A",
+    meta:
+      value === "N/A"
+        ? unavailableMeta || formatMetricSummaryDescription(metric, fallbackMeta)
+        : formatMetricSummaryDescription(metric, fallbackMeta),
+  };
+}
+
 function buildReachCard(
   label: string,
   point: { date: string; value: number; label?: string } | null,
@@ -564,20 +704,75 @@ export function buildCoverSlideModel(
 export function buildReachSlideModel(
   context: DefaultTemplateContext
 ): ReachSlideModel {
-  const extremes = getReachExtremes(context.report.viewersDailyPoints);
+  if (isFacebookPagesContext(context)) {
+    const hasReach = hasMetricValue(context.report.viewersTotalValue);
+    const extremes = getReachExtremes(context.report.viewersDailyPoints);
+
+    return buildMetricSlideModel({
+      metricKey: "reach",
+      branding: context.branding,
+      sourceCaption: buildSourceCaption(context.coverIntegrationLabel),
+      metricTitle: "REACH / ALCANCE",
+      totalLabel: "TOTAL REACH",
+      totalValue: hasReach ? formatDisplayNumber(context.report.viewersTotalValue) : "N/A",
+      isAvailable: hasReach,
+      unavailableMessage: hasReach ? undefined : UNIQUE_REACH_UNAVAILABLE_MESSAGE,
+      insightText: hasReach
+        ? context.reachInsight || DEFAULT_AI_INSIGHT_FALLBACK
+        : UNIQUE_REACH_UNAVAILABLE_MESSAGE,
+      chartPoints: hasReach ? context.report.viewersDailyPoints : [],
+      chartAvailable:
+        hasReach &&
+        (context.report.viewersDailyAvailable || context.report.viewersDailyPoints.length > 0),
+      chartMetricLabel: context.report.viewersLabel || "Reach",
+      highestDayPoint: hasReach
+        ? context.report.viewersDailyPoints.length > 0
+          ? extremes.highest
+          : null
+        : null,
+      lowestDayPoint: hasReach
+        ? context.report.viewersDailyPoints.length > 0
+          ? extremes.lowest
+          : null
+        : null,
+    });
+  }
+
+  const visibilityState = getVisibilityMetricState(context);
+  const usesImpressionsFallback = visibilityState.usesImpressionsFallback;
+  const hasNoVisibilityMetric = visibilityState.hasNoVisibilityMetric;
+  const chartPoints = usesImpressionsFallback
+    ? context.impressionsDailyPoints
+    : context.report.viewersDailyPoints;
+  const chartMetricLabel = usesImpressionsFallback
+    ? "Impressions"
+    : context.reachDisplayLabel;
+  const totalValue = usesImpressionsFallback
+    ? formatMetricSummaryValue(context.report.impressionsTotalValue)
+    : formatDisplayNumber(context.report.viewersTotalValue);
+  const extremes = getReachExtremes(chartPoints);
+  const insightText = hasNoVisibilityMetric
+    ? REACH_AND_IMPRESSIONS_UNAVAILABLE_MESSAGE
+    : usesImpressionsFallback
+      ? IMPRESSIONS_VISIBILITY_INSIGHT
+      : context.reachInsight || DEFAULT_AI_INSIGHT_FALLBACK;
 
   if (process.env.NODE_ENV === "development") {
     console.log("[5-slide metric render]", {
       reportId: context.reportId || null,
       slideNumber: "02",
-      metricKey: "reach",
-      formattedTotal: formatDisplayNumber(context.report.viewersTotalValue),
-      isAvailable: true,
-      unavailableReason: "",
-      unavailableMessage: "",
-      dailySeriesLength: context.report.viewersDailyPoints.length,
-      firstDate: context.report.viewersDailyPoints[0]?.date,
-      lastDate: context.report.viewersDailyPoints.at(-1)?.date,
+      metricKey: usesImpressionsFallback ? "impressions" : "reach",
+      formattedTotal: totalValue,
+      isAvailable: !hasNoVisibilityMetric,
+      unavailableReason: hasNoVisibilityMetric ? "missing_visibility_metric" : "",
+      unavailableMessage: hasNoVisibilityMetric
+        ? REACH_AND_IMPRESSIONS_UNAVAILABLE_MESSAGE
+        : usesImpressionsFallback
+          ? REACH_UNAVAILABLE_MESSAGE
+          : "",
+      dailySeriesLength: chartPoints.length,
+      firstDate: chartPoints[0]?.date,
+      lastDate: chartPoints.at(-1)?.date,
     });
   }
 
@@ -592,29 +787,38 @@ export function buildReachSlideModel(
   });
 
   return {
-    metricKey: "reach",
+    metricKey: usesImpressionsFallback ? "impressions" : "reach",
     branding: context.branding,
     metricEyebrow: "Metric",
-    metricTitle: context.reachDisplayLabel,
+    metricTitle: usesImpressionsFallback
+      ? "VISIBILITY / IMPRESSIONS"
+      : `${context.reachDisplayLabel} / REACH`,
     sourceCaption: buildSourceCaption(context.coverIntegrationLabel),
-    totalLabel: `Total de ${context.reachDisplayLabel.toLowerCase()} del periodo`,
-    totalValue: formatDisplayNumber(context.report.viewersTotalValue),
-    isAvailable: true,
-    insightText: context.reachInsight || DEFAULT_AI_INSIGHT_FALLBACK,
-    chartPoints: context.report.viewersDailyPoints,
+    totalLabel: usesImpressionsFallback
+      ? "TOTAL IMPRESSIONS"
+      : "TOTAL REACH",
+    totalValue,
+    isAvailable: !hasNoVisibilityMetric,
+    unavailableMessage: hasNoVisibilityMetric
+      ? REACH_AND_IMPRESSIONS_UNAVAILABLE_MESSAGE
+      : undefined,
+    insightText,
+    chartPoints,
     chartAvailable:
-      context.report.viewersDailyAvailable ||
-      context.report.viewersDailyPoints.length > 0,
-    chartMetricLabel: context.reachDisplayLabel,
+      !hasNoVisibilityMetric &&
+      (usesImpressionsFallback
+        ? context.report.impressionsDailyAvailable || chartPoints.length > 0
+        : context.report.viewersDailyAvailable || chartPoints.length > 0),
+    chartMetricLabel,
     highestDayCard: buildReachCard(
       "Highest day",
       extremes.highest,
-      context.reachDisplayLabel
+      chartMetricLabel
     ),
     lowestDayCard: buildReachCard(
       "Lowest day",
       extremes.lowest,
-      context.reachDisplayLabel
+      chartMetricLabel
     ),
   };
 }
@@ -743,6 +947,46 @@ export function buildEngagementSlideModel(
   };
 }
 
+export function buildThirdMetricSlideModel(
+  context: DefaultTemplateContext
+): ReachSlideModel {
+  if (isFacebookPagesContext(context)) {
+    const isAvailable =
+      !context.report.impressionsUnavailable &&
+      hasMetricValue(context.report.impressionsTotalValue);
+    const extremes = getReachExtremes(context.impressionsDailyPoints);
+
+    return buildMetricSlideModel({
+      metricKey: "impressions",
+      branding: context.branding,
+      sourceCaption: buildSourceCaption(context.coverIntegrationLabel),
+      metricTitle: "IMPRESSIONS / IMPRESIONES",
+      totalLabel: "TOTAL IMPRESSIONS",
+      totalValue: isAvailable
+        ? formatMetricSummaryValue(context.report.impressionsTotalValue)
+        : "N/A",
+      isAvailable,
+      unavailableMessage: isAvailable ? undefined : IMPRESSIONS_UNAVAILABLE_MESSAGE,
+      insightText: isAvailable
+        ? context.report.impressionsInsightText || DEFAULT_AI_INSIGHT_FALLBACK
+        : IMPRESSIONS_UNAVAILABLE_MESSAGE,
+      chartPoints: isAvailable ? context.impressionsDailyPoints : [],
+      chartAvailable:
+        isAvailable &&
+        (context.report.impressionsDailyAvailable || context.impressionsDailyPoints.length > 0),
+      chartMetricLabel: context.report.impressionsLabel || "Impressions",
+      highestDayPoint: isAvailable
+        ? context.report.impressionsHighestDay || extremes.highest
+        : null,
+      lowestDayPoint: isAvailable
+        ? context.report.impressionsLowestDay || extremes.lowest
+        : null,
+    });
+  }
+
+  return buildEngagementSlideModel(context);
+}
+
 export function buildPageViewsSlideModel(
   context: DefaultTemplateContext
 ): ReachSlideModel {
@@ -800,6 +1044,40 @@ export function buildPageViewsSlideModel(
   };
 }
 
+export function buildFourthMetricSlideModel(
+  context: DefaultTemplateContext
+): ReachSlideModel {
+  if (isFacebookPagesContext(context)) {
+    const extremes = getReachExtremes(context.report.engagementDailyPoints);
+
+    return buildMetricSlideModel({
+      metricKey: "engagement",
+      branding: context.branding,
+      sourceCaption: buildSourceCaption(context.coverIntegrationLabel),
+      metricTitle: "ENGAGEMENT",
+      totalLabel: "TOTAL ENGAGEMENT",
+      totalValue: context.report.engagementUnavailable
+        ? "N/A"
+        : formatMetricSummaryValue(context.report.engagementTotalValue),
+      isAvailable: !context.report.engagementUnavailable,
+      unavailableMessage: context.report.engagementUnavailableMessage,
+      insightText: context.report.engagementUnavailable
+        ? context.report.engagementUnavailableMessage || DEFAULT_AI_INSIGHT_FALLBACK
+        : context.report.engagementInsightText || DEFAULT_AI_INSIGHT_FALLBACK,
+      chartPoints: context.report.engagementDailyPoints,
+      chartAvailable:
+        !context.report.engagementUnavailable &&
+        (context.report.engagementDailyAvailable ||
+          context.report.engagementDailyPoints.length > 0),
+      chartMetricLabel: context.report.engagementLabel || "Engagement",
+      highestDayPoint: context.report.engagementHighestDay || extremes.highest,
+      lowestDayPoint: context.report.engagementLowestDay || extremes.lowest,
+    });
+  }
+
+  return buildPageViewsSlideModel(context);
+}
+
 export function buildSummarySlideModel(
   context: DefaultTemplateContext
 ): SummarySlideModel {
@@ -816,7 +1094,11 @@ export function buildSummarySlideModel(
     });
   }
 
+  const isFacebookPages = isFacebookPagesContext(context);
+  const visibilityState = getVisibilityMetricState(context);
+  const usesImpressionsFallback = visibilityState.usesImpressionsFallback;
   const reachValue = formatMetricSummaryValue(context.report.finalSummaryMetrics?.reach);
+  const impressionsValue = formatMetricSummaryValue(context.report.impressionsTotalValue);
   const summaryEngagementUnavailable =
     context.report.engagementUnavailable ||
     isMetricSummaryUnavailable(context.report.finalSummaryMetrics?.engagement);
@@ -839,22 +1121,91 @@ export function buildSummarySlideModel(
   const pageViewsValue = summaryPageViewsUnavailable
     ? "N/A"
     : formatMetricSummaryValue(summaryPageViewsMetric);
+  const aiSummaryBase = context.report.finalSummaryAiText || DEFAULT_AI_INSIGHT_FALLBACK;
+  const recommendationBase =
+    context.report.finalRecommendationText || DEFAULT_AI_INSIGHT_FALLBACK;
+  const summaryMetricsRecord = context.report.finalSummaryMetrics || {};
+  const hasReachMetric = hasMetricValue(context.report.viewersTotalValue);
+  const facebookSummaryMetrics = isFacebookPages
+    ? [
+        buildSummaryMetricCard(
+          "Reach",
+          summaryMetricsRecord.reach,
+          context.report.viewersTotalValue,
+          context.report.viewersLabel || "Total reach in period",
+          UNIQUE_REACH_UNAVAILABLE_MESSAGE
+        ),
+        buildSummaryMetricCard(
+          "Impressions",
+          summaryMetricsRecord.impressions,
+          context.report.impressionsTotalValue,
+          context.report.impressionsLabel || "Total impressions in period",
+          IMPRESSIONS_UNAVAILABLE_MESSAGE
+        ),
+        buildSummaryMetricCard(
+          "Engagement",
+          summaryMetricsRecord.engagement,
+          context.report.engagementTotalValue,
+          context.report.engagementLabel || "Total engagement in period",
+          context.report.engagementUnavailableMessage
+        ),
+        buildSummaryMetricCard(
+          "Page Views",
+          summaryPageViewsMetric,
+          context.report.pageViewsTotalValue,
+          context.report.pageViewsLabel || "Total page views in period",
+          "Meta did not return page views for the selected period."
+        ),
+        buildSummaryMetricCard(
+          "Followers",
+          summaryMetricsRecord.followers,
+          context.report.followersTotalValue,
+          "Total followers in period",
+          "Meta did not return followers for the selected period."
+        ),
+        ...[
+          ["Reactions", summaryMetricsRecord.reactions_total ?? summaryMetricsRecord.reactions, "Reactions from analyzed posts"],
+          ["Comments", summaryMetricsRecord.comments_total ?? summaryMetricsRecord.comments, "Comments from analyzed posts"],
+          ["Shares", summaryMetricsRecord.shares_total ?? summaryMetricsRecord.shares, "Shares from analyzed posts"],
+          ["Posts Analyzed", summaryMetricsRecord.posts_analyzed_count ?? summaryMetricsRecord.posts_analyzed, "Posts analyzed in the selected period"],
+          ["Top Post", summaryMetricsRecord.top_post_by_engagement, "Top post by engagement"],
+        ]
+          .map(([label, metric, meta]) =>
+            buildSummaryMetricCard(label, metric, metric, meta)
+          )
+          .filter((metric) => metric.value !== "N/A"),
+      ]
+    : null;
 
   return {
     title: "Final Summary",
     branding: context.branding,
-    aiSummary: context.report.finalSummaryAiText || DEFAULT_AI_INSIGHT_FALLBACK,
-    recommendation: context.report.finalRecommendationText || DEFAULT_AI_INSIGHT_FALLBACK,
-    metrics: [
+    aiSummary: isFacebookPages && !hasReachMetric
+      ? appendVisibilityNote(aiSummaryBase, UNIQUE_REACH_UNAVAILABLE_MESSAGE)
+      : usesImpressionsFallback
+      ? appendVisibilityNote(aiSummaryBase, buildSummaryVisibilityNote(context))
+      : aiSummaryBase,
+    recommendation: isFacebookPages && !hasReachMetric
+      ? appendVisibilityNote(recommendationBase, UNIQUE_REACH_UNAVAILABLE_MESSAGE)
+      : usesImpressionsFallback
+      ? appendVisibilityNote(recommendationBase, buildSummaryVisibilityNote(context))
+      : recommendationBase,
+    metrics: facebookSummaryMetrics || [
       {
-        label: "Reach",
-        value: reachValue !== "N/A"
-          ? reachValue
-          : formatMetricSummaryValue(context.report.viewersTotalValue),
-        meta: formatMetricSummaryDescription(
-          context.report.finalSummaryMetrics?.reach,
-          context.report.viewersLabel || "Total reach in period"
-        ),
+        label: usesImpressionsFallback ? "Impressions" : "Reach",
+        value: usesImpressionsFallback
+          ? impressionsValue !== "N/A"
+            ? impressionsValue
+            : formatMetricSummaryValue(context.report.impressionsTotalValue)
+          : reachValue !== "N/A"
+            ? reachValue
+            : formatMetricSummaryValue(context.report.viewersTotalValue),
+        meta: usesImpressionsFallback
+          ? "Total impressions in period"
+          : formatMetricSummaryDescription(
+              context.report.finalSummaryMetrics?.reach,
+              context.report.viewersLabel || "Total reach in period"
+            ),
       },
       {
         label: "Engagement",

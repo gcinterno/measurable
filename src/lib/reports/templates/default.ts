@@ -4,10 +4,10 @@ import { SummarySlide } from "@/components/reports/slides/SummarySlide";
 import type { ReportTemplate } from "@/lib/reports/templates";
 import {
   buildCoverSlideModel,
-  buildEngagementSlideModel,
-  buildPageViewsSlideModel,
+  buildFourthMetricSlideModel,
   buildReachSlideModel,
   buildSummarySlideModel,
+  buildThirdMetricSlideModel,
   type DefaultTemplateContext,
 } from "@/lib/reports/templates/default-view-models";
 
@@ -15,8 +15,8 @@ import {
  * Source of truth for the official 5-slide report structure:
  * 1. Cover
  * 2. Reach
- * 3. Engagement
- * 4. Page Views
+ * 3. Impressions or Engagement
+ * 4. Engagement or Page Views
  * 5. Summary
  */
 export const DEFAULT_REPORT_TEMPLATE: ReportTemplate<DefaultTemplateContext> = {
@@ -43,21 +43,21 @@ export const DEFAULT_REPORT_TEMPLATE: ReportTemplate<DefaultTemplateContext> = {
     },
     {
       id: "03",
-      key: "engagement",
+      key: "metric_three",
       layout: "metric",
       eyebrow: "",
       title: "",
       component: ReachSlide,
-      buildModel: buildEngagementSlideModel,
+      buildModel: buildThirdMetricSlideModel,
     },
     {
       id: "04",
-      key: "page_views",
+      key: "metric_four",
       layout: "metric",
       eyebrow: "",
       title: "",
       component: ReachSlide,
-      buildModel: buildPageViewsSlideModel,
+      buildModel: buildFourthMetricSlideModel,
     },
     {
       id: "05",

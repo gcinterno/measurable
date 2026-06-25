@@ -144,14 +144,7 @@ export type ExecutiveDarkViewModel = {
   };
   finalSummaryAiText: string;
   finalRecommendationText: string;
-  finalSummaryMetrics: {
-    reach?: unknown;
-    engagement?: unknown;
-    followers?: unknown;
-    page_views?: unknown;
-    page_visits?: unknown;
-    profile_views?: unknown;
-  } | null;
+  finalSummaryMetrics: Record<string, unknown> | null;
   parseErrors: ExecutiveDarkParseError[];
 };
 
@@ -322,6 +315,25 @@ function getBlockSlideNumber(block: ReportVersionBlock) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function hasImpressionsMetricBlock(blocks: ReportVersionBlock[]) {
+  return blocks.some(
+    (block) =>
+      getBlockMetricKey(block) === "impressions" ||
+      block.type === "impressions_slide"
+  );
+}
+
+function hasImpressionsLayout(blocks: ReportVersionBlock[]) {
+  return (
+    hasImpressionsMetricBlock(blocks) ||
+    blocks.some(
+      (block) =>
+        getBlockMetricKey(block) === "engagement" &&
+        getBlockSlideNumber(block) === 4
+    )
+  );
+}
+
 function normalizeFiveSlideBlocks(blocks: ReportVersionBlock[]) {
   if (blocks.length !== 5) {
     return blocks;
@@ -347,12 +359,19 @@ function normalizeFiveSlideBlocks(blocks: ReportVersionBlock[]) {
   const reachBlock =
     pick((block) => getBlockSlideNumber(block) === 2) ||
     pick((block) => getBlockMetricKey(block) === "reach");
+  const hasImpressions = hasImpressionsLayout(blocks);
+  const impressionsBlock = hasImpressions
+    ? pick((block) => getBlockMetricKey(block) === "impressions") ||
+      pick((block) => block.type === "impressions_slide") ||
+      pick((block) => getBlockSlideNumber(block) === 3)
+    : null;
   const engagementBlock =
-    pick((block) => getBlockSlideNumber(block) === 3) ||
-    pick((block) => getBlockMetricKey(block) === "engagement");
-  const pageViewsBlock =
-    pick((block) => getBlockSlideNumber(block) === 4) ||
-    pick((block) => getBlockMetricKey(block) === "page_views");
+    pick((block) => getBlockMetricKey(block) === "engagement") ||
+    pick((block) => getBlockSlideNumber(block) === (hasImpressions ? 4 : 3));
+  const pageViewsBlock = !hasImpressions
+    ? pick((block) => getBlockMetricKey(block) === "page_views") ||
+      pick((block) => getBlockSlideNumber(block) === 4)
+    : null;
   const summaryBlock =
     pick((block) => getBlockSlideNumber(block) === 5) ||
     pick((block) => getBlockSlideType(block) === "summary");
@@ -360,8 +379,8 @@ function normalizeFiveSlideBlocks(blocks: ReportVersionBlock[]) {
   const ordered = [
     coverBlock,
     reachBlock,
-    engagementBlock,
-    pageViewsBlock,
+    impressionsBlock || engagementBlock,
+    hasImpressions ? engagementBlock : pageViewsBlock,
     summaryBlock,
     ...blocks.filter((block) => !consumed.has(block.id)),
   ].filter((block): block is ReportVersionBlock => block !== null);
@@ -670,10 +689,13 @@ function getMetricTotalValue(
 }
 
 function getImpressionsSlideData(blocks: ReportVersionBlock[]) {
+  const hasImpressions = hasImpressionsLayout(blocks);
   const block =
     blocks.find((item) => getBlockMetricKey(item) === "impressions") ||
     blocks.find((item) => item.type === "impressions_slide") ||
-    blocks.find((item) => getBlockSlideNumber(item) === 3);
+    (hasImpressions
+      ? blocks.find((item) => getBlockSlideNumber(item) === 3)
+      : null);
 
   if (!block) {
     return null;
@@ -753,9 +775,10 @@ function getImpressionsSlideData(blocks: ReportVersionBlock[]) {
 }
 
 function getEngagementSlideData(blocks: ReportVersionBlock[]) {
+  const hasImpressions = hasImpressionsLayout(blocks);
   const block =
     blocks.find((item) => getBlockMetricKey(item) === "engagement") ||
-    blocks.find((item) => getBlockSlideNumber(item) === 3) ||
+    blocks.find((item) => getBlockSlideNumber(item) === (hasImpressions ? 4 : 3)) ||
     null;
 
   if (!block) {
@@ -819,6 +842,11 @@ function getEngagementSlideData(blocks: ReportVersionBlock[]) {
 }
 
 function getPageViewsSlideData(blocks: ReportVersionBlock[]) {
+  const hasImpressions = hasImpressionsLayout(blocks);
+  if (hasImpressions) {
+    return null;
+  }
+
   const block =
     blocks.find((item) => getBlockMetricKey(item) === "page_views") ||
     blocks.find((item) => getBlockSlideNumber(item) === 4) ||
@@ -1439,16 +1467,7 @@ export function buildExecutiveDarkViewModel(
     finalRecommendationText:
       summarySlideData?.recommendation ||
       DEFAULT_INSIGHT_FALLBACK,
-    finalSummaryMetrics: summarySlideData?.metricsSummary
-      ? {
-          reach: summarySlideData.metricsSummary.reach,
-          engagement: summarySlideData.metricsSummary.engagement,
-          followers: summarySlideData.metricsSummary.followers,
-          page_views: summarySlideData.metricsSummary.page_views,
-          page_visits: summarySlideData.metricsSummary.page_visits,
-          profile_views: summarySlideData.metricsSummary.profile_views,
-        }
-      : null,
+    finalSummaryMetrics: summarySlideData?.metricsSummary || null,
     parseErrors,
   };
 }
