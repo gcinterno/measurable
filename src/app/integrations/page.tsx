@@ -25,6 +25,7 @@ import {
   consumePendingMetaOAuthForRetry,
   createPendingMetaOAuth,
   clearMetaOAuthDebugUrl,
+  getMetaOAuthRequestedScopes,
   hasMetaConnectPrerequisites,
   isMetaOAuthWindowMessage,
   logMetaOAuthDev,
@@ -807,6 +808,18 @@ function IntegrationsPageContent() {
         });
         const authUrl = normalizeMetaAuthUrl(response.authUrlFromBackend || response.redirectUrl);
         const validation = validateMetaAuthUrl(authUrl);
+
+        console.info("META_OAUTH_SCOPES_REQUESTED", {
+          route: "/integrations",
+          source: "meta_ads",
+          scopes: getMetaOAuthRequestedScopes(authUrl),
+        });
+        console.info("META_OAUTH_AUTH_URL_CREATED", {
+          route: "/integrations",
+          source: "meta_ads",
+          auth_url: authUrl || null,
+          scopes: getMetaOAuthRequestedScopes(authUrl),
+        });
 
         if (!validation.isValid || typeof window === "undefined") {
           throw new Error("The backend did not return a valid Meta Ads OAuth URL.");

@@ -74,7 +74,7 @@ const templatePreviewVersions: Partial<Record<ReportTemplateId, string>> = {
 
 const LOGO_CROP_SIZE = 512;
 const MAX_BRAND_LOGO_SIZE_BYTES = 5 * 1024 * 1024;
-const LOCKED_SLIDE_COUNTS = new Set([10, 15, 30]);
+const LOCKED_SLIDE_COUNTS = new Set([15, 30]);
 const ALLOWED_BRAND_LOGO_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -312,7 +312,7 @@ function NewReportFlowGeneratePageContent() {
 
   function handleSelectSlides(nextSlides: number) {
     if (LOCKED_SLIDE_COUNTS.has(nextSlides)) {
-      setError("Las opciones de 10, 15 y 30 slides estan temporalmente bloqueadas.");
+      setError("Las opciones de 15 y 30 slides estan temporalmente bloqueadas.");
       return;
     }
 
