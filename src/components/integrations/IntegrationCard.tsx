@@ -20,6 +20,7 @@ type IntegrationCardProps = {
   disabled?: boolean;
   loading?: boolean;
   error?: string;
+  helperText?: string;
   logoUrl: string;
   logoAlt: string;
 };
@@ -51,6 +52,7 @@ export function IntegrationCard({
   disabled = false,
   loading = false,
   error = "",
+  helperText,
   logoUrl,
   logoAlt,
 }: IntegrationCardProps) {
@@ -126,6 +128,7 @@ export function IntegrationCard({
           </button>
         ) : null}
       </div>
+      {helperText ? <p className="mt-3 text-sm text-slate-500">{helperText}</p> : null}
       {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
     </section>
   );

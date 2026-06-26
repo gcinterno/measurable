@@ -82,6 +82,21 @@ const MULTI_SERIES_BLOCKS = new Set([
   "audience_growth",
 ]);
 
+const STANDARDIZED_TEN_SLIDE_ORDER = [
+  "cover",
+  "reach",
+  "impressions",
+  "engagement",
+  "page_visits",
+  "audience_growth",
+  "content_activity",
+  "top_performing_content",
+  "executive_insights",
+  "recommendations",
+] as const;
+
+const STANDARDIZED_TEN_SLIDE_SEMANTICS = new Set<string>(STANDARDIZED_TEN_SLIDE_ORDER);
+
 const FIXED_STAGE_WIDTH = 1920;
 const FIXED_STAGE_HEIGHT = 1080;
 
@@ -438,7 +453,59 @@ function normalizeFiveSlideBlockOrder(blocks: ReportVersionBlock[]) {
   return ordered.length === blocks.length ? ordered : blocks;
 }
 
+function normalizeStandardizedTenSlideBlockOrder(blocks: ReportVersionBlock[]) {
+  if (blocks.length !== STANDARDIZED_TEN_SLIDE_ORDER.length) {
+    return blocks;
+  }
+
+  const consumed = new Set<string>();
+  const pickBySemantic = (semanticName: string) => {
+    const match =
+      blocks.find(
+        (block) =>
+          !consumed.has(block.id) &&
+          getNormalizedBlockSemanticName(block) === semanticName
+      ) || null;
+
+    if (match) {
+      consumed.add(match.id);
+    }
+
+    return match;
+  };
+
+  const ordered = [
+    ...STANDARDIZED_TEN_SLIDE_ORDER.map((semanticName) => pickBySemantic(semanticName)),
+    ...blocks.filter((block) => !consumed.has(block.id)),
+  ].filter((block): block is ReportVersionBlock => block !== null);
+
+  const hasFullSemanticMatch =
+    STANDARDIZED_TEN_SLIDE_ORDER.every((semanticName) =>
+      ordered.some((block) => getNormalizedBlockSemanticName(block) === semanticName)
+    ) && ordered.length === blocks.length;
+
+  return hasFullSemanticMatch ? ordered : blocks;
+}
+
+function isStandardizedTenSlideSemanticReport(blocks: ReportVersionBlock[]) {
+  if (blocks.length !== STANDARDIZED_TEN_SLIDE_ORDER.length) {
+    return false;
+  }
+
+  const semanticNames = blocks.map((block) => getNormalizedBlockSemanticName(block));
+
+  return STANDARDIZED_TEN_SLIDE_ORDER.every((semanticName) =>
+    semanticNames.includes(semanticName)
+  );
+}
+
 function sortBlocksByOrder(blocks: ReportVersionBlock[]) {
+  const normalizedTenSlideBlocks = normalizeStandardizedTenSlideBlockOrder(blocks);
+
+  if (normalizedTenSlideBlocks !== blocks) {
+    return normalizedTenSlideBlocks;
+  }
+
   const normalizedBlocks = normalizeFiveSlideBlockOrder(blocks);
 
   return normalizedBlocks
@@ -1058,6 +1125,25 @@ type InsightSummaryCard = {
   insight: string;
 };
 
+type GrowthBadgeTone = "up" | "down" | "flat" | "na";
+
+type GrowthBadgeData = {
+  label: string;
+  tone: GrowthBadgeTone;
+};
+
+type SemanticMetricStat = {
+  label: string;
+  value: string;
+};
+
+type SemanticContentItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  metrics: SemanticMetricStat[];
+};
+
 type OverviewMetricCard = {
   key: string;
   label: string;
@@ -1378,6 +1464,289 @@ function formatMetricCandidateDisplay(value: unknown) {
   }
 
   return "";
+}
+
+function getObjectArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item) => item && typeof item === "object") as Record<string, unknown>[] : [];
+}
+
+function getGrowthTone(value: number | null): GrowthBadgeTone {
+  if (value === null || !Number.isFinite(value)) {
+    return "na";
+  }
+
+  if (value > 0) {
+    return "up";
+  }
+
+  if (value < 0) {
+    return "down";
+  }
+
+  return "flat";
+}
+
+function getGrowthBadgeData(
+  block: ReportVersionBlock,
+  aliases: string[] = []
+): GrowthBadgeData | null {
+  const directLabel =
+    getStringValue(block.data.growth_label) ||
+    getStringValue(block.data.growthLabel) ||
+    getStringValue(block.data.change_label) ||
+    getStringValue(block.data.changeLabel) ||
+    getStringValue(block.data.comparison_label) ||
+    getStringValue(block.data.comparisonLabel);
+  const directNumericValue = getNumberValue(
+    getBlockMetricCandidateValue(block, [
+      "growth_percent",
+      "growthPercent",
+      "change_percentage",
+      "changePercentage",
+      "growth_percentage",
+      "growthPercentage",
+      "percent_change",
+      "percentChange",
+      ...aliases.flatMap((alias) => [
+        `${alias}_growth_percent`,
+        `${alias}GrowthPercent`,
+        `${alias}_growth_percentage`,
+        `${alias}GrowthPercentage`,
+        `${alias}_change_percentage`,
+        `${alias}ChangePercentage`,
+      ]),
+    ])
+  );
+
+  if (directLabel) {
+    const lowered = directLabel.toLowerCase();
+
+    if (lowered === "n/a" || lowered === "na") {
+      return { label: "N/A", tone: "na" };
+    }
+
+    if (lowered.includes("-")) {
+      return { label: directLabel, tone: "down" };
+    }
+
+    if (lowered.includes("+")) {
+      return { label: directLabel, tone: "up" };
+    }
+
+    return {
+      label: directLabel,
+      tone: getGrowthTone(directNumericValue),
+    };
+  }
+
+  if (directNumericValue === null) {
+    return null;
+  }
+
+  const rounded = Math.round(Math.abs(directNumericValue) * 10) / 10;
+  const prefix = directNumericValue > 0 ? "+" : directNumericValue < 0 ? "-" : "";
+
+  return {
+    label: `${prefix}${rounded}%`,
+    tone: getGrowthTone(directNumericValue),
+  };
+}
+
+function getGrowthBadgeClasses(
+  tone: ReturnType<typeof getTemplateTone>,
+  growthTone: GrowthBadgeTone
+) {
+  if (growthTone === "up") {
+    return `border-emerald-400/25 bg-emerald-400/10 ${tone.dark ? "text-emerald-200" : "text-emerald-700"}`;
+  }
+
+  if (growthTone === "down") {
+    return `border-rose-400/25 bg-rose-400/10 ${tone.dark ? "text-rose-200" : "text-rose-700"}`;
+  }
+
+  if (growthTone === "flat") {
+    return `border-sky-400/25 bg-sky-400/10 ${tone.dark ? "text-sky-200" : "text-sky-700"}`;
+  }
+
+  return `${tone.chip} ${tone.subtle}`;
+}
+
+function getGrowthToneIndicator(growthTone: GrowthBadgeTone) {
+  if (growthTone === "up") {
+    return "↑";
+  }
+
+  if (growthTone === "down") {
+    return "↓";
+  }
+
+  if (growthTone === "flat") {
+    return "→";
+  }
+
+  return "";
+}
+
+function renderGrowthBadge(
+  growth: GrowthBadgeData | null,
+  tone: ReturnType<typeof getTemplateTone>
+) {
+  if (!growth) {
+    return null;
+  }
+
+  const indicator = getGrowthToneIndicator(growth.tone);
+
+  return (
+    <div
+      className={`mt-4 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${getGrowthBadgeClasses(
+        tone,
+        growth.tone
+      )}`}
+    >
+      {indicator ? <span>{indicator}</span> : null}
+      <span>{growth.label}</span>
+    </div>
+  );
+}
+
+function getSemanticMetricStat(
+  block: ReportVersionBlock,
+  label: string,
+  aliases: string[],
+  fallback = "—"
+) {
+  return {
+    label,
+    value: getMetricDisplay(block, aliases, fallback),
+  };
+}
+
+function getSemanticContentItems(block: ReportVersionBlock) {
+  const sourceCollections = [
+    block.data.top_content,
+    block.data.topContent,
+    block.data.top_posts,
+    block.data.topPosts,
+    block.data.top_performing_content,
+    block.data.topPerformingContent,
+    block.data.content_list,
+    block.data.contentList,
+    block.data.posts,
+    block.data.items,
+  ];
+
+  const rawItems = sourceCollections.find(Array.isArray);
+
+  if (!Array.isArray(rawItems)) {
+    return [] as SemanticContentItem[];
+  }
+
+  return rawItems
+    .map((item, index) => {
+      const record = getObjectRecord(item);
+
+      if (!record) {
+        return null;
+      }
+
+      const title =
+        getStringValue(record.title) ||
+        getStringValue(record.headline) ||
+        getStringValue(record.post_title) ||
+        getStringValue(record.postTitle) ||
+        getStringValue(record.caption) ||
+        getStringValue(record.text) ||
+        `Content ${index + 1}`;
+      const subtitle =
+        getStringValue(record.published_at) ||
+        getStringValue(record.publishedAt) ||
+        getStringValue(record.date) ||
+        getStringValue(record.post_type) ||
+        getStringValue(record.postType) ||
+        getStringValue(record.format) ||
+        "Top content item";
+      const metrics = [
+        getSemanticMetricStat(
+          { ...block, data: record } as ReportVersionBlock,
+          "Reach",
+          ["reach", "total_reach"],
+          ""
+        ),
+        getSemanticMetricStat(
+          { ...block, data: record } as ReportVersionBlock,
+          "Impressions",
+          ["impressions", "total_impressions"],
+          ""
+        ),
+        getSemanticMetricStat(
+          { ...block, data: record } as ReportVersionBlock,
+          "Engagement",
+          ["engagement", "total_engagement", "interactions_total"],
+          ""
+        ),
+        getSemanticMetricStat(
+          { ...block, data: record } as ReportVersionBlock,
+          "Engagement rate",
+          ["engagement_rate", "average_engagement_rate"],
+          ""
+        ),
+      ].filter((metric) => metric.value);
+
+      return {
+        id: getStringValue(record.id) || `content-${index + 1}`,
+        title,
+        subtitle,
+        metrics,
+      };
+    })
+    .filter(Boolean) as SemanticContentItem[];
+}
+
+function getExecutiveInsightCards(block: ReportVersionBlock, blocks: ReportVersionBlock[]) {
+  const explicitCards = getObjectArray(block.data.insight_cards || block.data.insightCards);
+
+  if (explicitCards.length > 0) {
+    return explicitCards.map((record, index) => ({
+      key: getStringValue(record.id) || `insight-card-${index + 1}`,
+      title:
+        getStringValue(record.title) ||
+        getStringValue(record.label) ||
+        `Insight ${index + 1}`,
+      value: formatMetricCandidateDisplay(record.value || record.total || record.count) || "—",
+      insight:
+        getStringValue(record.insight) ||
+        getStringValue(record.summary) ||
+        getStringValue(record.text) ||
+        getStringValue(record.description) ||
+        "No interpretation was provided for this insight yet.",
+    }));
+  }
+
+  const sourceBlocks = blocks.filter((candidate) => {
+    const semanticName = getNormalizedBlockSemanticName(candidate);
+    return (
+      semanticName !== "cover" &&
+      semanticName !== "executive_insights" &&
+      semanticName !== "recommendations"
+    );
+  });
+
+  return sourceBlocks.slice(0, 6).map((candidate, index) => {
+    const semanticName = getNormalizedBlockSemanticName(candidate);
+    const metricLabel = humanizeSemanticName(semanticName, `Insight ${index + 1}`);
+    const primaryMetric = getPrimaryMetric(candidate);
+
+    return {
+      key: candidate.id || `${semanticName}-${index + 1}`,
+      title: metricLabel,
+      value: primaryMetric.value || "—",
+      insight:
+        getBlockInsightItems(candidate)[0] ||
+        getBlockInsightText(candidate) ||
+        "No interpretation was provided for this section yet.",
+    };
+  });
 }
 
 function getMetricDisplay(block: ReportVersionBlock, aliases: string[], fallback = "—") {
@@ -4138,6 +4507,420 @@ function MultiSourceRecommendationsSlide({
   );
 }
 
+function StandardizedSemanticMetricSlide({
+  block,
+  index,
+  totalSlides,
+  renderMode,
+  templateId,
+  title,
+  mainMetricLabel,
+  mainMetricAliases,
+  secondaryStats = [],
+  chartMetricLabel,
+  chartPlaceholderText,
+  insightFallback,
+  growthAliases = [],
+  totalOnlyWhenMissingChart = false,
+}: {
+  block: ReportVersionBlock;
+  index: number;
+  totalSlides: number;
+  renderMode: ReportRenderMode;
+  templateId: ReportTemplateId;
+  title: string;
+  mainMetricLabel: string;
+  mainMetricAliases: string[];
+  secondaryStats?: Array<{ label: string; aliases: string[] }>;
+  chartMetricLabel: string;
+  chartPlaceholderText: string;
+  insightFallback: string;
+  growthAliases?: string[];
+  totalOnlyWhenMissingChart?: boolean;
+}) {
+  const tone = getTemplateTone(templateId);
+  const slideId = String(index + 1).padStart(2, "0");
+  const timeframeLabel = getBlockTimeframeLabel(block);
+  const chartPoints = getBlockChartPoints(block);
+  const hasChart = chartPoints.length > 0;
+  const insightText = getBlockInsightText(block, insightFallback);
+  const growth = getGrowthBadgeData(block, growthAliases);
+  const primaryMetric = getSemanticMetricStat(block, mainMetricLabel, mainMetricAliases);
+  const visibleStats = secondaryStats
+    .map((stat) => getSemanticMetricStat(block, stat.label, stat.aliases))
+    .filter((stat) => stat.value !== "—");
+
+  return (
+    <SlideCanvas
+      index={slideId}
+      totalSlides={totalSlides}
+      eyebrow=""
+      title=""
+      renderMode={renderMode}
+      templateId={templateId}
+    >
+      <div className="grid h-full min-h-0 grid-cols-[0.82fr_1.18fr] gap-6">
+        <section className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-4">
+          <div className={`rounded-[30px] border p-6 ${tone.cardStrong}`}>
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.cardStrongAccent}`}>
+              {title}
+            </p>
+            <p className={`mt-4 text-[3rem] font-semibold leading-none tracking-[-0.06em] ${tone.cardStrongTitle}`}>
+              {primaryMetric.value}
+            </p>
+            <p className={`mt-3 text-sm ${tone.cardStrongSubtitle}`}>
+              {primaryMetric.label}
+            </p>
+            {renderGrowthBadge(growth, tone) || (
+              <p className={`mt-4 text-xs font-medium ${tone.cardStrongSubtitle}`}>
+                No comparison available
+              </p>
+            )}
+            {timeframeLabel ? (
+              <p className={`mt-4 text-xs font-medium ${tone.cardStrongSubtitle}`}>
+                {timeframeLabel}
+              </p>
+            ) : null}
+          </div>
+
+          {visibleStats.length > 0 ? (
+            <KPIGrid columns={visibleStats.length >= 3 ? 3 : 2}>
+              {visibleStats.slice(0, 3).map((stat) => (
+                <KPICard
+                  key={stat.label}
+                  label={stat.label}
+                  value={stat.value}
+                  meta="Available metric in this section"
+                  templateId={templateId}
+                  className="h-[122px]"
+                />
+              ))}
+            </KPIGrid>
+          ) : (
+            <div />
+          )}
+
+          <InsightBox text={insightText} label="AI Insight" templateId={templateId} className="max-h-[260px]" />
+        </section>
+
+        <section className="min-h-0">
+          {hasChart ? (
+            <MetricDailyChart
+              points={chartPoints}
+              isAvailable={hasChart}
+              metricLabel={chartMetricLabel}
+              dark={tone.dark}
+            />
+          ) : totalOnlyWhenMissingChart ? (
+            <div className={`flex h-full min-h-0 flex-col justify-between rounded-[30px] border p-6 ${tone.card}`}>
+              <div>
+                <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.accent}`}>
+                  Total only
+                </p>
+                <p className={`mt-4 text-[3rem] font-semibold leading-none tracking-[-0.06em] ${tone.title}`}>
+                  {primaryMetric.value}
+                </p>
+                <p className={`mt-3 text-sm ${tone.subtitle}`}>
+                  Daily trend is not available for this block.
+                </p>
+              </div>
+              <div className={`rounded-[24px] border px-4 py-3 ${tone.chip}`}>
+                <p className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${tone.subtle}`}>
+                  Interpretation
+                </p>
+                <p className={`mt-2 text-sm leading-6 ${tone.subtitle}`}>
+                  {insightText}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className={`grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-4`}>
+              {renderEmptyChartState(tone)}
+              <p className={`text-center text-sm ${tone.subtle}`}>
+                {chartPlaceholderText}
+              </p>
+            </div>
+          )}
+        </section>
+      </div>
+    </SlideCanvas>
+  );
+}
+
+function StandardizedTopPerformingContentSlide({
+  block,
+  index,
+  totalSlides,
+  renderMode,
+  templateId,
+}: {
+  block: ReportVersionBlock;
+  index: number;
+  totalSlides: number;
+  renderMode: ReportRenderMode;
+  templateId: ReportTemplateId;
+}) {
+  const tone = getTemplateTone(templateId);
+  const slideId = String(index + 1).padStart(2, "0");
+  const items = getSemanticContentItems(block);
+  const insightText = getBlockInsightText(
+    block,
+    "Top-performing content should be used as a pattern library for replication, not as a one-off highlight."
+  );
+
+  return (
+    <SlideCanvas
+      index={slideId}
+      totalSlides={totalSlides}
+      eyebrow=""
+      title=""
+      renderMode={renderMode}
+      templateId={templateId}
+    >
+      <div className="grid h-full min-h-0 grid-cols-[1.06fr_0.94fr] gap-6">
+        <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4">
+          <div>
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${tone.accent}`}>
+              Top Performing Content
+            </p>
+            <h2 className={`mt-3 text-[2.35rem] font-semibold tracking-[-0.06em] ${tone.title}`}>
+              Highest-impact content this period
+            </h2>
+          </div>
+
+          <div className="grid min-h-0 gap-3">
+            {items.length > 0 ? (
+              items.slice(0, 4).map((item) => (
+                <article key={item.id} className={`rounded-[28px] border p-5 ${tone.card}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className={`text-[1.02rem] font-semibold ${tone.title}`}>{item.title}</h3>
+                      <p className={`mt-2 text-sm ${tone.subtle}`}>{item.subtitle}</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {item.metrics.length > 0 ? (
+                      item.metrics.map((metric) => (
+                        <div key={`${item.id}-${metric.label}`} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${tone.chip}`}>
+                          {metric.label}: {metric.value}
+                        </div>
+                      ))
+                    ) : (
+                      <div className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${tone.chip}`}>
+                        Metrics unavailable
+                      </div>
+                    )}
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div className={`flex min-h-0 flex-col items-center justify-center rounded-[30px] border px-8 text-center ${tone.card}`}>
+                <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.accent}`}>
+                  No content available
+                </p>
+                <p className={`mt-4 max-w-lg text-sm leading-6 ${tone.subtle}`}>
+                  This report did not include a top-performing content list for the selected period.
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4">
+          <InsightBox
+            text={insightText}
+            label="AI Insight"
+            templateId={templateId}
+            className="max-h-[240px]"
+            clampLines={7}
+          />
+          <div className={`rounded-[30px] border p-5 ${tone.cardStrong}`}>
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.cardStrongAccent}`}>
+              Interpretation
+            </p>
+            <div className="mt-4 grid gap-3">
+              {(getBlockInsightItems(block).length > 0
+                ? getBlockInsightItems(block)
+                : ["Replicate the creative, format, and publishing pattern behind the strongest posts."])
+                .slice(0, 4)
+                .map((item, itemIndex) => (
+                  <div key={`${item}-${itemIndex}`} className="rounded-[22px] border border-white/10 bg-white/5 px-4 py-3">
+                    <p className={`text-[0.88rem] leading-6 ${tone.cardStrongSubtitle}`}>{item}</p>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </section>
+      </div>
+    </SlideCanvas>
+  );
+}
+
+function StandardizedExecutiveInsightsSlide({
+  block,
+  blocks,
+  index,
+  totalSlides,
+  renderMode,
+  templateId,
+}: {
+  block: ReportVersionBlock;
+  blocks: ReportVersionBlock[];
+  index: number;
+  totalSlides: number;
+  renderMode: ReportRenderMode;
+  templateId: ReportTemplateId;
+}) {
+  const tone = getTemplateTone(templateId);
+  const slideId = String(index + 1).padStart(2, "0");
+  const insightCards = getExecutiveInsightCards(block, blocks).slice(0, 6);
+  const overviewText = getBlockInsightText(
+    block,
+    "This executive readout connects reach, response quality, audience movement, and content effectiveness into one decision layer."
+  );
+  const platformLabels = Array.from(
+    new Set(
+      blocks
+        .map((candidate) =>
+          humanizePlatformLabel(
+            getStringValue(candidate.data.platform) ||
+              getStringValue(candidate.data.source_type) ||
+              getStringValue(candidate.data.sourceType)
+          )
+        )
+        .filter(Boolean)
+    )
+  );
+  const isMultiSource = platformLabels.length > 1;
+
+  return (
+    <SlideCanvas
+      index={slideId}
+      totalSlides={totalSlides}
+      eyebrow=""
+      title=""
+      renderMode={renderMode}
+      templateId={templateId}
+    >
+      <div className="flex h-full min-h-0 flex-col gap-5">
+        <section className={`rounded-[30px] border p-6 ${tone.insight}`}>
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${templateId === "modern" ? tone.insightTitle : tone.accentSoft}`}>
+                Executive Insights
+              </p>
+              <h2 className={`mt-3 text-[2.3rem] font-semibold tracking-[-0.06em] ${templateId === "modern" ? tone.cardStrongTitle : tone.title}`}>
+                {isMultiSource ? "Cross-platform executive interpretation" : "Executive interpretation"}
+              </h2>
+            </div>
+            <div className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${tone.chip}`}>
+              {isMultiSource ? platformLabels.join(" vs ") : "Single source summary"}
+            </div>
+          </div>
+          <p className={`mt-4 text-[0.96rem] leading-7 ${templateId === "modern" ? tone.insightBody : tone.subtitle}`}>
+            {overviewText}
+          </p>
+        </section>
+
+        <div className="grid min-h-0 flex-1 grid-cols-3 gap-4">
+          {insightCards.length > 0 ? (
+            insightCards.map((card) => (
+              <article key={card.key} className={`rounded-[26px] border p-4 ${tone.card}`}>
+                <p className={`text-[10px] font-semibold uppercase tracking-[0.2em] ${tone.accent}`}>
+                  {card.title}
+                </p>
+                <p className={`mt-3 text-[1.7rem] font-semibold leading-none tracking-[-0.05em] ${tone.title}`}>
+                  {card.value}
+                </p>
+                <p className={`mt-4 text-[0.85rem] leading-6 ${tone.subtitle}`}>
+                  {card.insight}
+                </p>
+              </article>
+            ))
+          ) : (
+            <article className={`col-span-3 flex items-center justify-center rounded-[28px] border p-6 text-center ${tone.card}`}>
+              <p className={`max-w-xl text-sm leading-6 ${tone.subtle}`}>
+                No executive insight cards were available for this report yet.
+              </p>
+            </article>
+          )}
+        </div>
+      </div>
+    </SlideCanvas>
+  );
+}
+
+function StandardizedRecommendationsSlide({
+  block,
+  index,
+  totalSlides,
+  renderMode,
+  templateId,
+}: {
+  block: ReportVersionBlock;
+  index: number;
+  totalSlides: number;
+  renderMode: ReportRenderMode;
+  templateId: ReportTemplateId;
+}) {
+  const tone = getTemplateTone(templateId);
+  const slideId = String(index + 1).padStart(2, "0");
+  const items = getBlockInsightItems(block, [
+    "recommendations",
+    "strategic_recommendations",
+    "strategicRecommendations",
+    "quick_wins",
+    "quickWins",
+    "actions",
+  ]);
+  const visibleItems =
+    items.length > 0
+      ? items.slice(0, 5)
+      : [
+          "Tighten tracking for the metrics that were missing or incomplete in this report.",
+          "Replicate the format and timing patterns from the strongest content assets.",
+          "Set a clear weekly KPI review for reach, engagement, and audience movement.",
+        ];
+
+  return (
+    <SlideCanvas
+      index={slideId}
+      totalSlides={totalSlides}
+      eyebrow=""
+      title=""
+      renderMode={renderMode}
+      templateId={templateId}
+    >
+      <div className="flex h-full min-h-0 flex-col gap-5">
+        <div>
+          <p className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${tone.accent}`}>
+            Recommendations
+          </p>
+          <h2 className={`mt-3 text-[2.35rem] font-semibold tracking-[-0.06em] ${tone.title}`}>
+            Next actions for the next reporting cycle
+          </h2>
+        </div>
+
+        <div className="grid min-h-0 flex-1 grid-cols-2 gap-4">
+          {visibleItems.map((item, indexItem) => (
+            <article
+              key={`${item}-${indexItem}`}
+              className={`rounded-[28px] border p-5 ${indexItem < 2 ? tone.cardStrong : tone.card}`}
+            >
+              <p className={`text-[10px] font-semibold uppercase tracking-[0.2em] ${indexItem < 2 ? tone.cardStrongAccent : tone.accent}`}>
+                Action {indexItem + 1}
+              </p>
+              <p className={`mt-4 text-[0.94rem] leading-7 ${indexItem < 2 ? tone.cardStrongSubtitle : tone.subtitle}`}>
+                {item}
+              </p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </SlideCanvas>
+  );
+}
+
 function ReportBlockSlide({
   block,
   blocks,
@@ -4189,6 +4972,7 @@ function ReportBlockSlide({
     ? chartSeries.some((series) => series.points.length > 0)
     : chartPoints.length > 0;
   const isMultiSourceTenSlide = isMultiSourceTenSlideReport(blocks);
+  const isStandardizedTenSlide = isStandardizedTenSlideSemanticReport(blocks);
   const isEngagementOverview = isEngagementOverviewBlock(block);
   const renderModeName = hasChart ? "rich-data-slide" : "fallback";
   const chartMetricLabel =
@@ -4320,6 +5104,169 @@ function ReportBlockSlide({
         }}
       />
     );
+  }
+
+  if (isStandardizedTenSlide && STANDARDIZED_TEN_SLIDE_SEMANTICS.has(normalizedSemanticName)) {
+    if (normalizedSemanticName === "reach") {
+      return (
+        <StandardizedSemanticMetricSlide
+          block={block}
+          index={index}
+          totalSlides={totalSlides}
+          renderMode={renderMode}
+          templateId={templateId}
+          title="Reach"
+          mainMetricLabel="Total reach"
+          mainMetricAliases={["reach", "total_reach"]}
+          chartMetricLabel="Reach"
+          chartPlaceholderText="No daily trend available"
+          insightFallback="Reach shows the total size of the audience that content reached during this period."
+          growthAliases={["reach", "total_reach"]}
+        />
+      );
+    }
+
+    if (normalizedSemanticName === "impressions") {
+      return (
+        <StandardizedSemanticMetricSlide
+          block={block}
+          index={index}
+          totalSlides={totalSlides}
+          renderMode={renderMode}
+          templateId={templateId}
+          title="Impressions"
+          mainMetricLabel="Total impressions"
+          mainMetricAliases={["impressions", "total_impressions"]}
+          chartMetricLabel="Impressions"
+          chartPlaceholderText="No daily trend available"
+          insightFallback="Impressions show how often the content was displayed during the selected period."
+          growthAliases={["impressions", "total_impressions"]}
+        />
+      );
+    }
+
+    if (normalizedSemanticName === "engagement") {
+      return (
+        <StandardizedSemanticMetricSlide
+          block={block}
+          index={index}
+          totalSlides={totalSlides}
+          renderMode={renderMode}
+          templateId={templateId}
+          title="Engagement"
+          mainMetricLabel="Total engagement"
+          mainMetricAliases={["engagement", "total_engagement", "interactions_total"]}
+          secondaryStats={[
+            { label: "Engagement rate", aliases: ["engagement_rate", "average_engagement_rate"] },
+          ]}
+          chartMetricLabel="Engagement"
+          chartPlaceholderText="No daily trend available"
+          insightFallback="Engagement reflects how strongly the audience responded to the published content."
+          growthAliases={["engagement", "interactions_total"]}
+        />
+      );
+    }
+
+    if (normalizedSemanticName === "page_visits") {
+      return (
+        <StandardizedSemanticMetricSlide
+          block={block}
+          index={index}
+          totalSlides={totalSlides}
+          renderMode={renderMode}
+          templateId={templateId}
+          title="Page Visits"
+          mainMetricLabel="Page or profile visits"
+          mainMetricAliases={["page_visits", "pageViews", "page_views", "profile_views"]}
+          chartMetricLabel="Page Visits"
+          chartPlaceholderText="No daily trend available"
+          insightFallback="Visits show how often users moved from discovery into the profile or page destination."
+          growthAliases={["page_visits", "page_views", "profile_views"]}
+          totalOnlyWhenMissingChart
+        />
+      );
+    }
+
+    if (normalizedSemanticName === "audience_growth") {
+      return (
+        <StandardizedSemanticMetricSlide
+          block={block}
+          index={index}
+          totalSlides={totalSlides}
+          renderMode={renderMode}
+          templateId={templateId}
+          title="Audience Growth"
+          mainMetricLabel="Followers or fans"
+          mainMetricAliases={["followers", "followers_total", "fans", "audience"]}
+          secondaryStats={[
+            { label: "Net follower change", aliases: ["net_followers_change", "net_follower_change", "followers_growth"] },
+          ]}
+          chartMetricLabel="Audience Growth"
+          chartPlaceholderText="No daily trend available"
+          insightFallback="Audience growth should be read as a retention and acquisition signal, not only as raw volume."
+          growthAliases={["followers", "fans", "audience"]}
+        />
+      );
+    }
+
+    if (normalizedSemanticName === "content_activity") {
+      return (
+        <StandardizedSemanticMetricSlide
+          block={block}
+          index={index}
+          totalSlides={totalSlides}
+          renderMode={renderMode}
+          templateId={templateId}
+          title="Content Activity"
+          mainMetricLabel="Published posts"
+          mainMetricAliases={["published_posts", "post_count", "content_count", "posts"]}
+          secondaryStats={[
+            { label: "Avg reach per post", aliases: ["average_reach_per_post", "avg_reach_per_post"] },
+            { label: "Avg engagement per post", aliases: ["average_engagement_per_post", "avg_engagement_per_post"] },
+          ]}
+          chartMetricLabel="Posting Rhythm"
+          chartPlaceholderText="No daily trend available"
+          insightFallback="Content activity shows how much was published and whether that cadence translated into efficient performance."
+        />
+      );
+    }
+
+    if (normalizedSemanticName === "top_performing_content") {
+      return (
+        <StandardizedTopPerformingContentSlide
+          block={block}
+          index={index}
+          totalSlides={totalSlides}
+          renderMode={renderMode}
+          templateId={templateId}
+        />
+      );
+    }
+
+    if (normalizedSemanticName === "executive_insights") {
+      return (
+        <StandardizedExecutiveInsightsSlide
+          block={block}
+          blocks={blocks}
+          index={index}
+          totalSlides={totalSlides}
+          renderMode={renderMode}
+          templateId={templateId}
+        />
+      );
+    }
+
+    if (normalizedSemanticName === "recommendations") {
+      return (
+        <StandardizedRecommendationsSlide
+          block={block}
+          index={index}
+          totalSlides={totalSlides}
+          renderMode={renderMode}
+          templateId={templateId}
+        />
+      );
+    }
   }
 
   if (

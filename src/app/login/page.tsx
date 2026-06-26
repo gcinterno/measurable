@@ -21,6 +21,7 @@ import {
   setPendingVerificationEmail,
 } from "@/lib/auth/session";
 import { trackEvent } from "@/lib/analytics";
+import { trackMetaEvent } from "@/lib/tracking/meta";
 import { useAuthStore } from "@/lib/store/auth-store";
 
 type OauthHashState = {
@@ -185,6 +186,9 @@ function LoginPageContent() {
 
           clearPendingGoogleAuthIntent();
           login(oauthToken, user);
+          void trackMetaEvent("Login", {
+            method: "google",
+          });
           if (window.location.hash) {
             window.history.replaceState(
               null,
@@ -277,6 +281,9 @@ function LoginPageContent() {
       });
       const user = await fetchAuthMe(response.accessToken || undefined);
       login(response.accessToken || null, user);
+      void trackMetaEvent("Login", {
+        method: "email",
+      });
       router.replace("/dashboard");
     } catch (err: unknown) {
       if (err instanceof RegisterApiError) {

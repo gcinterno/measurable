@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { FEATURES } from "@/config/features";
+import { trackMetaEvent } from "@/lib/tracking/meta";
 
 const logos = [
   "Northpeak Studio",
@@ -170,6 +171,13 @@ function PrimaryCta({
   return (
     <Link
       href={href}
+      onClick={() => {
+        void trackMetaEvent("Lead", {
+          cta_label: typeof children === "string" ? children : "Start free",
+          cta_location: "landing_page",
+          destination: href,
+        });
+      }}
       className="brand-button-primary inline-flex items-center justify-center px-5 py-3 text-sm font-semibold transition hover:-translate-y-0.5"
     >
       {children}

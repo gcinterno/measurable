@@ -22,6 +22,7 @@ import {
   getPendingRegistrationCredentials,
   getPendingVerificationEmail,
 } from "@/lib/auth/session";
+import { trackMetaEvent } from "@/lib/tracking/meta";
 import { useAuthStore } from "@/lib/store/auth-store";
 
 const RESEND_SECONDS = 30;
@@ -81,6 +82,9 @@ function VerifyEmailPageContent() {
       async function finalizeAuthenticatedRedirect(currentAccessToken?: string) {
         const user = await fetchAuthMe(currentAccessToken || undefined);
         login(currentAccessToken || null, user);
+        void trackMetaEvent("CompleteRegistration", {
+          method: "email",
+        });
         clearPendingVerificationEmail();
         clearPendingRegistrationCredentials();
         clearOnboardingDismissed();

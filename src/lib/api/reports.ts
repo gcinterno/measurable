@@ -12,6 +12,7 @@ import type {
 import { apiFetch, isAbortError, isAuthError, readApiResponseText } from "@/lib/api";
 import { refreshAccountSummary } from "@/lib/api/account";
 import { apiUrl } from "@/lib/api/config";
+import { trackMetaEvent } from "@/lib/tracking/meta";
 import { FEATURES } from "@/config/features";
 import { usePreferencesStore } from "@/lib/store/preferences-store";
 import { getActiveWorkspaceId } from "@/lib/workspace/session";
@@ -647,6 +648,14 @@ function humanizeSourceLabel(label: string) {
     return "Instagram";
   }
 
+  if (
+    normalized === "meta ads" ||
+    normalized === "meta ad account" ||
+    normalized === "ad account"
+  ) {
+    return "Meta Ads";
+  }
+
   return label.trim();
 }
 
@@ -973,7 +982,7 @@ export async function createReport(input: {
 export async function createMetaPagesReport(input: {
   datasetId: string;
   workspaceId?: string;
-  timeframe: string;
+  timeframe?: string;
   startDate?: string;
   endDate?: string;
   requestedSlides?: number;
@@ -983,7 +992,7 @@ export async function createMetaPagesReport(input: {
   const payload = {
     dataset_id: Number(input.datasetId),
     workspace_id: input.workspaceId,
-    timeframe: input.timeframe,
+    timeframe: input.timeframe || "last_30d",
     start_date: input.startDate,
     end_date: input.endDate,
     requested_slides: input.requestedSlides,
@@ -1073,6 +1082,42 @@ export async function createInstagramBusinessReport(input: {
   });
 
   console.log("create instagram business report response:", response);
+
+  return {
+    raw: response,
+    reportId: extractReportId(response),
+  };
+}
+
+export async function createMetaAdsReport(input: {
+  integrationId: string;
+  workspaceId?: string;
+  accountId: string;
+  timeframe: string;
+  startDate?: string;
+  endDate?: string;
+  requestedSlides?: number;
+  aiMode?: "standard" | "agents";
+}) {
+  const locale = getCurrentLocale();
+  const payload = {
+    integration_id: input.integrationId,
+    workspace_id: input.workspaceId,
+    account_id: input.accountId,
+    timeframe: input.timeframe,
+    start_date: input.startDate,
+    end_date: input.endDate,
+    requested_slides: input.requestedSlides,
+    ai_mode: input.aiMode || "standard",
+    locale,
+  };
+  const body = JSON.stringify(payload);
+  const endpoint = "/reports/meta-ads";
+
+  const response = await apiFetch<CreateReportResponse>(endpoint, {
+    method: "POST",
+    body,
+  });
 
   return {
     raw: response,
@@ -1421,6 +1466,10 @@ export async function exportReportPptx(reportId: string) {
       document.body.appendChild(link);
       link.click();
       link.remove();
+      void trackMetaEvent("ExportPPTX", {
+        report_id: reportId,
+        filename: link.download,
+      });
 
       console.info("[PptxExport][request success]", {
         reportId,
@@ -1457,6 +1506,11 @@ export async function exportReportPptx(reportId: string) {
   document.body.appendChild(link);
   link.click();
   link.remove();
+  void trackMetaEvent("ExportPPTX", {
+    report_id: reportId,
+    filename,
+    size: blob.size,
+  });
 
   window.setTimeout(() => {
     window.URL.revokeObjectURL(objectUrl);

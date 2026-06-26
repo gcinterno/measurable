@@ -3,6 +3,7 @@ import type { Report, ReportIntegrationMetadata, ReportSource } from "@/types/re
 export type ReportIntegrationPlatform =
   | "facebook"
   | "instagram"
+  | "meta_ads"
   | "tiktok"
   | "csv"
   | "upload"
@@ -13,6 +14,14 @@ function normalizePlatform(value?: string | null): ReportIntegrationPlatform | n
 
   if (!normalized) {
     return null;
+  }
+
+  if (
+    normalized.includes("meta ads") ||
+    normalized.includes("meta_ads") ||
+    normalized.includes("ad account")
+  ) {
+    return "meta_ads";
   }
 
   if (
@@ -52,6 +61,8 @@ function humanizePlatform(platform: ReportIntegrationPlatform) {
       return "Facebook";
     case "instagram":
       return "Instagram";
+    case "meta_ads":
+      return "Meta Ads";
     case "tiktok":
       return "TikTok";
     case "csv":
@@ -172,6 +183,8 @@ function buildBadgeLabel(platforms: ReportIntegrationPlatform[]) {
       return "Facebook Report";
     case "instagram":
       return "Instagram Report";
+    case "meta_ads":
+      return "Meta Ads Report";
     case "tiktok":
       return "TikTok Report";
     case "csv":

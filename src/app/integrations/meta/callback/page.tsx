@@ -8,10 +8,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   fetchIntegrationsConnectionStatus,
   fetchMetaPages,
+  fetchMetaInstagramAccounts,
 } from "@/lib/api/integrations";
 import {
   META_OAUTH_CONNECT_ERROR,
   META_OAUTH_CONNECT_SUCCESS,
+  META_OAUTH_SCOPES,
+  getMissingMetaOAuthScopes,
   postMetaOAuthMessageToOpener,
 } from "@/lib/integrations/meta-oauth";
 import {
@@ -126,6 +129,15 @@ function MetaIntegrationCallbackContent() {
         errorParam?.trim() ||
         "We couldn’t complete the Meta connection. Please try again.";
 
+      console.info("META_OAUTH_CALLBACK_RECEIVED", {
+        route: "/integrations/meta/callback",
+        status,
+        integration_id: integrationId || null,
+        source: querySource || null,
+        pending_source: pendingMetaSource || null,
+        error: errorParam || null,
+      });
+
       updateFallback({
         title: "Completing Meta connection...",
         description: "We’re validating the authorization to complete the connection.",
@@ -179,19 +191,38 @@ function MetaIntegrationCallbackContent() {
         let refreshedIntegrationId = integrationId || "";
         let metaConnected = false;
         let pagesCount = 0;
+        let instagramAccountsCount = 0;
+        let tokenScopes: string[] = [];
 
         try {
           const refreshResult = await fetchIntegrationsConnectionStatus();
           metaConnected = refreshResult.metaConnected;
           refreshedIntegrationId =
             refreshedIntegrationId || refreshResult.integrationId || "";
+          tokenScopes = refreshResult.tokenScopes || [];
+
+          console.info("META_OAUTH_TOKEN_SCOPES_RECEIVED", {
+            route: "/integrations/meta/callback",
+            integration_id: refreshedIntegrationId || null,
+            token_scopes: tokenScopes.length > 0 ? tokenScopes : null,
+          });
 
           if (metaConnected && refreshedIntegrationId && resolvedWorkspaceId) {
-            const authorizedPages = await fetchMetaPages(
-              refreshedIntegrationId,
-              resolvedWorkspaceId
-            );
-            pagesCount = authorizedPages.length;
+            const currentSource = resolvedSource || storedContext?.source || "";
+
+            if (currentSource === "instagram_business") {
+              const authorizedInstagramAccounts = await fetchMetaInstagramAccounts(
+                refreshedIntegrationId,
+                resolvedWorkspaceId
+              );
+              instagramAccountsCount = authorizedInstagramAccounts.length;
+            } else {
+              const authorizedPages = await fetchMetaPages(
+                refreshedIntegrationId,
+                resolvedWorkspaceId
+              );
+              pagesCount = authorizedPages.length;
+            }
           }
 
           console.info("META_CALLBACK_REFRESH_RESULT", {
@@ -199,11 +230,28 @@ function MetaIntegrationCallbackContent() {
             integration_id: refreshedIntegrationId || null,
             workspace_id: resolvedWorkspaceId || null,
             pages_count: pagesCount,
+            instagram_accounts_count: instagramAccountsCount,
           });
-          console.info("META_AUTHORIZED_PAGES_COUNT", {
+          console.info("META_CONNECTED_ASSETS_DISCOVERED", {
+            route: "/integrations/meta/callback",
             integration_id: refreshedIntegrationId || null,
-            pages_count: pagesCount,
+            workspace_id: resolvedWorkspaceId || null,
+            page_name: storedContext?.pageName || null,
+            page_count: pagesCount,
+            instagram_accounts_count: instagramAccountsCount,
+            asset_connected: pagesCount > 0 || instagramAccountsCount > 0,
           });
+
+          const missingScopes = getMissingMetaOAuthScopes(tokenScopes);
+
+          if (missingScopes.length > 0) {
+            console.info("META_PERMISSION_MISSING", {
+              route: "/integrations/meta/callback",
+              integration_id: refreshedIntegrationId || null,
+              missing_scopes: missingScopes,
+              expected_scopes: META_OAUTH_SCOPES,
+            });
+          }
         } catch (error) {
           console.error("meta callback refresh error:", error);
           console.info("META_CALLBACK_REFRESH_RESULT", {
@@ -245,7 +293,11 @@ function MetaIntegrationCallbackContent() {
           return;
         }
 
-        if (!metaConnected || !refreshedIntegrationId) {
+        const hasAuthorizedPages = pagesCount > 0;
+        const hasAuthorizedInstagramAccounts = instagramAccountsCount > 0;
+        const hasAuthorizedAssets = hasAuthorizedPages || hasAuthorizedInstagramAccounts;
+
+        if (!metaConnected || !refreshedIntegrationId || !hasAuthorizedAssets) {
           clearPendingMetaOAuth();
           clearPendingMetaSource();
 
@@ -265,14 +317,18 @@ function MetaIntegrationCallbackContent() {
           updateFallback({
             title: "We couldn’t complete the Meta connection.",
             description:
-              "Meta returned from OAuth, but the connection was not confirmed. You can close this tab or return to Measurable.",
+              hasAuthorizedAssets
+                ? "Meta returned from OAuth, but the connection was not confirmed. You can close this tab or return to Measurable."
+                : "Meta returned from OAuth, but no authorized assets were returned. Reconnect and approve at least one page or account.",
             isError: true,
             returnHref: fallbackReturnHref,
           });
 
           router.replace(
             `/integrations/meta?meta_error=${encodeURIComponent(
-              "Meta returned from OAuth, but the integration was not confirmed by the backend."
+              hasAuthorizedAssets
+                ? "Meta returned from OAuth, but the integration was not confirmed by the backend."
+                : "Meta returned from OAuth, but no authorized assets were returned."
             )}`
           );
           return;
@@ -293,33 +349,9 @@ function MetaIntegrationCallbackContent() {
         clearPendingMetaOAuth();
         clearPendingMetaSource();
 
-        if (pagesCount === 0) {
-          if (
-            typeof window !== "undefined" &&
-            window.opener &&
-            notifyAndClose({
-              type: META_OAUTH_CONNECT_SUCCESS,
-              integrationId: refreshedIntegrationId,
-              pagesCount,
-              redirectTo: fallbackReturnHref,
-            })
-          ) {
-            return;
-          }
-
-          updateFallback({
-            title: "Integracion conectada correctamente.",
-            description: "You can close this tab and return to Measurable.",
-            returnHref: fallbackReturnHref,
-          });
-
-          router.replace(
-            `/integrations/meta?meta_state=no_authorized_pages&integration_id=${encodeURIComponent(
-              refreshedIntegrationId
-            )}&pages_count=0`
-          );
-          return;
-        }
+        const discoveredAssetsCount = hasAuthorizedPages
+          ? pagesCount
+          : instagramAccountsCount;
 
         if (
           typeof window !== "undefined" &&
@@ -327,7 +359,7 @@ function MetaIntegrationCallbackContent() {
           notifyAndClose({
             type: META_OAUTH_CONNECT_SUCCESS,
             integrationId: refreshedIntegrationId,
-            pagesCount,
+            pagesCount: discoveredAssetsCount,
             redirectTo: fallbackReturnHref,
           })
         ) {

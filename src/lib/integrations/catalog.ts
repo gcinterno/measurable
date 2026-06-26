@@ -12,20 +12,37 @@ export type IntegrationCatalogItem = {
   detailHref?: string;
 };
 
-export const META_FRONTEND_INTEGRATION_KEYS = [
+export const META_ORGANIC_FRONTEND_INTEGRATION_KEYS = [
   "facebook_pages",
   "instagram_business",
 ] as const;
 
-export type MetaFrontendIntegrationKey =
-  (typeof META_FRONTEND_INTEGRATION_KEYS)[number];
+export const META_REPORT_SOURCE_KEYS = [
+  ...META_ORGANIC_FRONTEND_INTEGRATION_KEYS,
+  "meta_ads",
+] as const;
+
+export type MetaOrganicFrontendIntegrationKey =
+  (typeof META_ORGANIC_FRONTEND_INTEGRATION_KEYS)[number];
+export type MetaFrontendIntegrationKey = (typeof META_REPORT_SOURCE_KEYS)[number];
+
+export function isMetaOrganicFrontendIntegrationKey(
+  value: string | null | undefined
+): value is MetaOrganicFrontendIntegrationKey {
+  return (
+    typeof value === "string" &&
+    META_ORGANIC_FRONTEND_INTEGRATION_KEYS.includes(
+      value as MetaOrganicFrontendIntegrationKey
+    )
+  );
+}
 
 export function isMetaFrontendIntegrationKey(
   value: string | null | undefined
 ): value is MetaFrontendIntegrationKey {
   return (
     typeof value === "string" &&
-    META_FRONTEND_INTEGRATION_KEYS.includes(value as MetaFrontendIntegrationKey)
+    META_REPORT_SOURCE_KEYS.includes(value as MetaFrontendIntegrationKey)
   );
 }
 
@@ -53,6 +70,17 @@ export const integrationCatalog: readonly IntegrationCatalogItem[] = [
     logoUrl: "https://cdn.simpleicons.org/instagram",
     logoAlt: "Instagram logo",
     detailHref: "/integrations/meta",
+  },
+  {
+    name: "Meta Ads",
+    category: "Paid social",
+    description:
+      "Connect your ad account to generate paid media performance reports.",
+    status: "Available",
+    actionLabel: "Connect",
+    integrationKey: "meta_ads",
+    logoUrl: "https://cdn.simpleicons.org/meta",
+    logoAlt: "Meta Ads logo",
   },
   {
     name: "Google Ads",

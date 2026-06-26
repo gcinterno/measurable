@@ -23,6 +23,7 @@ import { ApiError, isPlanLimitError } from "@/lib/api";
 import { getMeasurableBrandingOverride } from "@/lib/branding";
 import {
   createReportShare,
+  createMetaAdsReport,
   createMetaPagesReport,
   createMultiSourceReport,
   createInstagramBusinessReport,
@@ -148,13 +149,25 @@ function getReportTitle(blocks: ReportVersionBlock[]) {
 }
 
 function getSourceDisplayLabel(sourceKey: SourceKey) {
-  return sourceKey === "instagram_business" ? "Instagram Account" : "Facebook Page";
+  if (sourceKey === "instagram_business") {
+    return "Instagram Account";
+  }
+
+  if (sourceKey === "meta_ads") {
+    return "Meta Ads Account";
+  }
+
+  return "Facebook Page";
 }
 
 function buildMultiSourceReportTitle(sourceKeys: SourceKey[]) {
   return sourceKeys
     .map((sourceKey) =>
-      sourceKey === "instagram_business" ? "Instagram" : "Facebook"
+      sourceKey === "instagram_business"
+        ? "Instagram"
+        : sourceKey === "meta_ads"
+          ? "Meta Ads"
+          : "Facebook"
     )
     .join(" + ");
 }
@@ -225,6 +238,10 @@ function getAnalyticsIntegrationName(source: string) {
 
   if (source === "facebook_pages") {
     return "facebook";
+  }
+
+  if (source === "meta_ads") {
+    return "meta_ads";
   }
 
   return "meta";
@@ -410,9 +427,11 @@ function NewReportFlowReviewPageContent() {
         const selectedEntityId =
           (selectedSourceKey &&
             selectedAccountsBySource?.[selectedSourceKey]?.accountId) ||
+          storedIntegrationContext.adAccountId ||
           storedIntegrationContext.pageId ||
           "";
         const isInstagramBusiness = selectedSource === "instagram_business";
+        const isMetaAds = selectedSource === "meta_ads";
         const isMultiSource = selectedSources.length > 1;
         const requestedSlides = isMultiSource
           ? 10
@@ -469,6 +488,10 @@ function NewReportFlowReviewPageContent() {
           throw new Error("Report generation requires one or two configured sources.");
         }
 
+        if (selectedSources.includes("meta_ads") && selectedSources.length > 1) {
+          throw new Error("Meta Ads currently supports single-source reports only.");
+        }
+
         if (
           selectedSources.some(
             (sourceKey) => !isSourceConfigured(sourceKey)
@@ -477,13 +500,13 @@ function NewReportFlowReviewPageContent() {
           throw new Error("Each selected source must be synced before creating the report.");
         }
 
-        if (isInstagramBusiness) {
+        if (isInstagramBusiness || isMetaAds) {
           if (!storedIntegrationContext.integrationId) {
-            throw new Error("Instagram Business report generation requires integration_id.");
+            throw new Error("This report generation requires integration_id.");
           }
 
           if (!selectedEntityId) {
-            throw new Error("Instagram Business report generation requires an account_id.");
+            throw new Error("This report generation requires an account_id.");
           }
         }
 
@@ -519,6 +542,17 @@ function NewReportFlowReviewPageContent() {
           });
         } else if (isInstagramBusiness) {
           report = await createInstagramBusinessReport({
+            integrationId: storedIntegrationContext.integrationId || "",
+            workspaceId: storedIntegrationContext.workspaceId,
+            accountId: selectedEntityId,
+            timeframe: normalizedSelection.key,
+            startDate: normalizedSelection.startDate,
+            endDate: normalizedSelection.endDate,
+            requestedSlides,
+            aiMode: requestedAiMode,
+          });
+        } else if (isMetaAds) {
+          report = await createMetaAdsReport({
             integrationId: storedIntegrationContext.integrationId || "",
             workspaceId: storedIntegrationContext.workspaceId,
             accountId: selectedEntityId,

@@ -7,11 +7,17 @@ import { IntegrationCard } from "@/components/integrations/IntegrationCard";
 import { AppShell } from "@/components/layout/AppShell";
 import { UserSuggestionModal } from "@/components/suggestions/UserSuggestionModal";
 import {
+  connectMetaAdsIntegration,
   connectMetaIntegration,
+  disconnectMetaAdsIntegration,
   disconnectMetaIntegration,
+  fetchMetaAdsAccounts,
+  fetchMetaAdsStatus,
   fetchMetaInstagramAccountsCatalog,
   fetchMetaPagesCatalog,
   fetchIntegrationsConnectionStatus,
+  selectMetaAdsAccount,
+  syncMetaAdsAccount,
   validateMetaAuthUrl,
 } from "@/lib/api/integrations";
 import {
@@ -39,8 +45,10 @@ import {
 } from "@/lib/integrations/session";
 import {
   integrationCatalog,
+  isMetaOrganicFrontendIntegrationKey,
   isMetaFrontendIntegrationKey,
 } from "@/lib/integrations/catalog";
+import { trackMetaEvent } from "@/lib/tracking/meta";
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 
 type MetaRefreshResult = {
@@ -60,6 +68,14 @@ function IntegrationsPageContent() {
   const [metaStatusMessage, setMetaStatusMessage] = useState("");
   const [metaReconnectMessage, setMetaReconnectMessage] = useState("");
   const [metaConnected, setMetaConnected] = useState(false);
+  const [metaAdsConnected, setMetaAdsConnected] = useState(false);
+  const [metaAdsLoading, setMetaAdsLoading] = useState(false);
+  const [metaAdsDisconnectLoading, setMetaAdsDisconnectLoading] = useState(false);
+  const [metaAdsError, setMetaAdsError] = useState("");
+  const [metaAdsStatusMessage, setMetaAdsStatusMessage] = useState("");
+  const [metaAdsAccountsCount, setMetaAdsAccountsCount] = useState(0);
+  const [metaAdsIntegrationId, setMetaAdsIntegrationId] = useState("");
+  const [metaAdsLastSyncedAt, setMetaAdsLastSyncedAt] = useState("");
   const [metaConnectMode, setMetaConnectMode] = useState<"connect" | "reconnect" | null>(
     null
   );
@@ -274,6 +290,59 @@ function IntegrationsPageContent() {
   }, [activeWorkspaceId, refreshMetaIntegrationState]);
 
   useEffect(() => {
+    let active = true;
+
+    async function loadMetaAdsState() {
+      if (!activeWorkspaceId) {
+        return;
+      }
+
+      try {
+        const status = await fetchMetaAdsStatus(activeWorkspaceId);
+
+        if (!active) {
+          return;
+        }
+
+        setMetaAdsConnected(status.connected);
+        setMetaAdsIntegrationId(status.integrationId);
+        setMetaAdsLastSyncedAt(status.lastSyncedAt || "");
+
+        if (!status.connected || !status.integrationId) {
+          setMetaAdsAccountsCount(0);
+          return;
+        }
+
+        const accounts = await fetchMetaAdsAccounts({
+          integrationId: status.integrationId,
+          workspaceId: activeWorkspaceId,
+        });
+
+        if (!active) {
+          return;
+        }
+
+        setMetaAdsAccountsCount(accounts.length);
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        console.error("meta ads status load error:", error);
+        setMetaAdsConnected(false);
+        setMetaAdsIntegrationId("");
+        setMetaAdsAccountsCount(0);
+      }
+    }
+
+    void loadMetaAdsState();
+
+    return () => {
+      active = false;
+    };
+  }, [activeWorkspaceId]);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -308,6 +377,11 @@ function IntegrationsPageContent() {
               "The connection finished, but we couldn’t confirm the status."
             );
           } else if (!result.catalogsLoaded) {
+            void trackMetaEvent("MetaConnected", {
+              source: "meta",
+              reconnect: metaConnectMode === "reconnect",
+              catalog_refresh: "failed",
+            });
             setMetaReconnectMessage("");
             setMetaStatusMessage(
               metaConnectMode === "reconnect"
@@ -319,11 +393,23 @@ function IntegrationsPageContent() {
             result.facebookPagesCount === 0 &&
             result.instagramAccountsCount === 0
           ) {
+            void trackMetaEvent("MetaConnected", {
+              source: "meta",
+              reconnect: true,
+              facebook_pages_count: result.facebookPagesCount,
+              instagram_accounts_count: result.instagramAccountsCount,
+            });
             setMetaStatusMessage("");
             setMetaReconnectMessage(
               "No authorized pages were found. Make sure you selected at least one Facebook Page during Meta authorization."
             );
           } else {
+            void trackMetaEvent("MetaConnected", {
+              source: "meta",
+              reconnect: metaConnectMode === "reconnect",
+              facebook_pages_count: result.facebookPagesCount,
+              instagram_accounts_count: result.instagramAccountsCount,
+            });
             setMetaReconnectMessage("");
             setMetaStatusMessage("Integration connected successfully.");
           }
@@ -527,6 +613,11 @@ function IntegrationsPageContent() {
               if (result.connected) {
                 setMetaError("");
                 if (!result.catalogsLoaded) {
+                  void trackMetaEvent("MetaConnected", {
+                    source,
+                    reconnect,
+                    catalog_refresh: "failed",
+                  });
                   setMetaReconnectMessage("");
                   setMetaStatusMessage(
                     reconnect
@@ -538,11 +629,23 @@ function IntegrationsPageContent() {
                   result.facebookPagesCount === 0 &&
                   result.instagramAccountsCount === 0
                 ) {
+                  void trackMetaEvent("MetaConnected", {
+                    source,
+                    reconnect,
+                    facebook_pages_count: result.facebookPagesCount,
+                    instagram_accounts_count: result.instagramAccountsCount,
+                  });
                   setMetaStatusMessage("");
                   setMetaReconnectMessage(
                     "No authorized pages were found. Make sure you selected at least one Facebook Page during Meta authorization."
                   );
                 } else {
+                  void trackMetaEvent("MetaConnected", {
+                    source,
+                    reconnect,
+                    facebook_pages_count: result.facebookPagesCount,
+                    instagram_accounts_count: result.instagramAccountsCount,
+                  });
                   setMetaReconnectMessage("");
                   setMetaStatusMessage("Integration connected successfully.");
                 }
@@ -669,7 +772,7 @@ function IntegrationsPageContent() {
 
     const reconnectSource =
       source ||
-      (storedContext && isMetaFrontendIntegrationKey(storedContext.source)
+      (storedContext && isMetaOrganicFrontendIntegrationKey(storedContext.source)
         ? storedContext.source
         : "facebook_pages");
 
@@ -690,6 +793,123 @@ function IntegrationsPageContent() {
     });
 
     void handleMetaConnect({ source: reconnectSource, reconnect: true });
+  }
+
+  function handleMetaAdsConnect(reconnect = false) {
+    void (async () => {
+      try {
+        setMetaAdsLoading(true);
+        setMetaAdsError("");
+        setMetaAdsStatusMessage(reconnect ? "Reconnecting Meta Ads..." : "Connecting Meta Ads...");
+        const response = await connectMetaAdsIntegration({
+          workspaceId: activeWorkspaceId || undefined,
+          reconnect,
+        });
+        const authUrl = normalizeMetaAuthUrl(response.authUrlFromBackend || response.redirectUrl);
+        const validation = validateMetaAuthUrl(authUrl);
+
+        if (!validation.isValid || typeof window === "undefined") {
+          throw new Error("The backend did not return a valid Meta Ads OAuth URL.");
+        }
+
+        window.location.href = authUrl;
+      } catch (error) {
+        console.error("meta ads connect error:", error);
+        setMetaAdsStatusMessage("");
+        setMetaAdsError(
+          reconnect
+            ? "We couldn’t reconnect Meta Ads. Please try again."
+            : "We couldn’t connect Meta Ads. Please try again."
+        );
+      } finally {
+        setMetaAdsLoading(false);
+      }
+    })();
+  }
+
+  function handleMetaAdsDisconnect() {
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(
+        "Do you want to disconnect Meta Ads? Your existing reports will not be deleted."
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    void (async () => {
+      try {
+        setMetaAdsDisconnectLoading(true);
+        setMetaAdsError("");
+        setMetaAdsStatusMessage("");
+        await disconnectMetaAdsIntegration({
+          workspaceId: activeWorkspaceId || undefined,
+        });
+        setMetaAdsConnected(false);
+        setMetaAdsIntegrationId("");
+        setMetaAdsAccountsCount(0);
+        setMetaAdsLastSyncedAt("");
+        setMetaAdsStatusMessage("Meta Ads disconnected successfully.");
+      } catch (error) {
+        console.error("meta ads disconnect error:", error);
+        setMetaAdsError("We couldn’t disconnect Meta Ads right now. Please try again.");
+      } finally {
+        setMetaAdsDisconnectLoading(false);
+      }
+    })();
+  }
+
+  function handleMetaAdsSync() {
+    void (async () => {
+      if (!metaAdsIntegrationId) {
+        setMetaAdsError("Reconnect Meta Ads before syncing.");
+        return;
+      }
+
+      try {
+        setMetaAdsLoading(true);
+        setMetaAdsError("");
+        setMetaAdsStatusMessage("Syncing Meta Ads...");
+        const accounts = await fetchMetaAdsAccounts({
+          integrationId: metaAdsIntegrationId,
+          workspaceId: activeWorkspaceId || undefined,
+        });
+
+        if (accounts.length === 0) {
+          setMetaAdsStatusMessage("");
+          setMetaAdsError("No ad accounts found. Reconnect Meta Ads and verify account access.");
+          return;
+        }
+
+        const accountId = accounts[0].id;
+        await selectMetaAdsAccount({
+          integrationId: metaAdsIntegrationId,
+          accountId,
+          workspaceId: activeWorkspaceId || undefined,
+        });
+        await syncMetaAdsAccount({
+          integrationId: metaAdsIntegrationId,
+          accountId,
+          timeframe: "last_30d",
+          workspaceId: activeWorkspaceId || undefined,
+        });
+
+        setMetaAdsAccountsCount(accounts.length);
+        setMetaAdsLastSyncedAt(new Date().toISOString());
+        setMetaAdsStatusMessage("Meta Ads synced successfully.");
+      } catch (error) {
+        console.error("meta ads sync error:", error);
+        setMetaAdsStatusMessage("");
+        setMetaAdsError(
+          error instanceof Error && error.message
+            ? error.message
+            : "We couldn’t sync Meta Ads right now. Please try again."
+        );
+      } finally {
+        setMetaAdsLoading(false);
+      }
+    })();
   }
 
   return (
@@ -754,9 +974,21 @@ function IntegrationsPageContent() {
         </section>
       ) : null}
 
+      {metaAdsStatusMessage ? (
+        <section className="mb-5 rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700 sm:mb-6">
+          {metaAdsStatusMessage}
+        </section>
+      ) : null}
+
       {metaError ? (
         <section className="mb-5 rounded-[24px] border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 sm:mb-6">
           {metaError}
+        </section>
+      ) : null}
+
+      {metaAdsError ? (
+        <section className="mb-5 rounded-[24px] border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 sm:mb-6">
+          {metaAdsError}
         </section>
       ) : null}
 
@@ -770,16 +1002,20 @@ function IntegrationsPageContent() {
             logoUrl={integration.logoUrl}
             logoAlt={integration.logoAlt}
             status={
-              isMetaFrontendIntegrationKey(integration.integrationKey)
+              isMetaOrganicFrontendIntegrationKey(integration.integrationKey)
                 ? integrationsStateLoading
                   ? "Checking"
                   : metaConnected
                   ? "Connected"
                   : integration.status
+                : integration.integrationKey === "meta_ads"
+                  ? metaAdsConnected
+                    ? "Connected"
+                    : "Available"
                 : integration.status
             }
             actionLabel={
-              isMetaFrontendIntegrationKey(integration.integrationKey)
+              isMetaOrganicFrontendIntegrationKey(integration.integrationKey)
                 ? integrationsStateLoading
                   ? "Checking connection..."
                   : connectedButNoAuthorizedPages
@@ -787,16 +1023,20 @@ function IntegrationsPageContent() {
                     : metaConnected
                       ? undefined
                       : "Connect"
+                : integration.integrationKey === "meta_ads"
+                  ? metaAdsConnected
+                    ? "Sync"
+                    : "Connect"
                 : integration.actionLabel
             }
             loadingLabel={
-              isMetaFrontendIntegrationKey(integration.integrationKey) &&
+              isMetaOrganicFrontendIntegrationKey(integration.integrationKey) &&
               metaConnectMode === "reconnect"
                 ? "Reconnecting..."
                 : "Connecting..."
             }
             onAction={
-              isMetaFrontendIntegrationKey(integration.integrationKey)
+              isMetaOrganicFrontendIntegrationKey(integration.integrationKey)
                 ? integrationsStateLoading
                   ? undefined
                   : connectedButNoAuthorizedPages
@@ -814,35 +1054,58 @@ function IntegrationsPageContent() {
                               | "facebook_pages"
                               | "instagram_business"
                           )
+                : integration.integrationKey === "meta_ads"
+                  ? () =>
+                      metaAdsConnected
+                        ? handleMetaAdsSync()
+                        : handleMetaAdsConnect(false)
                 : undefined
             }
             secondaryActionLabel={
-              isMetaFrontendIntegrationKey(integration.integrationKey) &&
+              isMetaOrganicFrontendIntegrationKey(integration.integrationKey) &&
               !integrationsStateLoading &&
               metaConnected
                 ? disconnectLoading
                   ? "Disconnecting..."
                   : "Disconnect"
+                : integration.integrationKey === "meta_ads" && metaAdsConnected
+                  ? metaAdsDisconnectLoading
+                    ? "Disconnecting..."
+                    : "Disconnect"
                 : undefined
             }
             onSecondaryAction={
-              isMetaFrontendIntegrationKey(integration.integrationKey) &&
+              isMetaOrganicFrontendIntegrationKey(integration.integrationKey) &&
               !integrationsStateLoading &&
               metaConnected
                 ? handleMetaDisconnect
+                : integration.integrationKey === "meta_ads" && metaAdsConnected
+                  ? handleMetaAdsDisconnect
                 : undefined
             }
             disabled={
-              !isMetaFrontendIntegrationKey(integration.integrationKey) ||
-              integrationsStateLoading ||
-              disconnectLoading
+              isMetaOrganicFrontendIntegrationKey(integration.integrationKey)
+                ? integrationsStateLoading || disconnectLoading
+                : integration.integrationKey === "meta_ads"
+                  ? metaAdsDisconnectLoading
+                  : true
             }
             loading={
-              isMetaFrontendIntegrationKey(integration.integrationKey) &&
-              metaLoading
+              isMetaOrganicFrontendIntegrationKey(integration.integrationKey)
+                ? metaLoading
+                : integration.integrationKey === "meta_ads" && metaAdsLoading
             }
             secondaryLoading={
-              isMetaFrontendIntegrationKey(integration.integrationKey) && disconnectLoading
+              isMetaOrganicFrontendIntegrationKey(integration.integrationKey)
+                ? disconnectLoading
+                : integration.integrationKey === "meta_ads" && metaAdsDisconnectLoading
+            }
+            helperText={
+              integration.integrationKey === "meta_ads"
+                ? metaAdsConnected
+                  ? `${metaAdsAccountsCount} ad account${metaAdsAccountsCount === 1 ? "" : "s"} available${metaAdsLastSyncedAt ? ` • Last synced ${new Date(metaAdsLastSyncedAt).toLocaleString()}` : ""}`
+                  : "Connect your ad account to generate paid media performance reports."
+                : undefined
             }
             error=""
             />

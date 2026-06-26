@@ -12,6 +12,17 @@ export const META_OAUTH_CONNECT_SUCCESS = "MEASURABLE_META_CONNECT_SUCCESS";
 export const META_OAUTH_CONNECT_ERROR = "MEASURABLE_META_CONNECT_ERROR";
 export const META_OAUTH_POPUP_CLOSE_GRACE_MS = 1500;
 export const META_OAUTH_POPUP_TIMEOUT_MS = 90000;
+export const META_OAUTH_SCOPES = [
+  "public_profile",
+  "pages_show_list",
+  "pages_read_engagement",
+  "read_insights",
+  "pages_read_user_content",
+  "instagram_business_basic",
+  "instagram_business_manage_insights",
+  "ads_read",
+] as const;
+export const META_OAUTH_SCOPE_STRING = META_OAUTH_SCOPES.join(",");
 
 type MetaOAuthTransport = "same_tab" | "popup";
 
@@ -115,6 +126,8 @@ export function hasPendingMetaOAuthFlag() {
 export function normalizeMetaAuthUrl(rawAuthUrl: string) {
   const parsedUrl = new URL(rawAuthUrl);
 
+  parsedUrl.searchParams.set("scope", META_OAUTH_SCOPE_STRING);
+
   if (!parsedUrl.searchParams.get("auth_type")) {
     parsedUrl.searchParams.set("auth_type", "rerequest");
   }
@@ -124,6 +137,26 @@ export function normalizeMetaAuthUrl(rawAuthUrl: string) {
   }
 
   return parsedUrl.toString();
+}
+
+export function getMetaOAuthRequestedScopes(authUrl: string) {
+  try {
+    const rawScope = new URL(authUrl).searchParams.get("scope") || "";
+    const parsedScopes = rawScope
+      .split(",")
+      .map((scope) => scope.trim())
+      .filter(Boolean);
+
+    return parsedScopes.length > 0 ? parsedScopes : [...META_OAUTH_SCOPES];
+  } catch {
+    return [...META_OAUTH_SCOPES];
+  }
+}
+
+export function getMissingMetaOAuthScopes(scopes: string[]) {
+  const normalized = new Set(scopes.map((scope) => scope.trim()).filter(Boolean));
+
+  return META_OAUTH_SCOPES.filter((scope) => !normalized.has(scope));
 }
 
 export function getMetaOAuthState(authUrl: string) {
@@ -152,6 +185,7 @@ export function createPendingMetaOAuth(input: {
   route: string;
   transport?: MetaOAuthTransport;
 }) {
+  const requestedScopes = getMetaOAuthRequestedScopes(input.authUrl);
   const nextValue = {
     authUrl: input.authUrl,
     oauthState: getMetaOAuthState(input.authUrl),
@@ -165,12 +199,18 @@ export function createPendingMetaOAuth(input: {
 
   writePendingMetaOAuth(nextValue);
 
-  console.info("META_AUTH_URL_CREATED", {
+  console.info("META_OAUTH_SCOPES_REQUESTED", {
+    source: input.source,
+    route: input.route,
+    scopes: requestedScopes,
+  });
+  console.info("META_OAUTH_AUTH_URL_CREATED", {
     source: input.source,
     route: input.route,
     auth_url: input.authUrl,
     oauth_state: nextValue.oauthState || null,
     transport: nextValue.transport,
+    scopes: requestedScopes,
   });
 }
 

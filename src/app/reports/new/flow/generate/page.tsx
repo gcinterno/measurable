@@ -231,6 +231,17 @@ function NewReportFlowGeneratePageContent() {
   });
   const brandName = brandNameDraft;
   const brandLogoUrl = brandLogoDraft || measurableBranding?.logoUrl || "";
+  const persistedBrandName = (workspace?.branding?.brandName || preferences.brandName || "Measurable").trim();
+  const persistedBrandLogoUrl = (workspace?.branding?.logoUrl || preferences.logoDataUrl || "").trim();
+  const normalizedDraftBrandName = brandNameDraft.trim();
+  const normalizedDraftBrandLogoUrl = brandLogoDraft.trim();
+  const hasUnsavedBrandAssetsChanges =
+    !isFreePlan &&
+    (brandLogoRemoved ||
+      normalizedDraftBrandName !== persistedBrandName ||
+      normalizedDraftBrandLogoUrl !== persistedBrandLogoUrl);
+  const generateReportBlocked =
+    loading || brandAssetsSaving || brandLogoUploading || hasUnsavedBrandAssetsChanges;
   const resolvedBrandLogoPreviewUrl = useMemo(
     () => resolveAssetUrl(brandLogoUrl, API_URL, { workspaceId: workspace?.id }) || "",
     [brandLogoUrl, workspace?.id]
@@ -580,6 +591,19 @@ function NewReportFlowGeneratePageContent() {
   }, [aiMode, isMultiSourceReport, planCapabilities.maxSlides, selectedSlides]);
 
   async function handleGenerateReport() {
+    if (hasUnsavedBrandAssetsChanges || brandAssetsSaving || brandLogoUploading) {
+      setError("Save your Brand Assets changes before generating the report.");
+      return;
+    }
+
+    if (
+      normalizedSelectedSources.includes("meta_ads") &&
+      normalizedSelectedSources.length > 1
+    ) {
+      setError("Meta Ads currently supports single-source reports only.");
+      return;
+    }
+
     const hasValidSourceCount =
       normalizedSelectedSources.length >= 1 &&
       normalizedSelectedSources.length <= 2;
@@ -951,7 +975,9 @@ function NewReportFlowGeneratePageContent() {
                                 </div>
                               ) : (
                                 <p className="text-sm text-slate-500">
-                                  Save the brand name and logo before generating the report.
+                                  {hasUnsavedBrandAssetsChanges
+                                    ? "You have unsaved Brand Assets changes."
+                                    : "Save the brand name and logo before generating the report."}
                                 </p>
                               )}
                             </div>
@@ -1071,7 +1097,7 @@ function NewReportFlowGeneratePageContent() {
               <button
                 type="button"
                 onClick={handleGenerateReport}
-                disabled={loading}
+                disabled={generateReportBlocked}
                 className="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 {loading ? (
@@ -1080,6 +1106,12 @@ function NewReportFlowGeneratePageContent() {
                 {loading ? messages.reports.generating : messages.reports.generateReport}
               </button>
             </div>
+
+            {hasUnsavedBrandAssetsChanges && !isFreePlan ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Save your Brand Assets changes before generating the report.
+              </div>
+            ) : null}
 
             {error ? (
               <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

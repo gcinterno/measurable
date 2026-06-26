@@ -1,3 +1,5 @@
+import { trackMetaEvent } from "@/lib/tracking/meta";
+
 type AnalyticsValue = string | number | boolean | null | undefined;
 
 type AnalyticsParams = Record<string, AnalyticsValue>;
@@ -65,4 +67,18 @@ export function trackEvent(
     event: eventName,
     ...sanitizeParams(params),
   });
+
+  const sanitizedParams = sanitizeParams(params);
+
+  if (eventName === "upgrade_click") {
+    void trackMetaEvent("UpgradeClicked", sanitizedParams);
+  }
+
+  if (eventName === "report_created") {
+    void trackMetaEvent("ReportCreated", sanitizedParams);
+  }
+
+  if (eventName === "integration_connected") {
+    void trackMetaEvent("MetaConnected", sanitizedParams);
+  }
 }

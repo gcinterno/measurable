@@ -17,6 +17,7 @@ import {
   setPendingRegistrationCredentials,
   setPendingVerificationEmail,
 } from "@/lib/auth/session";
+import { trackMetaEvent } from "@/lib/tracking/meta";
 
 export default function RegisterPage() {
   const { messages } = useI18n();
@@ -71,6 +72,11 @@ export default function RegisterPage() {
 
     setLoading(true);
     setError("");
+    void trackMetaEvent("Lead", {
+      cta_label: "Create account",
+      cta_location: "register_form",
+      method: "email",
+    });
 
     try {
       const attribution = getSignupAttributionFields();

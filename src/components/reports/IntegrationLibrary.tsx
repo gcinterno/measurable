@@ -7,8 +7,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { useI18n } from "@/components/providers/LanguageProvider";
 import {
+  connectMetaAdsIntegration,
   connectMetaIntegration,
+  disconnectMetaAdsIntegration,
   disconnectMetaIntegration,
+  fetchMetaAdsAccounts,
+  fetchMetaAdsStatus,
   fetchIntegrationsConnectionStatus,
   fetchMetaInstagramAccounts,
   fetchMetaPages,
@@ -28,6 +32,7 @@ import {
   storeMetaOAuthDebugUrl,
 } from "@/lib/integrations/meta-oauth";
 import {
+  isMetaOrganicFrontendIntegrationKey,
   isMetaFrontendIntegrationKey,
   type IntegrationCatalogItem,
   type MetaFrontendIntegrationKey,
@@ -42,6 +47,7 @@ import {
   setPendingMetaSource,
   setIntegrationReportContext,
 } from "@/lib/integrations/session";
+import { trackMetaEvent } from "@/lib/tracking/meta";
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 
 type IntegrationLibraryProps = {
@@ -61,6 +67,11 @@ function getMetaDescriptionSuffix(
   integrationKey: MetaFrontendIntegrationKey,
   counts: Record<MetaFrontendIntegrationKey, number>
 ) {
+  if (integrationKey === "meta_ads") {
+    const count = counts.meta_ads;
+    return ` ${count} connected ad account${count === 1 ? "" : "s"} ready to use.`;
+  }
+
   if (integrationKey === "instagram_business") {
     const count = counts.instagram_business;
     return ` ${count} authorized account${count === 1 ? "" : "s"} ready to use.`;
@@ -138,13 +149,21 @@ function buildNextSelectedContext(input: {
 
   return {
     source: firstSource,
-    integration: selectedSources.length > 0 ? "meta" : "",
+    integration:
+      selectedSources.length === 0
+        ? ""
+        : firstSource === "meta_ads"
+          ? "meta_ads"
+          : "meta",
     workspaceId: workspaceId || currentContext?.workspaceId || "",
     integrationId:
       firstSourceAccount?.integrationId ||
       integrationId ||
       currentContext?.integrationId,
-    pageId: firstSourceAccount?.accountId || undefined,
+    adAccountId:
+      firstSource === "meta_ads" ? firstSourceAccount?.accountId || undefined : undefined,
+    pageId:
+      firstSource === "meta_ads" ? undefined : firstSourceAccount?.accountId || undefined,
     pageName: firstSourceAccount?.accountName || undefined,
     datasetId: firstSourceAccount?.datasetId || undefined,
     synced:
@@ -188,15 +207,24 @@ export function IntegrationLibrary({
   const [metaFlowState, setMetaFlowState] = useState<MetaFlowState>(
     embedded && mode === "report-flow" ? "checking" : "not_connected"
   );
+  const [metaAdsFlowState, setMetaAdsFlowState] = useState<MetaFlowState>(
+    embedded && mode === "report-flow" ? "checking" : "not_connected"
+  );
   const [metaCounts, setMetaCounts] = useState<Record<MetaFrontendIntegrationKey, number>>({
     facebook_pages: 0,
     instagram_business: 0,
+    meta_ads: 0,
   });
   const [currentSelectedSources, setCurrentSelectedSources] = useState<
     MetaFrontendIntegrationKey[]
   >(() => selectedIntegrationKeys.filter(isMetaFrontendIntegrationKey));
   const [metaIntegrationId, setMetaIntegrationId] = useState(
     storedIntegrationContext?.integration === "meta"
+      ? storedIntegrationContext.integrationId || ""
+      : ""
+  );
+  const [metaAdsIntegrationId, setMetaAdsIntegrationId] = useState(
+    storedIntegrationContext?.source === "meta_ads"
       ? storedIntegrationContext.integrationId || ""
       : ""
   );
@@ -235,6 +263,7 @@ export function IntegrationLibrary({
         setMetaCounts({
           facebook_pages: 0,
           instagram_business: 0,
+          meta_ads: 0,
         });
         setMetaFlowState("not_connected");
         return false;
@@ -252,11 +281,43 @@ export function IntegrationLibrary({
     setMetaCounts({
       facebook_pages: pages.length,
       instagram_business: instagramAccounts.length,
+      meta_ads: metaCounts.meta_ads,
     });
     setMetaFlowState("connected");
 
     return true;
-  }, [activeWorkspaceId, embedded, metaIntegrationId]);
+  }, [activeWorkspaceId, embedded, metaCounts.meta_ads, metaIntegrationId]);
+
+  const refreshMetaAdsState = useCallback(async () => {
+    if (!embedded) {
+      return false;
+    }
+
+    const status = await fetchMetaAdsStatus(activeWorkspaceId);
+
+    if (!status.connected || !status.integrationId) {
+      setMetaAdsIntegrationId("");
+      setMetaCounts((current) => ({
+        ...current,
+        meta_ads: 0,
+      }));
+      setMetaAdsFlowState("not_connected");
+      return false;
+    }
+
+    const accounts = await fetchMetaAdsAccounts({
+      integrationId: status.integrationId,
+      workspaceId: activeWorkspaceId,
+    });
+
+    setMetaAdsIntegrationId(status.integrationId);
+    setMetaCounts((current) => ({
+      ...current,
+      meta_ads: accounts.length,
+    }));
+    setMetaAdsFlowState("connected");
+    return true;
+  }, [activeWorkspaceId, embedded]);
 
   useEffect(() => {
     setCurrentSelectedSources(selectedIntegrationKeys.filter(isMetaFrontendIntegrationKey));
@@ -325,6 +386,7 @@ export function IntegrationLibrary({
             setMetaCounts({
               facebook_pages: 0,
               instagram_business: 0,
+              meta_ads: 0,
             });
             setMetaFlowState("not_connected");
             return;
@@ -340,6 +402,7 @@ export function IntegrationLibrary({
           setMetaCounts({
             facebook_pages: pages.length,
             instagram_business: instagramAccounts.length,
+            meta_ads: metaCounts.meta_ads,
           });
           setMetaFlowState("connected");
         }
@@ -352,6 +415,7 @@ export function IntegrationLibrary({
         setMetaCounts({
           facebook_pages: 0,
           instagram_business: 0,
+          meta_ads: 0,
         });
         setMetaIntegrationId("");
         setMetaFlowState("not_connected");
@@ -363,7 +427,44 @@ export function IntegrationLibrary({
     return () => {
       active = false;
     };
-  }, [activeWorkspaceId, embedded, metaIntegrationId]);
+  }, [activeWorkspaceId, embedded, metaCounts.meta_ads, metaIntegrationId]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadMetaAdsState() {
+      if (!embedded) {
+        return;
+      }
+
+      try {
+        setMetaAdsFlowState("checking");
+        const connected = await refreshMetaAdsState();
+
+        if (!active || connected) {
+          return;
+        }
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        console.error("meta ads flow status load error:", error);
+        setMetaCounts((current) => ({
+          ...current,
+          meta_ads: 0,
+        }));
+        setMetaAdsIntegrationId("");
+        setMetaAdsFlowState("not_connected");
+      }
+    }
+
+    void loadMetaAdsState();
+
+    return () => {
+      active = false;
+    };
+  }, [embedded, refreshMetaAdsState]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -383,12 +484,23 @@ export function IntegrationLibrary({
       if (event.data.type === "MEASURABLE_META_CONNECT_SUCCESS") {
         setConnectError("");
 
-        if (event.data.integrationId) {
+        if (connectingIntegrationKey === "meta_ads" && event.data.integrationId) {
+          setMetaAdsIntegrationId(event.data.integrationId);
+        } else if (event.data.integrationId) {
           setMetaIntegrationId(event.data.integrationId);
         }
 
         try {
-          await refreshMetaState();
+          const connected =
+            connectingIntegrationKey === "meta_ads"
+              ? await refreshMetaAdsState()
+              : await refreshMetaState();
+          if (connected) {
+            void trackMetaEvent("MetaConnected", {
+              source: connectingIntegrationKey || "meta",
+              surface: "report_flow",
+            });
+          }
         } catch (error) {
           console.error("integration library popup refresh error:", error);
           setConnectError("The connection finished, but we couldn’t refresh the status.");
@@ -406,7 +518,7 @@ export function IntegrationLibrary({
       stopPopupPolling();
       window.removeEventListener("message", handleMetaWindowMessage);
     };
-  }, [refreshMetaState, stopPopupPolling]);
+  }, [connectingIntegrationKey, refreshMetaAdsState, refreshMetaState, stopPopupPolling]);
 
   const metaUi = useMemo(() => {
     switch (metaFlowState) {
@@ -464,10 +576,13 @@ export function IntegrationLibrary({
       }
 
       if (embedded) {
-        setPendingMetaSource(integration.integrationKey);
+        if (isMetaOrganicFrontendIntegrationKey(integration.integrationKey)) {
+          setPendingMetaSource(integration.integrationKey);
+        }
         setIntegrationReportContext({
           source: integration.integrationKey,
-          integration: "meta",
+          integration:
+            integration.integrationKey === "meta_ads" ? "meta_ads" : "meta",
           workspaceId: contextWorkspaceId,
           integrationId: undefined,
           pageId: undefined,
@@ -491,10 +606,15 @@ export function IntegrationLibrary({
         route: "IntegrationLibrary",
       });
 
-      const response = await connectMetaIntegration({
-        workspaceId: contextWorkspaceId,
-        source: integration.integrationKey,
-      });
+      const response =
+        integration.integrationKey === "meta_ads"
+          ? await connectMetaAdsIntegration({
+              workspaceId: contextWorkspaceId,
+            })
+          : await connectMetaIntegration({
+              workspaceId: contextWorkspaceId,
+              source: integration.integrationKey,
+            });
 
       const rawAuthUrl = response.authUrlFromBackend || response.redirectUrl;
       const authUrl = normalizeMetaAuthUrl(rawAuthUrl);
@@ -568,6 +688,10 @@ export function IntegrationLibrary({
           try {
             const connectedAfterClose = await refreshMetaState();
             if (connectedAfterClose) {
+              void trackMetaEvent("MetaConnected", {
+                source: integration.integrationKey,
+                surface: "report_flow",
+              });
               setConnectError("");
               return;
             }
@@ -596,9 +720,19 @@ export function IntegrationLibrary({
     const nextSelectedSources = alreadySelected
       ? existingSelectedSources.filter((sourceKey) => sourceKey !== integrationKey)
       : [...existingSelectedSources, integrationKey];
+    const mixesMetaAdsWithOrganic =
+      nextSelectedSources.includes("meta_ads") &&
+      nextSelectedSources.some((sourceKey) => sourceKey !== "meta_ads");
 
     if (!alreadySelected && nextSelectedSources.length > maxSources) {
       setConnectError(`You can select up to ${maxSources} sources for one report.`);
+      return;
+    }
+
+    if (mixesMetaAdsWithOrganic) {
+      setConnectError(
+        "Meta Ads currently supports single-source reports only. Select Meta Ads by itself."
+      );
       return;
     }
 
@@ -609,7 +743,9 @@ export function IntegrationLibrary({
     if (!alreadySelected) {
       selectedAccountsBySource[integrationKey] = {
         ...selectedAccountsBySource[integrationKey],
-        integrationId: metaIntegrationId || selectedAccountsBySource[integrationKey].integrationId,
+        integrationId:
+          (integrationKey === "meta_ads" ? metaAdsIntegrationId : metaIntegrationId) ||
+          selectedAccountsBySource[integrationKey].integrationId,
       };
     } else {
       selectedAccountsBySource[integrationKey] = {
@@ -623,7 +759,8 @@ export function IntegrationLibrary({
       buildNextSelectedContext({
         currentContext: nextContext,
         workspaceId: activeWorkspaceId || nextContext?.workspaceId || "",
-        integrationId: metaIntegrationId,
+        integrationId:
+          integrationKey === "meta_ads" ? metaAdsIntegrationId : metaIntegrationId,
         selectedSources: nextSelectedSources,
         selectedAccountsBySource,
       })
@@ -645,7 +782,10 @@ export function IntegrationLibrary({
       buildNextSelectedContext({
         currentContext: nextContext,
         workspaceId: activeWorkspaceId || nextContext?.workspaceId || "",
-        integrationId: metaIntegrationId,
+        integrationId:
+          currentSelectedSources[0] === "meta_ads"
+            ? metaAdsIntegrationId
+            : metaIntegrationId,
         selectedSources: currentSelectedSources,
         selectedAccountsBySource,
       })
@@ -677,6 +817,7 @@ export function IntegrationLibrary({
       setMetaCounts({
         facebook_pages: 0,
         instagram_business: 0,
+        meta_ads: 0,
       });
       setMetaFlowState("not_connected");
       const nextParams = new URLSearchParams(searchParams.toString());
@@ -690,9 +831,48 @@ export function IntegrationLibrary({
     }
   }
 
+  async function handleMetaAdsDisconnect() {
+    if (typeof window !== "undefined") {
+      const confirmed = window.confirm(
+        "Do you want to disconnect Meta Ads? Your existing reports will not be deleted."
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    try {
+      const currentContext = getIntegrationReportContext();
+      setDisconnectingIntegrationKey("meta_ads");
+      setConnectError("");
+      await disconnectMetaAdsIntegration({
+        workspaceId: activeWorkspaceId || currentContext?.workspaceId || "",
+      });
+      if (currentContext?.source === "meta_ads") {
+        clearMetaIntegrationSessionState();
+      }
+      setCurrentSelectedSources((current) =>
+        current.filter((sourceKey) => sourceKey !== "meta_ads")
+      );
+      setMetaAdsIntegrationId("");
+      setMetaCounts((current) => ({
+        ...current,
+        meta_ads: 0,
+      }));
+      setMetaAdsFlowState("not_connected");
+    } catch (error) {
+      console.error("integration library meta ads disconnect error:", error);
+      setConnectError("We couldn’t disconnect Meta Ads right now. Please try again.");
+    } finally {
+      setDisconnectingIntegrationKey(null);
+    }
+  }
+
   function renderCardActions(input: {
     integration: IntegrationCatalogItem;
-    isMeta: boolean;
+    isOrganicMeta: boolean;
+    isMetaAds: boolean;
     isMetaConnected: boolean;
     isConnected: boolean;
     isConnecting: boolean;
@@ -701,7 +881,8 @@ export function IntegrationLibrary({
   }) {
     const {
       integration,
-      isMeta,
+      isOrganicMeta,
+      isMetaAds,
       isMetaConnected,
       isConnected,
       isConnecting,
@@ -722,7 +903,7 @@ export function IntegrationLibrary({
         );
       }
 
-      if (isMeta && metaFlowState === "checking") {
+      if ((isOrganicMeta && metaFlowState === "checking") || (isMetaAds && metaAdsFlowState === "checking")) {
         return (
           <button
             type="button"
@@ -734,7 +915,7 @@ export function IntegrationLibrary({
         );
       }
 
-      if (isMeta && isMetaConnected) {
+      if ((isOrganicMeta || isMetaAds) && isMetaConnected) {
         return (
           <button
             type="button"
@@ -753,7 +934,7 @@ export function IntegrationLibrary({
         );
       }
 
-      if (isMeta) {
+      if (isOrganicMeta || isMetaAds) {
         return (
           <button
             type="button"
@@ -782,7 +963,7 @@ export function IntegrationLibrary({
       );
     }
 
-    if (isMeta && embedded && isMetaConnected) {
+    if ((isOrganicMeta || isMetaAds) && embedded && isMetaConnected) {
       return (
         <>
           <button
@@ -796,7 +977,7 @@ export function IntegrationLibrary({
                 ? "border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
                 : "bg-slate-950 !text-white hover:bg-slate-800"
             }`}
-            disabled={disconnectingIntegrationKey === "meta"}
+            disabled={disconnectingIntegrationKey === integration.integrationKey}
           >
             {isSelected ? "Selected" : "Select"}
           </button>
@@ -804,18 +985,21 @@ export function IntegrationLibrary({
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-              void handleMetaDisconnect();
+              void (isMetaAds ? handleMetaAdsDisconnect() : handleMetaDisconnect());
             }}
-            disabled={disconnectingIntegrationKey === "meta"}
+            disabled={disconnectingIntegrationKey === integration.integrationKey}
             className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {disconnectingIntegrationKey === "meta" ? "Disconnecting..." : "Disconnect"}
+            {disconnectingIntegrationKey === integration.integrationKey ? "Disconnecting..." : "Disconnect"}
           </button>
         </>
       );
     }
 
-      if (isMeta && embedded && metaFlowState === "checking") {
+      if (
+        (isOrganicMeta && embedded && metaFlowState === "checking") ||
+        (isMetaAds && embedded && metaAdsFlowState === "checking")
+      ) {
         return (
           <button
             type="button"
@@ -827,7 +1011,7 @@ export function IntegrationLibrary({
         );
       }
 
-    if (!isMeta && isConnected && embedded) {
+    if (!isOrganicMeta && !isMetaAds && isConnected && embedded) {
       return (
         <>
           <Link
@@ -852,7 +1036,11 @@ export function IntegrationLibrary({
       );
     }
 
-    if (embedded && isMeta && metaFlowState === "not_connected") {
+    if (
+      embedded &&
+      ((isOrganicMeta && metaFlowState === "not_connected") ||
+        (isMetaAds && metaAdsFlowState === "not_connected"))
+    ) {
       return (
         <button
           type="button"
@@ -944,11 +1132,26 @@ export function IntegrationLibrary({
           );
           const connected = integration.integrationKey === connectedIntegrationKey;
           const isMeta = isMetaFrontendIntegrationKey(integration.integrationKey);
-          const metaConnected = isMeta && metaFlowState === "connected";
+          const isOrganicMeta = isMetaOrganicFrontendIntegrationKey(
+            integration.integrationKey
+          );
+          const isMetaAds = integration.integrationKey === "meta_ads";
+          const metaConnected =
+            (isOrganicMeta && metaFlowState === "connected") ||
+            (isMetaAds && metaAdsFlowState === "connected");
           const blockedComingSoon =
             !isMeta && integration.status !== "Connected";
           const isConnecting = connectingIntegrationKey === integration.integrationKey;
-          const badgeLabel = isMeta && embedded ? metaUi.badge : integration.status;
+          const badgeLabel =
+            isOrganicMeta && embedded
+              ? metaUi.badge
+              : isMetaAds && embedded
+                ? metaAdsFlowState === "connected"
+                  ? "Connected"
+                  : metaAdsFlowState === "checking"
+                    ? "Checking"
+                    : "Available"
+                : integration.status;
           const titleBadge =
             isMeta && embedded
               ? badgeLabel
@@ -1017,7 +1220,8 @@ export function IntegrationLibrary({
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 {renderCardActions({
                   integration,
-                  isMeta,
+                  isOrganicMeta,
+                  isMetaAds,
                   isMetaConnected: metaConnected,
                   isConnected: connected,
                   isConnecting,

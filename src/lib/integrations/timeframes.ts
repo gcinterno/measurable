@@ -1,7 +1,7 @@
 export type MetaTimeframeOptionId =
-  | "last_7_days"
+  | "last_7d"
   | "last_14_days"
-  | "last_28_days"
+  | "last_30d"
   | "this_month"
   | "last_month"
   | "custom";
@@ -17,7 +17,7 @@ export type MetaTimeframeSelection = {
 
 export const META_TIMEFRAME_OPTIONS = [
   {
-    id: "last_7_days",
+    id: "last_7d",
     label: "Last 7 days",
     description: "Short recent window for fast trend checks.",
   },
@@ -27,9 +27,9 @@ export const META_TIMEFRAME_OPTIONS = [
     description: "Two-week readout for recent movement.",
   },
   {
-    id: "last_28_days",
-    label: "Last 28 days",
-    description: "Balanced period for the current Meta flow.",
+    id: "last_30d",
+    label: "Last 30 days",
+    description: "Balanced recent window for reporting performance.",
   },
   {
     id: "this_month",
@@ -58,6 +58,18 @@ export function isMetaTimeframeOptionId(
   return META_TIMEFRAME_OPTIONS.some((option) => option.id === value);
 }
 
+function normalizeLegacyTimeframeId(value?: string | null): MetaTimeframeOptionId | null {
+  if (value === "last_7_days") {
+    return "last_7d";
+  }
+
+  if (value === "last_28_days") {
+    return "last_30d";
+  }
+
+  return isMetaTimeframeOptionId(value) ? value : null;
+}
+
 export function normalizeMetaTimeframeSelection(input: {
   preset?: string | null;
   startDate?: string;
@@ -65,7 +77,7 @@ export function normalizeMetaTimeframeSelection(input: {
 }): MetaTimeframeSelection {
   const key = isMetaTimeframeOptionId(input.preset)
     ? input.preset
-    : "last_28_days";
+    : normalizeLegacyTimeframeId(input.preset) || "last_30d";
   const option = META_TIMEFRAME_OPTIONS.find((item) => item.id === key);
   const isCustom = key === "custom";
 

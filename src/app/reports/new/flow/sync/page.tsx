@@ -12,11 +12,15 @@ import { FlowLoadingOverlay } from "@/components/reports/flow/FlowLoadingOverlay
 import { MobileFlowHeader } from "@/components/reports/flow/MobileFlowHeader";
 import { ApiError, isLimitError } from "@/lib/api";
 import {
+  fetchMetaAdsAccounts,
+  fetchMetaAdsStatus,
   fetchIntegrationsConnectionStatus,
   fetchMetaInstagramAccounts,
   fetchMetaPages,
   refreshMetaPages,
+  selectMetaAdsAccount,
   selectMetaPage,
+  syncMetaAdsAccount,
   syncMetaInstagramAccount,
   syncMetaPages,
 } from "@/lib/api/integrations";
@@ -66,6 +70,11 @@ const EMPTY_SOURCE_SELECTOR_STATE: Record<SourceKey, SourceSelectorState> = {
     loading: true,
     error: "",
   },
+  meta_ads: {
+    accounts: [],
+    loading: true,
+    error: "",
+  },
 };
 
 type SourceCacheRecord = {
@@ -79,6 +88,24 @@ function getSourceConfig(sourceKey: SourceKey) {
   const integration = integrationCatalog.find(
     (item) => item.integrationKey === sourceKey
   );
+
+  if (sourceKey === "meta_ads") {
+    return {
+      loadingLabel: "Loading available Meta Ads ad accounts...",
+      errorEyebrow: "Meta Ads",
+      errorTitle: "We could not load your Meta Ads accounts",
+      selectorEyebrow: "Meta Ads",
+      selectorTitle: "Select an ad account",
+      selectorDescription:
+        "Choose the Meta Ads account whose paid media performance you want to sync.",
+      selectedLabel: "Selected ad account",
+      emptyMessage:
+        "No Meta Ads ad accounts found. Check permissions and account access, then reconnect if needed.",
+      displayName: "Meta Ads",
+      logoUrl: integration?.logoUrl || "",
+      logoAlt: integration?.logoAlt || "Meta Ads logo",
+    };
+  }
 
   return sourceKey === "instagram_business"
     ? {
@@ -238,7 +265,7 @@ function NewReportFlowSyncPageContent() {
       ? storedIntegrationContext.sharedTimeframe.preset
       : isMetaTimeframeOptionId(storedIntegrationContext?.timeframe)
         ? storedIntegrationContext.timeframe
-      : "last_28_days"
+      : "last_30d"
   );
   const [startDate, setStartDate] = useState(
     storedIntegrationContext?.sharedTimeframe?.startDate || storedIntegrationContext?.startDate || ""
@@ -301,13 +328,16 @@ function NewReportFlowSyncPageContent() {
 
     return {
       source: firstSource,
-      integration: "meta",
+      integration: firstSource === "meta_ads" ? "meta_ads" : "meta",
       workspaceId,
       integrationId:
         firstSourceAccount?.integrationId ||
         storedIntegrationContext?.integrationId ||
         resolvedIntegrationId,
-      pageId: firstSourceAccount?.accountId || undefined,
+      adAccountId:
+        firstSource === "meta_ads" ? firstSourceAccount?.accountId || undefined : undefined,
+      pageId:
+        firstSource === "meta_ads" ? undefined : firstSourceAccount?.accountId || undefined,
       pageName: firstSourceAccount?.accountName || undefined,
       timeframe: normalizedSelection.key,
       startDate: normalizedSelection.startDate,
@@ -390,12 +420,23 @@ function NewReportFlowSyncPageContent() {
 
       try {
         const connectionStatus = await fetchIntegrationsConnectionStatus();
+        const requiresMetaAds = selectedSources.includes("meta_ads");
+        const requiresOrganic = selectedSources.some((sourceKey) => sourceKey !== "meta_ads");
+        const metaAdsStatus = requiresMetaAds
+          ? await fetchMetaAdsStatus(workspaceId || undefined)
+          : null;
 
         if (!active) {
           return;
         }
 
-        if (!connectionStatus.metaConnected || !connectionStatus.integrationId) {
+        const organicMissing =
+          requiresOrganic &&
+          (!connectionStatus.metaConnected || !connectionStatus.integrationId);
+        const metaAdsMissing =
+          requiresMetaAds && (!metaAdsStatus?.connected || !metaAdsStatus.integrationId);
+
+        if (organicMissing || metaAdsMissing) {
           clearMetaIntegrationSessionState();
           setMetaDisconnected(true);
           setResolvedIntegrationId("");
@@ -411,6 +452,11 @@ function NewReportFlowSyncPageContent() {
               loading: false,
               error: "",
             },
+            meta_ads: {
+              accounts: [],
+              loading: false,
+              error: "",
+            },
           });
           hasLoadedRef.current = true;
           setLoading(false);
@@ -422,7 +468,11 @@ function NewReportFlowSyncPageContent() {
         hasLoadedRef.current = false;
         setLoading(true);
         setError("");
-        setResolvedIntegrationId(connectionStatus.integrationId);
+        setResolvedIntegrationId(
+          selectedSources[0] === "meta_ads"
+            ? metaAdsStatus?.integrationId || ""
+            : connectionStatus.integrationId
+        );
       } catch (connectionError) {
         if (!active) {
           return;
@@ -439,7 +489,7 @@ function NewReportFlowSyncPageContent() {
     return () => {
       active = false;
     };
-  }, [hasSelectedSources]);
+  }, [hasSelectedSources, selectedSources, workspaceId]);
 
   const loadPages = useCallback(async (sourceKey?: SourceKey, force = false) => {
     if (metaDisconnected) {
@@ -523,7 +573,12 @@ function NewReportFlowSyncPageContent() {
       const responses = await Promise.all(
         sourceKeys.map(async (selectedSource) => {
           const accountData =
-            selectedSource === "instagram_business"
+            selectedSource === "meta_ads"
+              ? await fetchMetaAdsAccounts({
+                  integrationId: resolvedIntegrationId,
+                  workspaceId: workspaceId || undefined,
+                })
+              : selectedSource === "instagram_business"
               ? await fetchMetaInstagramAccounts(resolvedIntegrationId)
               : await fetchMetaPages(resolvedIntegrationId);
 
@@ -595,6 +650,7 @@ function NewReportFlowSyncPageContent() {
     messages.reports.missingIntegration,
     resolvedIntegrationId,
     selectedSources,
+    workspaceId,
   ]);
 
   useEffect(() => {
@@ -645,10 +701,12 @@ function NewReportFlowSyncPageContent() {
         },
       }));
 
-      await refreshMetaPages({
-        integrationId: resolvedIntegrationId,
-        workspaceId: workspaceId || undefined,
-      });
+      if (sourceKey !== "meta_ads") {
+        await refreshMetaPages({
+          integrationId: resolvedIntegrationId,
+          workspaceId: workspaceId || undefined,
+        });
+      }
 
       hasLoadedRef.current = false;
       await loadPages(sourceKey, true);
@@ -703,7 +761,24 @@ function NewReportFlowSyncPageContent() {
         endDate: normalizedSelection.endDate,
       };
       const response =
-        sourceKey === "instagram_business"
+        sourceKey === "meta_ads"
+          ? await (async () => {
+              await selectMetaAdsAccount({
+                integrationId: resolvedIntegrationId,
+                accountId: selectedAccount.accountId,
+                workspaceId: workspaceId || undefined,
+              });
+
+              return syncMetaAdsAccount({
+                integrationId: resolvedIntegrationId,
+                accountId: selectedAccount.accountId,
+                timeframe: normalizedSelection.key,
+                startDate: normalizedSelection.startDate,
+                endDate: normalizedSelection.endDate,
+                workspaceId: workspaceId || undefined,
+              });
+            })()
+          : sourceKey === "instagram_business"
           ? await syncMetaInstagramAccount({
               ...syncInput,
               accountId: selectedAccount.accountId,
@@ -768,6 +843,11 @@ function NewReportFlowSyncPageContent() {
   }
 
   function handleContinueToGenerate() {
+    if (selectedSources.includes("meta_ads") && selectedSources.length > 1) {
+      setError("Meta Ads currently supports single-source reports only.");
+      return;
+    }
+
     const hasMissingAccount = selectedSources.some(
       (sourceKey) => !selectedAccountsBySource[sourceKey].accountId
     );

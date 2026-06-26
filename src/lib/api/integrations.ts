@@ -1,6 +1,7 @@
 import { apiUrl } from "@/lib/api/config";
 import { ApiError, readApiResponseText } from "@/lib/api";
 import { fetchWorkspaces, resolveActiveWorkspace } from "@/lib/api/workspaces";
+import { trackMetaEvent } from "@/lib/tracking/meta";
 
 type MetaConnectResponse = {
   url?: string;
@@ -28,6 +29,15 @@ type MetaConnectResponse = {
 type MetaEntity = {
   id: string;
   name: string;
+};
+
+type MetaAdsAccount = MetaEntity & {
+  currency?: string;
+  timezoneName?: string;
+  accountStatus?: string;
+  businessId?: string;
+  businessName?: string;
+  lastSyncedAt?: string;
 };
 
 type MetaRefreshPagesResponse = {
@@ -140,6 +150,9 @@ type MetaSyncAllResult = {
 type IntegrationsStatusResult = {
   metaConnected: boolean;
   integrationId: string;
+  metaAdsConnected: boolean;
+  metaAdsIntegrationId: string;
+  tokenScopes?: string[];
 };
 
 type MetaAuthUrlValidationResult = {
@@ -330,6 +343,74 @@ function normalizePages(response: MetaPagesResponse) {
   })) satisfies MetaEntity[];
 }
 
+function normalizeMetaAdsAccounts(response: unknown) {
+  const payload = isRecord(response) ? response : {};
+  const accounts = Array.isArray(response)
+    ? response
+    : Array.isArray(payload.accounts)
+      ? payload.accounts
+      : Array.isArray(payload.items)
+        ? payload.items
+        : Array.isArray(payload.data)
+          ? payload.data
+          : [];
+
+  return accounts.map((account, index) => {
+    const record = isRecord(account) ? account : {};
+    const business = isRecord(record.business) ? record.business : null;
+    const id =
+      record.id ??
+      record.account_id ??
+      record.ad_account_id ??
+      `meta-ads-account-${index}`;
+
+    return {
+      id: String(id),
+      name:
+        (typeof record.display_label === "string" && record.display_label) ||
+        (typeof record.name === "string" && record.name) ||
+        (typeof record.account_name === "string" && record.account_name) ||
+        `Ad Account ${index + 1}`,
+      currency:
+        typeof record.currency === "string" ? record.currency : undefined,
+      timezoneName:
+        typeof record.timezone_name === "string"
+          ? record.timezone_name
+          : typeof record.timezoneName === "string"
+            ? record.timezoneName
+            : undefined,
+      accountStatus:
+        typeof record.account_status === "string"
+          ? record.account_status
+          : typeof record.accountStatus === "string"
+            ? record.accountStatus
+            : undefined,
+      businessId:
+        typeof record.business_id === "string"
+          ? record.business_id
+          : typeof record.businessId === "string"
+            ? record.businessId
+            : typeof business?.id === "string"
+              ? business.id
+              : undefined,
+      businessName:
+        typeof record.business_name === "string"
+          ? record.business_name
+          : typeof record.businessName === "string"
+            ? record.businessName
+            : typeof business?.name === "string"
+              ? business.name
+              : undefined,
+      lastSyncedAt:
+        typeof record.last_synced_at === "string"
+          ? record.last_synced_at
+          : typeof record.lastSyncedAt === "string"
+            ? record.lastSyncedAt
+            : undefined,
+    } satisfies MetaAdsAccount;
+  });
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -400,6 +481,61 @@ function getRecordMessage(record: Record<string, unknown>) {
   }
 
   return "";
+}
+
+function normalizeScopeList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((item) => {
+        if (typeof item === "string") {
+          return [item.trim()];
+        }
+
+        if (isRecord(item)) {
+          return [
+            normalizeScopeList(item.scope),
+            normalizeScopeList(item.scopes),
+            normalizeScopeList(item.permission),
+            normalizeScopeList(item.permissions),
+          ].flat();
+        }
+
+        return [];
+      })
+      .map((scope) => scope.trim())
+      .filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((scope) => scope.trim())
+      .filter(Boolean);
+  }
+
+  if (isRecord(value)) {
+    return normalizeScopeList(
+      value.scope ||
+        value.scopes ||
+        value.permission ||
+        value.permissions ||
+        value.granted_scopes ||
+        value.grantedScopes
+    );
+  }
+
+  return [];
+}
+
+function getScopesFromRecord(record: Record<string, unknown>) {
+  return [
+    ...normalizeScopeList(record.scopes),
+    ...normalizeScopeList(record.granted_scopes),
+    ...normalizeScopeList(record.grantedScopes),
+    ...normalizeScopeList(record.permissions),
+    ...normalizeScopeList(record.permission),
+    ...normalizeScopeList(record.scope),
+  ];
 }
 
 function getNestedSourcePayload(
@@ -481,6 +617,9 @@ function extractMetaConnectionStatus(payload: unknown): IntegrationsStatusResult
   const queue: unknown[] = [payload];
   let metaConnected = false;
   let integrationId = "";
+  let metaAdsConnected = false;
+  let metaAdsIntegrationId = "";
+  const tokenScopes = new Set<string>();
 
   while (queue.length > 0) {
     const current = queue.shift();
@@ -501,6 +640,12 @@ function extractMetaConnectionStatus(payload: unknown): IntegrationsStatusResult
       haystack.includes("facebook_pages") ||
       haystack.includes("instagram") ||
       haystack.includes("instagram_business");
+    const mentionsMetaAds =
+      haystack.includes("meta ads") ||
+      haystack.includes("meta_ads") ||
+      haystack.includes("ad account") ||
+      haystack.includes("ads insights") ||
+      haystack.includes("marketing api");
 
     if (mentionsMeta && getRecordConnected(current)) {
       metaConnected = true;
@@ -509,6 +654,16 @@ function extractMetaConnectionStatus(payload: unknown): IntegrationsStatusResult
         integrationId = getRecordIntegrationId(current);
       }
     }
+
+    if (mentionsMetaAds && getRecordConnected(current)) {
+      metaAdsConnected = true;
+
+      if (!metaAdsIntegrationId) {
+        metaAdsIntegrationId = getRecordIntegrationId(current);
+      }
+    }
+
+    getScopesFromRecord(current).forEach((scope) => tokenScopes.add(scope));
 
     Object.values(current).forEach((value) => {
       if (Array.isArray(value) || isRecord(value)) {
@@ -520,6 +675,9 @@ function extractMetaConnectionStatus(payload: unknown): IntegrationsStatusResult
   return {
     metaConnected,
     integrationId,
+    metaAdsConnected,
+    metaAdsIntegrationId,
+    tokenScopes: Array.from(tokenScopes),
   };
 }
 
@@ -529,6 +687,11 @@ export async function connectMetaIntegration(input?: {
   reconnect?: boolean;
 }) {
   const activeWorkspaceId = await getRequiredWorkspaceId(input?.workspaceId);
+  void trackMetaEvent("MetaConnectStarted", {
+    workspace_id: activeWorkspaceId,
+    source: input?.source || "facebook_pages",
+    reconnect: input?.reconnect === true,
+  });
   const searchParams = new URLSearchParams({
     workspace_id: activeWorkspaceId,
   });
@@ -615,6 +778,212 @@ export async function fetchIntegrationsConnectionStatus() {
   const payload = text ? (JSON.parse(text) as unknown) : null;
 
   return extractMetaConnectionStatus(payload);
+}
+
+export async function connectMetaAdsIntegration(input?: {
+  workspaceId?: string | null;
+  reconnect?: boolean;
+}) {
+  const activeWorkspaceId = await getRequiredWorkspaceId(input?.workspaceId);
+  const searchParams = new URLSearchParams({
+    workspace_id: activeWorkspaceId,
+  });
+
+  if (input?.reconnect) {
+    searchParams.set("reconnect", "true");
+  }
+
+  const endpoint = `/integrations/meta-ads/connect?${searchParams.toString()}`;
+  const res = await fetch(apiUrl(endpoint), {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+    credentials: "include",
+  });
+
+  const text = await readApiResponseText(endpoint, res);
+  return getRedirectUrl(text);
+}
+
+export async function fetchMetaAdsStatus(workspaceId?: string | null) {
+  const resolvedWorkspaceId = await getRequiredWorkspaceId(workspaceId);
+  const endpoint = `/integrations/meta-ads/status?workspace_id=${encodeURIComponent(
+    resolvedWorkspaceId
+  )}`;
+  const res = await fetch(apiUrl(endpoint), {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+    credentials: "include",
+  });
+  const text = await readApiResponseText(endpoint, res);
+  const payload = text ? parseJsonText(text) : null;
+  const record = isRecord(payload) ? payload : {};
+  const data = isRecord(record.data) ? record.data : {};
+  const tokenScopes = [
+    ...getScopesFromRecord(record),
+    ...getScopesFromRecord(data),
+  ];
+
+  return {
+    connected:
+      Boolean(record.connected) ||
+      Boolean(record.is_connected) ||
+      Boolean(data.connected) ||
+      Boolean(data.is_connected) ||
+      getRecordStatus(record) === "connected" ||
+      getRecordStatus(data) === "connected",
+    integrationId: getRecordIntegrationId(record) || getRecordIntegrationId(data),
+    tokenScopes: tokenScopes.length > 0 ? Array.from(new Set(tokenScopes)) : [],
+    selectedAccountId:
+      typeof record.selected_account_id === "string"
+        ? record.selected_account_id
+        : typeof record.selectedAccountId === "string"
+          ? record.selectedAccountId
+          : typeof data.selected_account_id === "string"
+            ? data.selected_account_id
+            : typeof data.selectedAccountId === "string"
+              ? data.selectedAccountId
+              : "",
+    lastSyncedAt:
+      typeof record.last_synced_at === "string"
+        ? record.last_synced_at
+        : typeof record.lastSyncedAt === "string"
+          ? record.lastSyncedAt
+          : typeof data.last_synced_at === "string"
+            ? data.last_synced_at
+            : typeof data.lastSyncedAt === "string"
+              ? data.lastSyncedAt
+              : "",
+    message: getRecordMessage(record) || getRecordMessage(data),
+  };
+}
+
+export async function fetchMetaAdsAccounts(input?: {
+  integrationId?: string;
+  workspaceId?: string | null;
+}) {
+  const resolvedWorkspaceId = await getRequiredWorkspaceId(input?.workspaceId);
+  const searchParams = new URLSearchParams({
+    workspace_id: resolvedWorkspaceId,
+  });
+
+  if (input?.integrationId) {
+    searchParams.set("integration_id", input.integrationId);
+  }
+
+  const endpoint = `/integrations/meta-ads/accounts?${searchParams.toString()}`;
+  const res = await fetch(apiUrl(endpoint), {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+    credentials: "include",
+  });
+  const text = await readApiResponseText(endpoint, res);
+  const payload = text ? parseJsonText(text) : null;
+
+  return normalizeMetaAdsAccounts(payload);
+}
+
+export async function selectMetaAdsAccount(input: {
+  integrationId: string;
+  accountId: string;
+  workspaceId?: string | null;
+}) {
+  const resolvedWorkspaceId = await getRequiredWorkspaceId(input.workspaceId);
+  const endpoint = "/integrations/meta-ads/select-account";
+  const res = await fetch(apiUrl(endpoint), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(getAuthHeaders() || {}),
+    },
+    body: JSON.stringify({
+      workspace_id: resolvedWorkspaceId,
+      integration_id: input.integrationId,
+      account_id: input.accountId,
+    }),
+  });
+
+  const text = await readApiResponseText(endpoint, res);
+  const payload = text ? (JSON.parse(text) as MetaSelectOrSyncResponse) : {};
+
+  return {
+    raw: payload,
+    integrationId: extractIntegrationId(payload) || input.integrationId,
+    datasetId: extractDatasetId(payload),
+  };
+}
+
+export async function syncMetaAdsAccount(input: {
+  integrationId: string;
+  accountId: string;
+  timeframe: string;
+  startDate?: string;
+  endDate?: string;
+  workspaceId?: string | null;
+}) {
+  const resolvedWorkspaceId = await getRequiredWorkspaceId(input.workspaceId);
+  const endpoint = "/integrations/meta-ads/sync";
+  const res = await fetch(apiUrl(endpoint), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(getAuthHeaders() || {}),
+    },
+    body: JSON.stringify({
+      workspace_id: resolvedWorkspaceId,
+      integration_id: input.integrationId,
+      account_id: input.accountId,
+      timeframe: input.timeframe,
+      start_date: input.timeframe === "custom" ? input.startDate ?? null : null,
+      end_date: input.timeframe === "custom" ? input.endDate ?? null : null,
+    }),
+  });
+
+  const text = await readApiResponseText(endpoint, res);
+  const payload = text ? (JSON.parse(text) as MetaSelectOrSyncResponse) : {};
+
+  return {
+    raw: payload,
+    message:
+      payload.message ||
+      payload.detail ||
+      payload.data?.message ||
+      payload.data?.detail ||
+      "Synchronization completed.",
+    detail: payload.detail || payload.data?.detail || "",
+    integrationId: extractIntegrationId(payload) || input.integrationId,
+    datasetId: extractDatasetId(payload),
+  };
+}
+
+export async function disconnectMetaAdsIntegration(input?: {
+  workspaceId?: string | null;
+}) {
+  const activeWorkspaceId = await getRequiredWorkspaceId(input?.workspaceId);
+  const endpoint = "/integrations/meta-ads/disconnect";
+  const res = await fetch(apiUrl(endpoint), {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      ...(getAuthHeaders() || {}),
+    },
+    body: JSON.stringify({
+      workspace_id: activeWorkspaceId,
+    }),
+  });
+
+  const text = await readApiResponseText(endpoint, res);
+  const payload = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+
+  return {
+    ok: res.ok,
+    message:
+      (typeof payload.message === "string" && payload.message) ||
+      (typeof payload.detail === "string" && payload.detail) ||
+      "Meta Ads disconnected successfully.",
+  };
 }
 
 export async function fetchMetaPages(
@@ -767,7 +1136,7 @@ export async function selectMetaPage(input: {
 export async function syncMetaPages(input: {
   pageId: string;
   integrationId: string;
-  timeframe: string;
+  timeframe?: string;
   startDate?: string;
   endDate?: string;
   workspaceId?: string | null;
@@ -776,7 +1145,7 @@ export async function syncMetaPages(input: {
   const payload = {
     workspaceId,
     pageId: input.pageId,
-    timeframe: input.timeframe,
+    timeframe: input.timeframe || "last_30d",
     startDate: input.timeframe === "custom" ? input.startDate : undefined,
     endDate: input.timeframe === "custom" ? input.endDate : undefined,
   };
@@ -800,7 +1169,7 @@ export async function syncMetaPages(input: {
       hasAuthorization: Boolean(headers.Authorization),
     },
     integrationId: input.integrationId,
-    selectedTimeframe: input.timeframe,
+    selectedTimeframe: input.timeframe || "last_30d",
     startDate: input.startDate,
     endDate: input.endDate,
     payload,
@@ -834,7 +1203,7 @@ export async function syncMetaPages(input: {
     integrationId:
       extractIntegrationId(parsedPayload) || input.integrationId,
     datasetId,
-    requestTimeframe: input.timeframe,
+    requestTimeframe: input.timeframe || "last_30d",
     responseTimeframe,
     responseTimeframeKey,
     reachDailyLength,
@@ -842,9 +1211,9 @@ export async function syncMetaPages(input: {
     raw: parsedPayload,
   });
 
-  if (responseTimeframeKey && responseTimeframeKey !== input.timeframe) {
+  if (responseTimeframeKey && responseTimeframeKey !== (input.timeframe || "last_30d")) {
     console.warn("[MetaTimeframe][api.sync.response] timeframe mismatch", {
-      requestTimeframe: input.timeframe,
+      requestTimeframe: input.timeframe || "last_30d",
       responseTimeframe,
       responseTimeframeKey,
       datasetId,

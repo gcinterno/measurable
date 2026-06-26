@@ -4,6 +4,7 @@ import {
   normalizeMetaTimeframeSelection,
   type MetaTimeframeSelection,
 } from "@/lib/integrations/timeframes";
+import type { MetaFrontendIntegrationKey } from "@/lib/integrations/catalog";
 import type { ReportTemplateId } from "@/lib/reports/template-selection";
 
 const INTEGRATION_REPORT_CONTEXT_KEY = "integrationReportContext";
@@ -11,7 +12,7 @@ const PENDING_META_SOURCE_KEY = "pendingMetaSource";
 export const META_SELECTOR_CACHE_KEY = "measurable.meta.sync.selectorCache";
 
 export type PendingMetaSource = "facebook_pages" | "instagram_business";
-export type SourceKey = PendingMetaSource;
+export type SourceKey = MetaFrontendIntegrationKey;
 
 export type SelectedSourceAccount = {
   accountId: string;
@@ -41,6 +42,7 @@ export function createEmptySelectedAccountsBySource(): SelectedAccountsBySource 
   return {
     facebook_pages: createEmptySelectedSourceAccount(),
     instagram_business: createEmptySelectedSourceAccount(),
+    meta_ads: createEmptySelectedSourceAccount(),
   };
 }
 
@@ -103,6 +105,7 @@ function normalizeSelectedAccountsBySource(value: unknown) {
 
   normalized.facebook_pages = normalizeSelectedSourceAccount(record.facebook_pages);
   normalized.instagram_business = normalizeSelectedSourceAccount(record.instagram_business);
+  normalized.meta_ads = normalizeSelectedSourceAccount(record.meta_ads);
 
   return normalized;
 }
@@ -119,6 +122,8 @@ function deriveSelectedSources(
 
   const legacySource = isPendingMetaSource(rawContext.source as string)
     ? (rawContext.source as SourceKey)
+    : rawContext.source === "meta_ads"
+      ? "meta_ads"
     : null;
 
   if (legacySource) {
@@ -179,6 +184,7 @@ function buildLegacyFieldsFromSources(
   const firstSourceAccount = firstSource
     ? selectedAccountsBySource[firstSource]
     : createEmptySelectedSourceAccount();
+  const isMetaAdsSource = firstSource === "meta_ads";
 
   const aiMode: "standard" | "agents" | undefined =
     rawContext.aiMode === "agents" || rawContext.aiMode === "standard"
@@ -205,10 +211,13 @@ function buildLegacyFieldsFromSources(
       firstSourceAccount.datasetId ||
       (typeof rawContext.datasetId === "string" ? rawContext.datasetId : undefined),
     businessId: typeof rawContext.businessId === "string" ? rawContext.businessId : undefined,
-    adAccountId: typeof rawContext.adAccountId === "string" ? rawContext.adAccountId : undefined,
-    pageId:
-      firstSourceAccount.accountId ||
-      (typeof rawContext.pageId === "string" ? rawContext.pageId : undefined),
+    adAccountId:
+      (isMetaAdsSource ? firstSourceAccount.accountId : undefined) ||
+      (typeof rawContext.adAccountId === "string" ? rawContext.adAccountId : undefined),
+    pageId: isMetaAdsSource
+      ? undefined
+      : firstSourceAccount.accountId ||
+        (typeof rawContext.pageId === "string" ? rawContext.pageId : undefined),
     pageName:
       firstSourceAccount.accountName ||
       (typeof rawContext.pageName === "string" ? rawContext.pageName : undefined),

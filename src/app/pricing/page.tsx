@@ -8,6 +8,7 @@ import { FEATURES } from "@/config/features";
 import { trackEvent } from "@/lib/analytics";
 import { useBilling } from "@/lib/billing/useBilling";
 import { useAuthStore } from "@/lib/store/auth-store";
+import { trackMetaEvent } from "@/lib/tracking/meta";
 import type { BillingPlanCode } from "@/lib/billing/plans";
 
 type PricingCard = {
@@ -405,6 +406,14 @@ export default function PricingPage() {
                   <button
                     type="button"
                     onClick={() => {
+                      if (!isCurrent && !isLoading) {
+                        void trackMetaEvent("Lead", {
+                          cta_label: plan.cta,
+                          cta_location: "pricing_card",
+                          plan: plan.code,
+                        });
+                      }
+
                       if (!isFree && !isCurrent && !isLoading) {
                         trackEvent("upgrade_click", {
                           current_plan: currentPlanCode,
@@ -510,7 +519,14 @@ export default function PricingPage() {
           <div className="mt-8 flex justify-center">
             <button
               type="button"
-              onClick={handleSelectFree}
+              onClick={() => {
+                void trackMetaEvent("Lead", {
+                  cta_label: "Get Your First Reports For Free!",
+                  cta_location: "pricing_footer",
+                  plan: "free",
+                });
+                handleSelectFree();
+              }}
               className="inline-flex min-h-[3.75rem] items-center justify-center rounded-[22px] bg-[var(--measurable-blue)] px-8 py-4 text-base font-semibold text-white shadow-[0_18px_40px_rgba(23,73,255,0.24)] transition hover:bg-[var(--measurable-blue-hover)]"
             >
               Get Your First Reports For Free!
