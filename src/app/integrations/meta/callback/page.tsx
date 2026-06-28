@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
   fetchIntegrationsConnectionStatus,
@@ -13,9 +13,10 @@ import {
 import {
   META_OAUTH_CONNECT_ERROR,
   META_OAUTH_CONNECT_SUCCESS,
-  META_OAUTH_SCOPES,
+  getMetaOAuthScopesForSource,
   getMissingMetaOAuthScopes,
   postMetaOAuthMessageToOpener,
+  type MetaOAuthSource,
 } from "@/lib/integrations/meta-oauth";
 import {
   clearPendingMetaSource,
@@ -33,9 +34,13 @@ function CallbackRedirectFallback() {
   return null;
 }
 
-function MetaIntegrationCallbackContent() {
+export function MetaIntegrationCallbackContent() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const callbackRoute = pathname?.includes("/instagram-business/")
+    ? "/integrations/instagram-business/callback"
+    : "/integrations/meta/callback";
   const [title, setTitle] = useState("Completing Meta connection...");
   const [description, setDescription] = useState(
     "We’re validating the authorization to complete the connection."
@@ -115,10 +120,18 @@ function MetaIntegrationCallbackContent() {
       const storedContext = getIntegrationReportContext();
       const querySource = searchParams.get("source");
       const pendingMetaSource = getPendingMetaSource();
+      const routeSource = callbackRoute.includes("/instagram-business/")
+        ? "instagram_business"
+        : null;
       const resolvedSource =
+        routeSource ||
         (isPendingMetaSource(querySource) && querySource) ||
         pendingMetaSource ||
         (isPendingMetaSource(storedContext?.source) ? storedContext.source : null);
+      const resolvedMetaSource: MetaOAuthSource =
+        resolvedSource === "instagram_business"
+          ? "instagram_business"
+          : "facebook_pages";
       const status = searchParams.get("status");
       const integrationId = searchParams.get("integration_id");
       const errorParam = searchParams.get("error");
@@ -130,13 +143,26 @@ function MetaIntegrationCallbackContent() {
         "We couldn’t complete the Meta connection. Please try again.";
 
       console.info("META_OAUTH_CALLBACK_RECEIVED", {
-        route: "/integrations/meta/callback",
+        route: callbackRoute,
+        integration_type: resolvedMetaSource,
         status,
         integration_id: integrationId || null,
         source: querySource || null,
         pending_source: pendingMetaSource || null,
         error: errorParam || null,
       });
+
+      if (resolvedMetaSource === "instagram_business") {
+        console.info("INSTAGRAM_BUSINESS_CALLBACK_RECEIVED", {
+          route: callbackRoute,
+          integration_type: "instagram_business",
+          status,
+          integration_id: integrationId || null,
+          source: querySource || null,
+          pending_source: pendingMetaSource || null,
+          error: errorParam || null,
+        });
+      }
 
       updateFallback({
         title: "Completing Meta connection...",
@@ -156,6 +182,15 @@ function MetaIntegrationCallbackContent() {
       if (errorParam) {
         clearPendingMetaOAuth();
         clearPendingMetaSource();
+
+        if (resolvedMetaSource === "instagram_business") {
+          console.info("INSTAGRAM_BUSINESS_CONNECT_FAILED", {
+            route: callbackRoute,
+            integration_type: "instagram_business",
+            integration_id: integrationId || null,
+            reason: callbackErrorMessage,
+          });
+        }
 
         if (
           typeof window !== "undefined" &&
@@ -202,15 +237,14 @@ function MetaIntegrationCallbackContent() {
           tokenScopes = refreshResult.tokenScopes || [];
 
           console.info("META_OAUTH_TOKEN_SCOPES_RECEIVED", {
-            route: "/integrations/meta/callback",
+            route: callbackRoute,
+            integration_type: resolvedMetaSource,
             integration_id: refreshedIntegrationId || null,
             token_scopes: tokenScopes.length > 0 ? tokenScopes : null,
           });
 
           if (metaConnected && refreshedIntegrationId && resolvedWorkspaceId) {
-            const currentSource = resolvedSource || storedContext?.source || "";
-
-            if (currentSource === "instagram_business") {
+            if (resolvedMetaSource === "instagram_business") {
               const authorizedInstagramAccounts = await fetchMetaInstagramAccounts(
                 refreshedIntegrationId,
                 resolvedWorkspaceId
@@ -233,7 +267,8 @@ function MetaIntegrationCallbackContent() {
             instagram_accounts_count: instagramAccountsCount,
           });
           console.info("META_CONNECTED_ASSETS_DISCOVERED", {
-            route: "/integrations/meta/callback",
+            route: callbackRoute,
+            integration_type: resolvedMetaSource,
             integration_id: refreshedIntegrationId || null,
             workspace_id: resolvedWorkspaceId || null,
             page_name: storedContext?.pageName || null,
@@ -242,14 +277,19 @@ function MetaIntegrationCallbackContent() {
             asset_connected: pagesCount > 0 || instagramAccountsCount > 0,
           });
 
-          const missingScopes = getMissingMetaOAuthScopes(tokenScopes);
+          const missingScopes = getMissingMetaOAuthScopes(
+            tokenScopes,
+            resolvedMetaSource
+          );
+          const expectedScopes = getMetaOAuthScopesForSource(resolvedMetaSource);
 
           if (missingScopes.length > 0) {
             console.info("META_PERMISSION_MISSING", {
-              route: "/integrations/meta/callback",
+              route: callbackRoute,
+              integration_type: resolvedMetaSource,
               integration_id: refreshedIntegrationId || null,
               missing_scopes: missingScopes,
-              expected_scopes: META_OAUTH_SCOPES,
+              expected_scopes: expectedScopes,
             });
           }
         } catch (error) {
@@ -261,6 +301,14 @@ function MetaIntegrationCallbackContent() {
             pages_count: 0,
             error: error instanceof Error ? error.message : "unknown_error",
           });
+          if (resolvedMetaSource === "instagram_business") {
+            console.info("INSTAGRAM_BUSINESS_CONNECT_FAILED", {
+              route: callbackRoute,
+              integration_type: "instagram_business",
+              integration_id: integrationId || null,
+              reason: error instanceof Error ? error.message : "unknown_error",
+            });
+          }
           clearPendingMetaOAuth();
           clearPendingMetaSource();
 
@@ -353,6 +401,15 @@ function MetaIntegrationCallbackContent() {
           ? pagesCount
           : instagramAccountsCount;
 
+        if (resolvedMetaSource === "instagram_business") {
+          console.info("INSTAGRAM_BUSINESS_CONNECT_SUCCESS", {
+            route: callbackRoute,
+            integration_type: "instagram_business",
+            integration_id: refreshedIntegrationId || null,
+            account_count: discoveredAssetsCount,
+          });
+        }
+
         if (
           typeof window !== "undefined" &&
           window.opener &&
@@ -378,6 +435,16 @@ function MetaIntegrationCallbackContent() {
         return;
       }
 
+      if (resolvedMetaSource === "instagram_business") {
+        console.info("INSTAGRAM_BUSINESS_CONNECT_FAILED", {
+          route: callbackRoute,
+          integration_type: "instagram_business",
+          integration_id: integrationId || null,
+          source: querySource || null,
+          pending_source: pendingMetaSource || null,
+        });
+      }
+
       clearPendingMetaSource();
       clearPendingMetaOAuth();
       router.replace(storedContext?.postConnectRedirect || "/integrations");
@@ -387,7 +454,7 @@ function MetaIntegrationCallbackContent() {
     return () => {
       cancelled = true;
     };
-  }, [router, searchParams]);
+  }, [callbackRoute, router, searchParams]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#e0f2fe,transparent_45%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] px-6">

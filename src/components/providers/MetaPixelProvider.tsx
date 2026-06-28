@@ -10,6 +10,10 @@ function shouldSkipPageView(pathname: string, searchParams: URLSearchParams) {
     return true;
   }
 
+  if (pathname === "/integrations/instagram-business/callback") {
+    return true;
+  }
+
   if (
     searchParams.has("error") ||
     searchParams.has("oauth_error") ||

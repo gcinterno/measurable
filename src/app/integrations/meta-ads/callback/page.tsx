@@ -10,7 +10,7 @@ import {
 import {
   META_OAUTH_CONNECT_ERROR,
   META_OAUTH_CONNECT_SUCCESS,
-  META_OAUTH_SCOPES,
+  getMetaOAuthScopesForSource,
   getMissingMetaOAuthScopes,
   postMetaOAuthMessageToOpener,
 } from "@/lib/integrations/meta-oauth";
@@ -32,6 +32,7 @@ function MetaAdsCallbackContent() {
 
       console.info("META_OAUTH_CALLBACK_RECEIVED", {
         route: "/integrations/meta-ads/callback",
+        integration_type: "meta_ads",
         status,
         integration_id: integrationId || null,
         error: error || null,
@@ -62,6 +63,7 @@ function MetaAdsCallbackContent() {
 
         console.info("META_OAUTH_TOKEN_SCOPES_RECEIVED", {
           route: "/integrations/meta-ads/callback",
+          integration_type: "meta_ads",
           integration_id: resolvedIntegrationId || null,
           token_scopes: tokenScopes.length > 0 ? tokenScopes : null,
         });
@@ -79,20 +81,22 @@ function MetaAdsCallbackContent() {
 
         console.info("META_CONNECTED_ASSETS_DISCOVERED", {
           route: "/integrations/meta-ads/callback",
+          integration_type: "meta_ads",
           integration_id: resolvedIntegrationId || null,
           workspace_id: workspaceId || null,
           ad_accounts_count: accounts.length,
           asset_connected: accounts.length > 0,
         });
 
-        const missingScopes = getMissingMetaOAuthScopes(tokenScopes);
+        const missingScopes = getMissingMetaOAuthScopes(tokenScopes, "meta_ads");
 
         if (missingScopes.length > 0) {
           console.info("META_PERMISSION_MISSING", {
             route: "/integrations/meta-ads/callback",
+            integration_type: "meta_ads",
             integration_id: resolvedIntegrationId || null,
             missing_scopes: missingScopes,
-            expected_scopes: META_OAUTH_SCOPES,
+            expected_scopes: getMetaOAuthScopesForSource("meta_ads"),
           });
         }
 

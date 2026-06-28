@@ -515,34 +515,61 @@ function IntegrationsPageContent() {
       });
 
       const rawAuthUrl = response.authUrlFromBackend || response.redirectUrl;
-      const authUrl = normalizeMetaAuthUrl(rawAuthUrl);
-      const validation = validateMetaAuthUrl(authUrl);
+      const normalizedSource =
+        source === "instagram_business"
+          ? "instagram_business"
+          : source === "meta_ads"
+            ? "meta_ads"
+            : "facebook_pages";
+      const authUrl = normalizeMetaAuthUrl(rawAuthUrl, normalizedSource);
+      const validation = validateMetaAuthUrl(authUrl, normalizedSource);
 
       console.info("META_CONNECT_AUTH_URL", {
         workspace_id: connectWorkspaceId,
         source,
+        integration_type: source,
         auth_url: authUrl || null,
         integration_id: response.integrationId || null,
       });
 
-      console.info("META_CONNECT_AUTH_URL_FINAL", {
-        workspace_id: connectWorkspaceId,
-        source,
-        auth_url: authUrl || null,
-        starts_with_facebook: validation.startsWithFacebook,
-        contains_dialog_oauth: validation.containsDialogOAuth,
-      });
+      if (source === "instagram_business") {
+        console.info("INSTAGRAM_BUSINESS_AUTH_URL_RECEIVED", {
+          route: "/integrations",
+          integration_type: "instagram_business",
+          workspace_id: connectWorkspaceId,
+          auth_url: authUrl || null,
+          integration_id: response.integrationId || null,
+        });
+      }
+
+        console.info("META_CONNECT_AUTH_URL_FINAL", {
+          workspace_id: connectWorkspaceId,
+          source,
+          integration_type: source,
+          auth_url: authUrl || null,
+          starts_with_expected_domain: validation.startsWithExpectedDomain,
+          contains_expected_oauth_path: validation.containsExpectedOAuthPath,
+        });
 
       if (!validation.isValid) {
         console.error("META_CONNECT_INVALID_AUTH_URL", {
           workspace_id: connectWorkspaceId,
           source,
+          integration_type: source,
           auth_url: authUrl || null,
-          starts_with_facebook: validation.startsWithFacebook,
-          contains_dialog_oauth: validation.containsDialogOAuth,
+          starts_with_expected_domain: validation.startsWithExpectedDomain,
+          contains_expected_oauth_path: validation.containsExpectedOAuthPath,
         });
+        if (source === "instagram_business") {
+          console.info("INSTAGRAM_BUSINESS_CONNECT_FAILED", {
+            route: "/integrations",
+            integration_type: "instagram_business",
+            workspace_id: connectWorkspaceId,
+            auth_url: authUrl || null,
+          });
+        }
         throw new Error(
-          "The backend did not return a valid Meta OAuth URL with /dialog/oauth."
+          "The backend did not return a valid Meta OAuth URL for the selected integration."
         );
       }
 
@@ -671,6 +698,14 @@ function IntegrationsPageContent() {
       }
     } catch (err: unknown) {
       console.error("meta connect error:", err);
+      if (source === "instagram_business") {
+        console.info("INSTAGRAM_BUSINESS_CONNECT_FAILED", {
+          route: "/integrations",
+          integration_type: "instagram_business",
+          workspace_id: connectWorkspaceId,
+          reason: err instanceof Error ? err.message : "unknown_error",
+        });
+      }
       setMetaStatusMessage("");
       setMetaConnectMode(null);
       setMetaError(
@@ -743,6 +778,14 @@ function IntegrationsPageContent() {
       return;
     }
 
+    if (source === "instagram_business") {
+      console.info("INSTAGRAM_BUSINESS_CONNECT_CLICKED", {
+        route: "/integrations",
+        integration_type: "instagram_business",
+        workspace_id: contextWorkspaceId,
+      });
+    }
+
     setPendingMetaSource(source);
 
     setIntegrationReportContext({
@@ -777,6 +820,15 @@ function IntegrationsPageContent() {
         ? storedContext.source
         : "facebook_pages");
 
+    if (reconnectSource === "instagram_business") {
+      console.info("INSTAGRAM_BUSINESS_CONNECT_CLICKED", {
+        route: "/integrations",
+        integration_type: "instagram_business",
+        workspace_id: contextWorkspaceId,
+        reconnect: true,
+      });
+    }
+
     setPendingMetaSource(reconnectSource);
 
     setIntegrationReportContext({
@@ -802,21 +854,27 @@ function IntegrationsPageContent() {
         setMetaAdsLoading(true);
         setMetaAdsError("");
         setMetaAdsStatusMessage(reconnect ? "Reconnecting Meta Ads..." : "Connecting Meta Ads...");
-        const response = await connectMetaAdsIntegration({
-          workspaceId: activeWorkspaceId || undefined,
-          reconnect,
-        });
-        const authUrl = normalizeMetaAuthUrl(response.authUrlFromBackend || response.redirectUrl);
-        const validation = validateMetaAuthUrl(authUrl);
+      const response = await connectMetaAdsIntegration({
+        workspaceId: activeWorkspaceId || undefined,
+        reconnect,
+        source: "meta_ads",
+      });
+        const authUrl = normalizeMetaAuthUrl(
+          response.authUrlFromBackend || response.redirectUrl,
+          "meta_ads"
+        );
+        const validation = validateMetaAuthUrl(authUrl, "meta_ads");
 
         console.info("META_OAUTH_SCOPES_REQUESTED", {
           route: "/integrations",
           source: "meta_ads",
+          integration_type: "meta_ads",
           scopes: getMetaOAuthRequestedScopes(authUrl),
         });
         console.info("META_OAUTH_AUTH_URL_CREATED", {
           route: "/integrations",
           source: "meta_ads",
+          integration_type: "meta_ads",
           auth_url: authUrl || null,
           scopes: getMetaOAuthRequestedScopes(authUrl),
         });

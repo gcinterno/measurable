@@ -2,6 +2,10 @@ import { apiUrl } from "@/lib/api/config";
 import { ApiError, readApiResponseText } from "@/lib/api";
 import { fetchWorkspaces, resolveActiveWorkspace } from "@/lib/api/workspaces";
 import { trackMetaEvent } from "@/lib/tracking/meta";
+import {
+  getMetaOAuthAuthDomainForSource,
+  type MetaOAuthSource,
+} from "@/lib/integrations/meta-oauth";
 
 type MetaConnectResponse = {
   url?: string;
@@ -157,8 +161,8 @@ type IntegrationsStatusResult = {
 
 type MetaAuthUrlValidationResult = {
   isValid: boolean;
-  startsWithFacebook: boolean;
-  containsDialogOAuth: boolean;
+  startsWithExpectedDomain: boolean;
+  containsExpectedOAuthPath: boolean;
 };
 
 function getAuthHeaders() {
@@ -290,12 +294,15 @@ function getRedirectUrl(text: string) {
   }
 }
 
-export function validateMetaAuthUrl(value: string): MetaAuthUrlValidationResult {
+export function validateMetaAuthUrl(
+  value: string,
+  source: MetaOAuthSource = "facebook_pages"
+): MetaAuthUrlValidationResult {
   if (!value) {
     return {
       isValid: false,
-      startsWithFacebook: false,
-      containsDialogOAuth: false,
+      startsWithExpectedDomain: false,
+      containsExpectedOAuthPath: false,
     };
   }
 
@@ -303,21 +310,24 @@ export function validateMetaAuthUrl(value: string): MetaAuthUrlValidationResult 
     const parsedUrl = new URL(value);
     const isHttpUrl =
       parsedUrl.protocol === "https:" || parsedUrl.protocol === "http:";
-    const startsWithFacebook = value.startsWith("https://www.facebook.com/");
-    const containsDialogOAuth =
-      parsedUrl.pathname.includes("/dialog/oauth") ||
-      `${parsedUrl.pathname}${parsedUrl.search}`.includes("/dialog/oauth");
+    const expectedDomain = getMetaOAuthAuthDomainForSource(source);
+    const startsWithExpectedDomain = value.includes(expectedDomain);
+    const containsExpectedOAuthPath =
+      source === "instagram_business"
+        ? parsedUrl.pathname.includes("/oauth/authorize")
+        : parsedUrl.pathname.includes("/dialog/oauth") ||
+          `${parsedUrl.pathname}${parsedUrl.search}`.includes("/dialog/oauth");
 
     return {
-      isValid: isHttpUrl && startsWithFacebook && containsDialogOAuth,
-      startsWithFacebook,
-      containsDialogOAuth,
+      isValid: isHttpUrl && startsWithExpectedDomain && containsExpectedOAuthPath,
+      startsWithExpectedDomain,
+      containsExpectedOAuthPath,
     };
   } catch {
     return {
       isValid: false,
-      startsWithFacebook: false,
-      containsDialogOAuth: false,
+      startsWithExpectedDomain: false,
+      containsExpectedOAuthPath: false,
     };
   }
 }
@@ -687,13 +697,16 @@ export async function connectMetaIntegration(input?: {
   reconnect?: boolean;
 }) {
   const activeWorkspaceId = await getRequiredWorkspaceId(input?.workspaceId);
+  const source = input?.source || "facebook_pages";
   void trackMetaEvent("MetaConnectStarted", {
     workspace_id: activeWorkspaceId,
-    source: input?.source || "facebook_pages",
+    source,
     reconnect: input?.reconnect === true,
   });
   const searchParams = new URLSearchParams({
     workspace_id: activeWorkspaceId,
+    source,
+    integration_type: source,
   });
 
   if (input?.reconnect) {
@@ -705,7 +718,8 @@ export async function connectMetaIntegration(input?: {
 
   console.log("[MetaOAuth][connect]", {
     activeWorkspaceId,
-    source: input?.source || null,
+    source,
+    integration_type: source,
     reconnect: input?.reconnect === true,
     connectUrl,
     hasAuthorization: Boolean(getAuthHeaders()?.Authorization),
@@ -726,7 +740,8 @@ export async function connectMetaIntegration(input?: {
   const text = await readApiResponseText(endpoint, res);
   console.info("META_CONNECT_RESPONSE", {
     workspace_id: activeWorkspaceId,
-    source: input?.source || null,
+    source,
+    integration_type: source,
     reconnect: input?.reconnect === true,
     status: res.status,
     ok: res.ok,
@@ -783,10 +798,14 @@ export async function fetchIntegrationsConnectionStatus() {
 export async function connectMetaAdsIntegration(input?: {
   workspaceId?: string | null;
   reconnect?: boolean;
+  source?: string | null;
 }) {
   const activeWorkspaceId = await getRequiredWorkspaceId(input?.workspaceId);
+  const source = input?.source || "meta_ads";
   const searchParams = new URLSearchParams({
     workspace_id: activeWorkspaceId,
+    source,
+    integration_type: source,
   });
 
   if (input?.reconnect) {

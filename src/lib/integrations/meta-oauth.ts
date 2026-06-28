@@ -12,17 +12,50 @@ export const META_OAUTH_CONNECT_SUCCESS = "MEASURABLE_META_CONNECT_SUCCESS";
 export const META_OAUTH_CONNECT_ERROR = "MEASURABLE_META_CONNECT_ERROR";
 export const META_OAUTH_POPUP_CLOSE_GRACE_MS = 1500;
 export const META_OAUTH_POPUP_TIMEOUT_MS = 90000;
-export const META_OAUTH_SCOPES = [
+export type MetaOAuthSource =
+  | "facebook_pages"
+  | "instagram_business"
+  | "meta_ads";
+
+export const FACEBOOK_PAGES_SCOPES = [
   "public_profile",
   "pages_show_list",
   "pages_read_engagement",
   "read_insights",
   "pages_read_user_content",
+] as const;
+
+export const INSTAGRAM_BUSINESS_SCOPES_INDEPENDENT = [
   "instagram_business_basic",
   "instagram_business_manage_insights",
-  "ads_read",
 ] as const;
-export const META_OAUTH_SCOPE_STRING = META_OAUTH_SCOPES.join(",");
+
+export const META_ADS_SCOPES = ["public_profile", "ads_read"] as const;
+
+export const META_OAUTH_SCOPE_SETS = {
+  facebook_pages: FACEBOOK_PAGES_SCOPES,
+  instagram_business: INSTAGRAM_BUSINESS_SCOPES_INDEPENDENT,
+  meta_ads: META_ADS_SCOPES,
+} as const;
+
+// Instagram Business uses its own Instagram Login flow and must not be normalized
+// to facebook.com/dialog/oauth.
+
+export function getMetaOAuthScopesForSource(source: MetaOAuthSource) {
+  return [...META_OAUTH_SCOPE_SETS[source]];
+}
+
+export function getMetaOAuthScopeStringForSource(source: MetaOAuthSource) {
+  return getMetaOAuthScopesForSource(source).join(",");
+}
+
+export function getMetaOAuthAuthDomainForSource(source: MetaOAuthSource) {
+  if (source === "instagram_business") {
+    return "api.instagram.com";
+  }
+
+  return "facebook.com";
+}
 
 type MetaOAuthTransport = "same_tab" | "popup";
 
@@ -123,10 +156,17 @@ export function hasPendingMetaOAuthFlag() {
   return window.sessionStorage.getItem(META_OAUTH_PENDING_FLAG_KEY) === "1";
 }
 
-export function normalizeMetaAuthUrl(rawAuthUrl: string) {
+export function normalizeMetaAuthUrl(
+  rawAuthUrl: string,
+  source: MetaOAuthSource = "facebook_pages"
+) {
+  if (source === "instagram_business") {
+    return rawAuthUrl;
+  }
+
   const parsedUrl = new URL(rawAuthUrl);
 
-  parsedUrl.searchParams.set("scope", META_OAUTH_SCOPE_STRING);
+  parsedUrl.searchParams.set("scope", getMetaOAuthScopeStringForSource(source));
 
   if (!parsedUrl.searchParams.get("auth_type")) {
     parsedUrl.searchParams.set("auth_type", "rerequest");
@@ -139,7 +179,10 @@ export function normalizeMetaAuthUrl(rawAuthUrl: string) {
   return parsedUrl.toString();
 }
 
-export function getMetaOAuthRequestedScopes(authUrl: string) {
+export function getMetaOAuthRequestedScopes(
+  authUrl: string,
+  source: MetaOAuthSource = "facebook_pages"
+) {
   try {
     const rawScope = new URL(authUrl).searchParams.get("scope") || "";
     const parsedScopes = rawScope
@@ -147,16 +190,59 @@ export function getMetaOAuthRequestedScopes(authUrl: string) {
       .map((scope) => scope.trim())
       .filter(Boolean);
 
-    return parsedScopes.length > 0 ? parsedScopes : [...META_OAUTH_SCOPES];
+    return parsedScopes.length > 0
+      ? parsedScopes
+      : getMetaOAuthScopesForSource(source);
   } catch {
-    return [...META_OAUTH_SCOPES];
+    return getMetaOAuthScopesForSource(source);
   }
 }
 
-export function getMissingMetaOAuthScopes(scopes: string[]) {
+export function getMissingMetaOAuthScopes(
+  scopes: string[],
+  source: MetaOAuthSource = "facebook_pages"
+) {
   const normalized = new Set(scopes.map((scope) => scope.trim()).filter(Boolean));
 
-  return META_OAUTH_SCOPES.filter((scope) => !normalized.has(scope));
+  return getMetaOAuthScopesForSource(source).filter((scope) => !normalized.has(scope));
+}
+
+export function isValidMetaAuthUrlForSource(
+  value: string,
+  source: MetaOAuthSource = "facebook_pages"
+) {
+  if (!value) {
+    return {
+      isValid: false,
+      startsWithExpectedDomain: false,
+      containsExpectedOAuthPath: false,
+    };
+  }
+
+  try {
+    const parsedUrl = new URL(value);
+    const isHttpUrl =
+      parsedUrl.protocol === "https:" || parsedUrl.protocol === "http:";
+    const expectedDomain = getMetaOAuthAuthDomainForSource(source);
+    const startsWithExpectedDomain = value.includes(expectedDomain);
+    const containsExpectedOAuthPath =
+      source === "instagram_business"
+        ? parsedUrl.pathname.includes("/oauth/authorize")
+        : parsedUrl.pathname.includes("/dialog/oauth") ||
+          `${parsedUrl.pathname}${parsedUrl.search}`.includes("/dialog/oauth");
+
+    return {
+      isValid: isHttpUrl && startsWithExpectedDomain && containsExpectedOAuthPath,
+      startsWithExpectedDomain,
+      containsExpectedOAuthPath,
+    };
+  } catch {
+    return {
+      isValid: false,
+      startsWithExpectedDomain: false,
+      containsExpectedOAuthPath: false,
+    };
+  }
 }
 
 export function getMetaOAuthState(authUrl: string) {
@@ -185,11 +271,12 @@ export function createPendingMetaOAuth(input: {
   route: string;
   transport?: MetaOAuthTransport;
 }) {
-  const requestedScopes = getMetaOAuthRequestedScopes(input.authUrl);
+  const source = (input.source as MetaOAuthSource) || "facebook_pages";
+  const requestedScopes = getMetaOAuthRequestedScopes(input.authUrl, source);
   const nextValue = {
     authUrl: input.authUrl,
     oauthState: getMetaOAuthState(input.authUrl),
-    source: input.source,
+    source,
     route: input.route,
     transport: input.transport || "same_tab",
     createdAt: Date.now(),
@@ -200,12 +287,14 @@ export function createPendingMetaOAuth(input: {
   writePendingMetaOAuth(nextValue);
 
   console.info("META_OAUTH_SCOPES_REQUESTED", {
-    source: input.source,
+    source,
+    integration_type: source,
     route: input.route,
     scopes: requestedScopes,
   });
   console.info("META_OAUTH_AUTH_URL_CREATED", {
-    source: input.source,
+    source,
+    integration_type: source,
     route: input.route,
     auth_url: input.authUrl,
     oauth_state: nextValue.oauthState || null,

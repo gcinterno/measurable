@@ -606,10 +606,19 @@ export function IntegrationLibrary({
         route: "IntegrationLibrary",
       });
 
+      if (integration.integrationKey === "instagram_business") {
+        console.info("INSTAGRAM_BUSINESS_CONNECT_CLICKED", {
+          route: "IntegrationLibrary",
+          integration_type: "instagram_business",
+          workspace_id: contextWorkspaceId,
+        });
+      }
+
       const response =
         integration.integrationKey === "meta_ads"
           ? await connectMetaAdsIntegration({
               workspaceId: contextWorkspaceId,
+              source: "meta_ads",
             })
           : await connectMetaIntegration({
               workspaceId: contextWorkspaceId,
@@ -617,34 +626,61 @@ export function IntegrationLibrary({
             });
 
       const rawAuthUrl = response.authUrlFromBackend || response.redirectUrl;
-      const authUrl = normalizeMetaAuthUrl(rawAuthUrl);
-      const validation = validateMetaAuthUrl(authUrl);
+      const normalizedSource =
+        integration.integrationKey === "meta_ads"
+          ? "meta_ads"
+          : integration.integrationKey === "instagram_business"
+            ? "instagram_business"
+            : "facebook_pages";
+      const authUrl = normalizeMetaAuthUrl(rawAuthUrl, normalizedSource);
+      const validation = validateMetaAuthUrl(authUrl, normalizedSource);
 
       console.info("META_CONNECT_AUTH_URL", {
         workspace_id: contextWorkspaceId,
         source: integration.integrationKey,
+        integration_type: integration.integrationKey,
         auth_url: authUrl || null,
         integration_id: response.integrationId || null,
       });
 
+      if (integration.integrationKey === "instagram_business") {
+        console.info("INSTAGRAM_BUSINESS_AUTH_URL_RECEIVED", {
+          route: "IntegrationLibrary",
+          integration_type: "instagram_business",
+          workspace_id: contextWorkspaceId,
+          auth_url: authUrl || null,
+          integration_id: response.integrationId || null,
+        });
+      }
+
       console.info("META_CONNECT_AUTH_URL_FINAL", {
         workspace_id: contextWorkspaceId,
         source: integration.integrationKey,
+        integration_type: integration.integrationKey,
         auth_url: authUrl || null,
-        starts_with_facebook: validation.startsWithFacebook,
-        contains_dialog_oauth: validation.containsDialogOAuth,
+        starts_with_expected_domain: validation.startsWithExpectedDomain,
+        contains_expected_oauth_path: validation.containsExpectedOAuthPath,
       });
 
       if (!validation.isValid) {
         console.error("META_CONNECT_INVALID_AUTH_URL", {
           workspace_id: contextWorkspaceId,
           source: integration.integrationKey,
+          integration_type: integration.integrationKey,
           auth_url: authUrl || null,
-          starts_with_facebook: validation.startsWithFacebook,
-          contains_dialog_oauth: validation.containsDialogOAuth,
+          starts_with_expected_domain: validation.startsWithExpectedDomain,
+          contains_expected_oauth_path: validation.containsExpectedOAuthPath,
         });
+        if (integration.integrationKey === "instagram_business") {
+          console.info("INSTAGRAM_BUSINESS_CONNECT_FAILED", {
+            route: "IntegrationLibrary",
+            integration_type: "instagram_business",
+            workspace_id: contextWorkspaceId,
+            auth_url: authUrl || null,
+          });
+        }
         throw new Error(
-          "The backend did not return a valid Meta OAuth URL with /dialog/oauth."
+          "The backend did not return a valid Meta OAuth URL for the selected integration."
         );
       }
 
@@ -704,6 +740,14 @@ export function IntegrationLibrary({
       }
     } catch (error) {
       console.error("direct integration connect error:", error);
+      if (integration.integrationKey === "instagram_business") {
+        console.info("INSTAGRAM_BUSINESS_CONNECT_FAILED", {
+          route: "IntegrationLibrary",
+          integration_type: "instagram_business",
+          workspace_id: contextWorkspaceId,
+          reason: error instanceof Error ? error.message : "unknown_error",
+        });
+      }
       setConnectError("We could not start the Facebook Pages connection. Try again.");
     } finally {
       if (!popupStarted) {
