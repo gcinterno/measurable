@@ -8,6 +8,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { UserSuggestionModal } from "@/components/suggestions/UserSuggestionModal";
 import {
   connectMetaAdsIntegration,
+  connectInstagramBusinessIntegration,
   connectMetaIntegration,
   disconnectMetaAdsIntegration,
   disconnectMetaIntegration,
@@ -16,6 +17,7 @@ import {
   fetchMetaInstagramAccountsCatalog,
   fetchMetaPagesCatalog,
   fetchIntegrationsConnectionStatus,
+  fetchInstagramBusinessStatus,
   selectMetaAdsAccount,
   syncMetaAdsAccount,
   validateMetaAuthUrl,
@@ -55,6 +57,7 @@ import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 type MetaRefreshResult = {
   connected: boolean;
   integrationId: string;
+  instagramBusinessConnected: boolean;
   facebookPagesCount: number;
   instagramAccountsCount: number;
   catalogsLoaded: boolean;
@@ -69,6 +72,7 @@ function IntegrationsPageContent() {
   const [metaStatusMessage, setMetaStatusMessage] = useState("");
   const [metaReconnectMessage, setMetaReconnectMessage] = useState("");
   const [metaConnected, setMetaConnected] = useState(false);
+  const [instagramBusinessConnected, setInstagramBusinessConnected] = useState(false);
   const [metaAdsConnected, setMetaAdsConnected] = useState(false);
   const [metaAdsLoading, setMetaAdsLoading] = useState(false);
   const [metaAdsDisconnectLoading, setMetaAdsDisconnectLoading] = useState(false);
@@ -113,10 +117,17 @@ function IntegrationsPageContent() {
       workspaceId: activeWorkspaceId,
     });
     const storedContext = getIntegrationReportContext();
-    const response = await fetchIntegrationsConnectionStatus();
+    const [response, instagramStatus] = await Promise.all([
+      fetchIntegrationsConnectionStatus(),
+      fetchInstagramBusinessStatus(activeWorkspaceId),
+    ]);
 
-    if (!response.metaConnected) {
+    const instagramBusinessConnected = Boolean(instagramStatus.connected);
+    const hasAnyConnectedRecord = response.metaConnected || instagramBusinessConnected;
+
+    if (!hasAnyConnectedRecord) {
       setMetaConnected(false);
+      setInstagramBusinessConnected(false);
       setFacebookPagesCount(0);
       setInstagramAccountsCount(0);
       setMetaCatalogsResolved(false);
@@ -129,13 +140,15 @@ function IntegrationsPageContent() {
       return {
         connected: false,
         integrationId: response.integrationId || "",
+        instagramBusinessConnected: false,
         facebookPagesCount: 0,
         instagramAccountsCount: 0,
         catalogsLoaded: true,
       };
     }
 
-    setMetaConnected(true);
+    setMetaConnected(Boolean(response.metaConnected));
+    setInstagramBusinessConnected(instagramBusinessConnected);
     const resolvedWorkspaceId = storedContext?.workspaceId || activeWorkspaceId || "";
 
     if (!response.integrationId) {
@@ -168,8 +181,9 @@ function IntegrationsPageContent() {
       });
 
       return {
-        connected: true,
+        connected: Boolean(hasAnyConnectedRecord),
         integrationId: "",
+        instagramBusinessConnected,
         facebookPagesCount: 0,
         instagramAccountsCount: 0,
         catalogsLoaded: false,
@@ -227,8 +241,9 @@ function IntegrationsPageContent() {
     });
 
     return {
-      connected: true,
+      connected: Boolean(hasAnyConnectedRecord),
       integrationId: response.integrationId || "",
+      instagramBusinessConnected,
       facebookPagesCount,
       instagramAccountsCount,
       catalogsLoaded,
@@ -236,6 +251,7 @@ function IntegrationsPageContent() {
   }, [activeWorkspaceId]);
 
   const integrationsStateLoading = metaStatusLoading || metaCatalogsLoading;
+  const hasAnyMetaConnection = metaConnected || instagramBusinessConnected;
   const connectedButNoAuthorizedPages =
     metaConnected &&
     metaCatalogsResolved &&
@@ -508,11 +524,18 @@ function IntegrationsPageContent() {
         route: "/integrations",
       });
 
-      const response = await connectMetaIntegration({
-        workspaceId: connectWorkspaceId,
-        source,
-        reconnect,
-      });
+      const response =
+        source === "instagram_business"
+          ? await connectInstagramBusinessIntegration({
+              workspaceId: connectWorkspaceId,
+              source,
+              reconnect,
+            })
+          : await connectMetaIntegration({
+              workspaceId: connectWorkspaceId,
+              source,
+              reconnect,
+            });
 
       const rawAuthUrl = response.authUrlFromBackend || response.redirectUrl;
       const normalizedSource =
@@ -748,6 +771,7 @@ function IntegrationsPageContent() {
         clearMetaOAuthDebugUrl();
         stopPopupPolling();
         setMetaConnected(false);
+        setInstagramBusinessConnected(false);
         setFacebookPagesCount(0);
         setInstagramAccountsCount(0);
         setMetaCatalogsResolved(false);
@@ -1028,7 +1052,7 @@ function IntegrationsPageContent() {
         </section>
       ) : null}
 
-      {!integrationsStateLoading && !metaConnected ? (
+      {!integrationsStateLoading && !hasAnyMetaConnection ? (
         <section className="mb-5 rounded-[28px] border border-dashed border-slate-300 bg-slate-50 p-5 sm:mb-6 sm:p-6">
           <h3 className="text-lg font-semibold text-slate-950">
             There are no connected integrations yet
@@ -1076,9 +1100,13 @@ function IntegrationsPageContent() {
               isMetaOrganicFrontendIntegrationKey(integration.integrationKey)
                 ? integrationsStateLoading
                   ? "Checking"
-                  : metaConnected
-                  ? "Connected"
-                  : integration.status
+                  : integration.integrationKey === "instagram_business"
+                    ? instagramBusinessConnected
+                      ? "Connected"
+                      : integration.status
+                    : metaConnected
+                      ? "Connected"
+                      : integration.status
                 : integration.integrationKey === "meta_ads"
                   ? metaAdsConnected
                     ? "Connected"
@@ -1091,9 +1119,13 @@ function IntegrationsPageContent() {
                   ? "Checking connection..."
                   : connectedButNoAuthorizedPages
                     ? "Reconnect"
-                    : metaConnected
-                      ? undefined
-                      : "Connect"
+                    : integration.integrationKey === "instagram_business"
+                      ? instagramBusinessConnected
+                        ? undefined
+                        : "Connect"
+                      : metaConnected
+                        ? undefined
+                        : "Connect"
                 : integration.integrationKey === "meta_ads"
                   ? metaAdsConnected
                     ? "Sync"
@@ -1114,17 +1146,18 @@ function IntegrationsPageContent() {
                     ? () =>
                         handleMetaReconnect(
                           integration.integrationKey as
-                            | "facebook_pages"
-                            | "instagram_business"
-                        )
-                    : metaConnected
-                      ? undefined
-                      : () =>
-                          handleMetaConnectSource(
-                            integration.integrationKey as
                               | "facebook_pages"
                               | "instagram_business"
-                          )
+                        )
+                    : integration.integrationKey === "instagram_business"
+                      ? instagramBusinessConnected
+                        ? undefined
+                        : () =>
+                            handleMetaConnectSource("instagram_business")
+                      : metaConnected
+                        ? undefined
+                        : () =>
+                            handleMetaConnectSource("facebook_pages")
                 : integration.integrationKey === "meta_ads"
                   ? () =>
                       metaAdsConnected
@@ -1135,7 +1168,7 @@ function IntegrationsPageContent() {
             secondaryActionLabel={
               isMetaOrganicFrontendIntegrationKey(integration.integrationKey) &&
               !integrationsStateLoading &&
-              metaConnected
+              hasAnyMetaConnection
                 ? disconnectLoading
                   ? "Disconnecting..."
                   : "Disconnect"
@@ -1148,7 +1181,7 @@ function IntegrationsPageContent() {
             onSecondaryAction={
               isMetaOrganicFrontendIntegrationKey(integration.integrationKey) &&
               !integrationsStateLoading &&
-              metaConnected
+              hasAnyMetaConnection
                 ? handleMetaDisconnect
                 : integration.integrationKey === "meta_ads" && metaAdsConnected
                   ? handleMetaAdsDisconnect

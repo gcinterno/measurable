@@ -7,8 +7,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
   fetchIntegrationsConnectionStatus,
+  fetchInstagramBusinessStatus,
   fetchMetaPages,
-  fetchMetaInstagramAccounts,
 } from "@/lib/api/integrations";
 import {
   META_OAUTH_CONNECT_ERROR,
@@ -230,27 +230,21 @@ export function MetaIntegrationCallbackContent() {
         let tokenScopes: string[] = [];
 
         try {
-          const refreshResult = await fetchIntegrationsConnectionStatus();
-          metaConnected = refreshResult.metaConnected;
-          refreshedIntegrationId =
-            refreshedIntegrationId || refreshResult.integrationId || "";
-          tokenScopes = refreshResult.tokenScopes || [];
+          if (resolvedMetaSource === "instagram_business") {
+            const refreshResult = await fetchInstagramBusinessStatus(resolvedWorkspaceId);
+            metaConnected = refreshResult.connected;
+            refreshedIntegrationId =
+              refreshedIntegrationId || refreshResult.integrationId || "";
+            tokenScopes = refreshResult.tokenScopes || [];
+            instagramAccountsCount = refreshResult.instagramAccountId ? 1 : 0;
+          } else {
+            const refreshResult = await fetchIntegrationsConnectionStatus();
+            metaConnected = refreshResult.metaConnected;
+            refreshedIntegrationId =
+              refreshedIntegrationId || refreshResult.integrationId || "";
+            tokenScopes = refreshResult.tokenScopes || [];
 
-          console.info("META_OAUTH_TOKEN_SCOPES_RECEIVED", {
-            route: callbackRoute,
-            integration_type: resolvedMetaSource,
-            integration_id: refreshedIntegrationId || null,
-            token_scopes: tokenScopes.length > 0 ? tokenScopes : null,
-          });
-
-          if (metaConnected && refreshedIntegrationId && resolvedWorkspaceId) {
-            if (resolvedMetaSource === "instagram_business") {
-              const authorizedInstagramAccounts = await fetchMetaInstagramAccounts(
-                refreshedIntegrationId,
-                resolvedWorkspaceId
-              );
-              instagramAccountsCount = authorizedInstagramAccounts.length;
-            } else {
+            if (metaConnected && refreshedIntegrationId && resolvedWorkspaceId) {
               const authorizedPages = await fetchMetaPages(
                 refreshedIntegrationId,
                 resolvedWorkspaceId
@@ -258,6 +252,13 @@ export function MetaIntegrationCallbackContent() {
               pagesCount = authorizedPages.length;
             }
           }
+
+          console.info("META_OAUTH_TOKEN_SCOPES_RECEIVED", {
+            route: callbackRoute,
+            integration_type: resolvedMetaSource,
+            integration_id: refreshedIntegrationId || null,
+            token_scopes: tokenScopes.length > 0 ? tokenScopes : null,
+          });
 
           console.info("META_CALLBACK_REFRESH_RESULT", {
             meta_connected: metaConnected,

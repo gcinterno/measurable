@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/components/providers/LanguageProvider";
 import {
   connectMetaAdsIntegration,
+  connectInstagramBusinessIntegration,
   connectMetaIntegration,
   disconnectMetaAdsIntegration,
   disconnectMetaIntegration,
@@ -620,6 +621,11 @@ export function IntegrationLibrary({
               workspaceId: contextWorkspaceId,
               source: "meta_ads",
             })
+          : integration.integrationKey === "instagram_business"
+            ? await connectInstagramBusinessIntegration({
+                workspaceId: contextWorkspaceId,
+                source: "instagram_business",
+              })
           : await connectMetaIntegration({
               workspaceId: contextWorkspaceId,
               source: integration.integrationKey,

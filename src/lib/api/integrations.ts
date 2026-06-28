@@ -154,6 +154,8 @@ type MetaSyncAllResult = {
 type IntegrationsStatusResult = {
   metaConnected: boolean;
   integrationId: string;
+  instagramBusinessConnected: boolean;
+  instagramBusinessIntegrationId: string;
   metaAdsConnected: boolean;
   metaAdsIntegrationId: string;
   tokenScopes?: string[];
@@ -627,6 +629,8 @@ function extractMetaConnectionStatus(payload: unknown): IntegrationsStatusResult
   const queue: unknown[] = [payload];
   let metaConnected = false;
   let integrationId = "";
+  let instagramBusinessConnected = false;
+  let instagramBusinessIntegrationId = "";
   let metaAdsConnected = false;
   let metaAdsIntegrationId = "";
   const tokenScopes = new Set<string>();
@@ -650,6 +654,10 @@ function extractMetaConnectionStatus(payload: unknown): IntegrationsStatusResult
       haystack.includes("facebook_pages") ||
       haystack.includes("instagram") ||
       haystack.includes("instagram_business");
+    const mentionsInstagramBusiness =
+      haystack.includes("instagram_business") ||
+      haystack.includes("instagram business") ||
+      haystack.includes("instagram-business");
     const mentionsMetaAds =
       haystack.includes("meta ads") ||
       haystack.includes("meta_ads") ||
@@ -662,6 +670,14 @@ function extractMetaConnectionStatus(payload: unknown): IntegrationsStatusResult
 
       if (!integrationId) {
         integrationId = getRecordIntegrationId(current);
+      }
+    }
+
+    if (mentionsInstagramBusiness && getRecordConnected(current)) {
+      instagramBusinessConnected = true;
+
+      if (!instagramBusinessIntegrationId) {
+        instagramBusinessIntegrationId = getRecordIntegrationId(current);
       }
     }
 
@@ -685,6 +701,8 @@ function extractMetaConnectionStatus(payload: unknown): IntegrationsStatusResult
   return {
     metaConnected,
     integrationId,
+    instagramBusinessConnected,
+    instagramBusinessIntegrationId,
     metaAdsConnected,
     metaAdsIntegrationId,
     tokenScopes: Array.from(tokenScopes),
@@ -736,6 +754,65 @@ export async function connectMetaIntegration(input?: {
       credentials: "include",
     }
   );
+
+  const text = await readApiResponseText(endpoint, res);
+  console.info("META_CONNECT_RESPONSE", {
+    workspace_id: activeWorkspaceId,
+    source,
+    integration_type: source,
+    reconnect: input?.reconnect === true,
+    status: res.status,
+    ok: res.ok,
+    duration_ms: Date.now() - requestStartedAt,
+    response_text_length: text.length,
+    response_text_preview: text.slice(0, 300),
+  });
+
+  return getRedirectUrl(text);
+}
+
+export async function connectInstagramBusinessIntegration(input?: {
+  workspaceId?: string | null;
+  reconnect?: boolean;
+  source?: string | null;
+}) {
+  const activeWorkspaceId = await getRequiredWorkspaceId(input?.workspaceId);
+  const source = input?.source || "instagram_business";
+  void trackMetaEvent("MetaConnectStarted", {
+    workspace_id: activeWorkspaceId,
+    source,
+    reconnect: input?.reconnect === true,
+  });
+  const searchParams = new URLSearchParams({
+    workspace_id: activeWorkspaceId,
+    source,
+    integration_type: source,
+  });
+
+  if (input?.reconnect) {
+    searchParams.set("reconnect", "true");
+  }
+
+  const endpoint = `/integrations/instagram-business/connect?${searchParams.toString()}`;
+  const connectUrl = apiUrl(endpoint);
+
+  console.log("[MetaOAuth][connect]", {
+    activeWorkspaceId,
+    source,
+    integration_type: source,
+    reconnect: input?.reconnect === true,
+    connectUrl,
+    hasAuthorization: Boolean(getAuthHeaders()?.Authorization),
+  });
+
+  const requestStartedAt = Date.now();
+
+  const res = await fetch(connectUrl, {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+    credentials: "include",
+  });
 
   const text = await readApiResponseText(endpoint, res);
   console.info("META_CONNECT_RESPONSE", {
@@ -875,6 +952,61 @@ export async function fetchMetaAdsStatus(workspaceId?: string | null) {
               ? data.lastSyncedAt
               : "",
     message: getRecordMessage(record) || getRecordMessage(data),
+  };
+}
+
+export async function fetchInstagramBusinessStatus(workspaceId?: string | null) {
+  const resolvedWorkspaceId = await getRequiredWorkspaceId(workspaceId);
+  const endpoint = `/integrations/instagram-business/status?workspace_id=${encodeURIComponent(
+    resolvedWorkspaceId
+  )}`;
+  const res = await fetch(apiUrl(endpoint), {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+    credentials: "include",
+  });
+  const text = await readApiResponseText(endpoint, res);
+  const payload = text ? parseJsonText(text) : null;
+  const record = isRecord(payload) ? payload : {};
+  const data = isRecord(record.data) ? record.data : {};
+  const tokenScopes = [
+    ...getScopesFromRecord(record),
+    ...getScopesFromRecord(data),
+  ];
+
+  const accountId =
+    typeof record.instagram_account_id === "string"
+      ? record.instagram_account_id
+      : typeof record.instagramAccountId === "string"
+        ? record.instagramAccountId
+        : typeof data.instagram_account_id === "string"
+          ? data.instagram_account_id
+          : typeof data.instagramAccountId === "string"
+            ? data.instagramAccountId
+            : "";
+
+  return {
+    connected:
+      Boolean(record.connected) ||
+      Boolean(record.is_connected) ||
+      Boolean(data.connected) ||
+      Boolean(data.is_connected) ||
+      getRecordStatus(record) === "connected" ||
+      getRecordStatus(data) === "connected",
+    integrationId: getRecordIntegrationId(record) || getRecordIntegrationId(data),
+    tokenScopes: tokenScopes.length > 0 ? Array.from(new Set(tokenScopes)) : [],
+    instagramAccountId: accountId,
+    lastSyncedAt:
+      typeof record.last_synced_at === "string"
+        ? record.last_synced_at
+        : typeof record.lastSyncedAt === "string"
+          ? record.lastSyncedAt
+          : typeof data.last_synced_at === "string"
+            ? data.last_synced_at
+            : typeof data.lastSyncedAt === "string"
+              ? data.lastSyncedAt
+              : "",
   };
 }
 

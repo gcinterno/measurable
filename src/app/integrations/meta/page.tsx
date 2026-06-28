@@ -12,7 +12,9 @@ import { PlanLimitsSummary } from "@/components/workspace/PlanLimitsSummary";
 import { ApiError, isLimitError } from "@/lib/api";
 import { applyAccountSummaryQuota, refreshAccountSummary } from "@/lib/api/account";
 import {
+  connectInstagramBusinessIntegration,
   connectMetaIntegration,
+  fetchInstagramBusinessStatus,
   fetchMetaPages,
   validateMetaAuthUrl,
   selectMetaPage,
@@ -257,6 +259,36 @@ function MetaIntegrationPageContent() {
     }
 
     try {
+      if (currentMetaSource === "instagram_business") {
+        const instagramStatus = await fetchInstagramBusinessStatus(
+          workspaceId || storedContext?.workspaceId || undefined
+        );
+
+        setPages([]);
+        setConnected(Boolean(instagramStatus.connected && instagramStatus.integrationId));
+        setHasNoAuthorizedPages(false);
+        setPageSelected(false);
+        setSelectedPageId("");
+        setStatusMessage(
+          instagramStatus.connected
+            ? "Instagram Business connected successfully."
+            : "Instagram Business is not connected yet."
+        );
+
+        logMetaOAuthDev("status refresh completed", {
+          route: "/integrations/meta",
+          connected: Boolean(instagramStatus.connected && instagramStatus.integrationId),
+          integrationId: instagramStatus.integrationId || nextIntegrationId,
+          pagesCount: 0,
+        });
+
+        return {
+          connected: Boolean(instagramStatus.connected && instagramStatus.integrationId),
+          integrationId: instagramStatus.integrationId || nextIntegrationId,
+          pagesCount: 0,
+        };
+      }
+
       const pageData = await fetchMetaPages(
         nextIntegrationId,
         workspaceId || storedContext?.workspaceId || ""
@@ -296,7 +328,7 @@ function MetaIntegrationPageContent() {
         setLoading(false);
       }
     }
-  }, [integrationId, selectedPageId, storedContext?.integrationId, storedContext?.workspaceId, workspaceId]);
+  }, [currentMetaSource, integrationId, selectedPageId, storedContext?.integrationId, storedContext?.workspaceId, workspaceId]);
 
   useEffect(() => {
     if (!storedContext || storedContext.integration !== "meta") {
@@ -653,10 +685,16 @@ function MetaIntegrationPageContent() {
         });
       }
 
-      const response = await connectMetaIntegration({
-        workspaceId: connectWorkspaceId,
-        source: currentMetaSource,
-      });
+      const response =
+        currentMetaSource === "instagram_business"
+          ? await connectInstagramBusinessIntegration({
+              workspaceId: connectWorkspaceId,
+              source: currentMetaSource,
+            })
+          : await connectMetaIntegration({
+              workspaceId: connectWorkspaceId,
+              source: currentMetaSource,
+            });
 
       const rawAuthUrl = response.authUrlFromBackend || response.redirectUrl;
       const normalizedSource =
