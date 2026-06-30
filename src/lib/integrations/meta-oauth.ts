@@ -73,14 +73,14 @@ type PendingMetaOAuth = {
 export type MetaOAuthWindowMessage =
   | {
       type: typeof META_OAUTH_CONNECT_SUCCESS;
-      provider: "meta";
+      provider: "meta" | "meta_ads";
       integrationId?: string;
       pagesCount?: number;
       redirectTo?: string;
     }
   | {
       type: typeof META_OAUTH_CONNECT_ERROR;
-      provider: "meta";
+      provider: "meta" | "meta_ads";
       message: string;
     };
 
@@ -205,6 +205,47 @@ export function getMissingMetaOAuthScopes(
   const normalized = new Set(scopes.map((scope) => scope.trim()).filter(Boolean));
 
   return getMetaOAuthScopesForSource(source).filter((scope) => !normalized.has(scope));
+}
+
+export function getMetaOAuthFriendlyErrorMessage(
+  source: MetaOAuthSource,
+  message?: string | null
+) {
+  const rawMessage = (message || "").trim();
+  const normalizedMessage = rawMessage.toLowerCase();
+
+  if (source === "instagram_business") {
+    if (
+      normalizedMessage.includes("insufficient developer role") ||
+      normalizedMessage.includes("developer role")
+    ) {
+      return "Instagram could not be connected because this Instagram account is not added as a tester/developer for the Instagram Business Login app yet. Add the account in Meta Developers > Instagram > API setup with Instagram login > Add account, accept the invite, or wait until the app review is approved/live.";
+    }
+
+    if (
+      normalizedMessage.includes("instagram_business_not_configured") ||
+      normalizedMessage.includes("missing: instagram_app_id") ||
+      normalizedMessage.includes("missing: instagram_app_secret") ||
+      normalizedMessage.includes("missing: instagram_redirect_uri")
+    ) {
+      return "Instagram Business could not be connected because the app is not configured. Missing: INSTAGRAM_APP_ID, INSTAGRAM_APP_SECRET, INSTAGRAM_REDIRECT_URI.";
+    }
+
+    if (
+      normalizedMessage.includes("access_denied") ||
+      normalizedMessage.includes("invalid_scope")
+    ) {
+      return "Instagram Business could not be connected. The Instagram OAuth request was denied or the requested scope is not available for this account.";
+    }
+
+    if (normalizedMessage.includes("instagram")) {
+      return rawMessage || "Instagram Business could not be connected. Please try again.";
+    }
+
+    return rawMessage || "Instagram Business could not be connected. Please try again.";
+  }
+
+  return rawMessage || "We couldn’t complete the Meta connection. Please try again.";
 }
 
 export function isValidMetaAuthUrlForSource(
@@ -430,7 +471,7 @@ export function isMetaOAuthWindowMessage(
   const candidate = data as { type?: string; provider?: string };
 
   return (
-    candidate.provider === "meta" &&
+    (candidate.provider === "meta" || candidate.provider === "meta_ads") &&
     (candidate.type === META_OAUTH_CONNECT_SUCCESS ||
       candidate.type === META_OAUTH_CONNECT_ERROR)
   );

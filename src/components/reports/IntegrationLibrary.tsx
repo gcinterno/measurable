@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { useI18n } from "@/components/providers/LanguageProvider";
+import { ApiError } from "@/lib/api";
 import {
   connectMetaAdsIntegration,
   connectInstagramBusinessIntegration,
@@ -25,6 +26,7 @@ import {
   createPendingMetaOAuth,
   clearMetaOAuthDebugUrl,
   hasMetaConnectPrerequisites,
+  getMetaOAuthFriendlyErrorMessage,
   isMetaOAuthWindowMessage,
   markMetaRedirectStarted,
   normalizeMetaAuthUrl,
@@ -608,6 +610,11 @@ export function IntegrationLibrary({
       });
 
       if (integration.integrationKey === "instagram_business") {
+        console.info("INSTAGRAM_BUSINESS_CONNECT_REQUESTED", {
+          route: "IntegrationLibrary",
+          integration_type: "instagram_business",
+          workspace_id: contextWorkspaceId,
+        });
         console.info("INSTAGRAM_BUSINESS_CONNECT_CLICKED", {
           route: "IntegrationLibrary",
           integration_type: "instagram_business",
@@ -651,6 +658,13 @@ export function IntegrationLibrary({
 
       if (integration.integrationKey === "instagram_business") {
         console.info("INSTAGRAM_BUSINESS_AUTH_URL_RECEIVED", {
+          route: "IntegrationLibrary",
+          integration_type: "instagram_business",
+          workspace_id: contextWorkspaceId,
+          auth_url: authUrl || null,
+          integration_id: response.integrationId || null,
+        });
+        console.info("INSTAGRAM_BUSINESS_AUTH_URL_CREATED", {
           route: "IntegrationLibrary",
           integration_type: "instagram_business",
           workspace_id: contextWorkspaceId,
@@ -704,8 +718,12 @@ export function IntegrationLibrary({
         const popup = openMetaOAuthPopup(authUrl);
 
         if (!popup) {
-          window.location.href = authUrl;
-          return;
+          console.info("META_ADS_CONNECT_FAILED", {
+            route: "IntegrationLibrary",
+            workspace_id: contextWorkspaceId,
+            reason: "popup_blocked",
+          });
+          throw new Error("Popup blocked. Please allow popups and try again.");
         }
 
         popupStarted = true;
@@ -753,8 +771,28 @@ export function IntegrationLibrary({
           workspace_id: contextWorkspaceId,
           reason: error instanceof Error ? error.message : "unknown_error",
         });
+        setConnectError(
+          getMetaOAuthFriendlyErrorMessage(
+            "instagram_business",
+            error instanceof Error ? error.message : ""
+          )
+        );
+      } else if (integration.integrationKey === "meta_ads" && error instanceof ApiError && error.status === 409) {
+        console.info("META_ADS_CONNECT_CONFIG_MISSING", {
+          route: "IntegrationLibrary",
+          workspace_id: contextWorkspaceId,
+        });
+        setConnectError(
+          error.message ||
+            "Meta Ads is not configured yet. Missing: META_ADS_APP_ID, META_ADS_APP_SECRET, META_ADS_REDIRECT_URI (or legacy META_APP_ID, META_APP_SECRET, META_REDIRECT_URI)."
+        );
+      } else {
+        setConnectError(
+          error instanceof Error && error.message
+            ? error.message
+            : "We could not start the Facebook Pages connection. Try again."
+        );
       }
-      setConnectError("We could not start the Facebook Pages connection. Try again.");
     } finally {
       if (!popupStarted) {
         connectInFlightRef.current = false;

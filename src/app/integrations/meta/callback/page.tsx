@@ -14,6 +14,7 @@ import {
   META_OAUTH_CONNECT_ERROR,
   META_OAUTH_CONNECT_SUCCESS,
   getMetaOAuthScopesForSource,
+  getMetaOAuthFriendlyErrorMessage,
   getMissingMetaOAuthScopes,
   postMetaOAuthMessageToOpener,
   type MetaOAuthSource,
@@ -103,11 +104,13 @@ export function MetaIntegrationCallbackContent() {
           title:
             input.type === META_OAUTH_CONNECT_SUCCESS
               ? "Integration connected successfully."
-              : "We couldn’t complete the Meta connection.",
+              : resolvedMetaSource === "instagram_business"
+                ? "We couldn’t complete the Instagram Business connection."
+                : "We couldn’t complete the Meta connection.",
           description:
             input.type === META_OAUTH_CONNECT_SUCCESS
               ? "You can close this tab."
-              : "You can close this tab or return to Measurable to try again.",
+              : input.message || "You can close this tab or return to Measurable to try again.",
           isError: input.type === META_OAUTH_CONNECT_ERROR,
           returnHref: input.redirectTo || "/integrations",
         });
@@ -137,10 +140,15 @@ export function MetaIntegrationCallbackContent() {
       const errorParam = searchParams.get("error");
       const message = searchParams.get("message");
       const fallbackReturnHref = storedContext?.postConnectRedirect || "/integrations";
+      const rawCallbackErrorMessage = message?.trim() || errorParam?.trim() || "";
       const callbackErrorMessage =
-        message?.trim() ||
-        errorParam?.trim() ||
-        "We couldn’t complete the Meta connection. Please try again.";
+        resolvedMetaSource === "instagram_business"
+          ? getMetaOAuthFriendlyErrorMessage(
+              "instagram_business",
+              rawCallbackErrorMessage
+            )
+          : rawCallbackErrorMessage ||
+            "We couldn’t complete the Meta connection. Please try again.";
 
       console.info("META_OAUTH_CALLBACK_RECEIVED", {
         route: callbackRoute,
@@ -205,17 +213,20 @@ export function MetaIntegrationCallbackContent() {
         }
 
         updateFallback({
-          title: "We couldn’t complete the Meta connection.",
+          title:
+            resolvedMetaSource === "instagram_business"
+              ? "We couldn’t complete the Instagram Business connection."
+              : "We couldn’t complete the Meta connection.",
           description:
-            "You can close this tab or return to Measurable to try again.",
+            callbackErrorMessage || "You can close this tab or return to Measurable to try again.",
           isError: true,
           returnHref: fallbackReturnHref,
         });
 
         router.replace(
-          `/integrations/meta?meta_error=${encodeURIComponent(
+          `/integrations?meta_error=${encodeURIComponent(
             callbackErrorMessage
-          )}`
+          )}&meta_provider=${encodeURIComponent(resolvedMetaSource)}`
         );
         return;
       }
@@ -335,9 +346,9 @@ export function MetaIntegrationCallbackContent() {
           });
 
           router.replace(
-            `/integrations/meta?meta_error=${encodeURIComponent(
+            `/integrations?meta_error=${encodeURIComponent(
               "We could not verify the Meta connection after the callback. Try reconnecting."
-            )}`
+            )}&meta_provider=${encodeURIComponent(resolvedMetaSource)}`
           );
           return;
         }
@@ -364,21 +375,26 @@ export function MetaIntegrationCallbackContent() {
           }
 
           updateFallback({
-            title: "We couldn’t complete the Meta connection.",
+            title:
+              resolvedMetaSource === "instagram_business"
+                ? "We couldn’t complete the Instagram Business connection."
+                : "We couldn’t complete the Meta connection.",
             description:
               hasAuthorizedAssets
-                ? "Meta returned from OAuth, but the connection was not confirmed. You can close this tab or return to Measurable."
-                : "Meta returned from OAuth, but no authorized assets were returned. Reconnect and approve at least one page or account.",
+                ? callbackErrorMessage ||
+                  "Meta returned from OAuth, but the connection was not confirmed. You can close this tab or return to Measurable."
+                : callbackErrorMessage ||
+                  "Meta returned from OAuth, but no authorized assets were returned. Reconnect and approve at least one page or account.",
             isError: true,
             returnHref: fallbackReturnHref,
           });
 
           router.replace(
-            `/integrations/meta?meta_error=${encodeURIComponent(
+            `/integrations?meta_error=${encodeURIComponent(
               hasAuthorizedAssets
                 ? "Meta returned from OAuth, but the integration was not confirmed by the backend."
                 : "Meta returned from OAuth, but no authorized assets were returned."
-            )}`
+            )}&meta_provider=${encodeURIComponent(resolvedMetaSource)}`
           );
           return;
         }
@@ -481,7 +497,7 @@ export function MetaIntegrationCallbackContent() {
         </p>
         {isError ? (
           <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            We couldn’t complete the Meta connection.
+            {description}
           </div>
         ) : null}
         <div className="mt-6 flex flex-col gap-3">

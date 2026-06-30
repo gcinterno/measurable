@@ -63,9 +63,9 @@ export const integrationCatalog: readonly IntegrationCatalogItem[] = [
     name: "Instagram Business",
     category: "Paid social",
     description:
-      "Connect Instagram Business accounts linked to your Facebook Pages.",
+      "Connect a professional Instagram account directly with Instagram Business Login.",
     status: "Available",
-    actionLabel: "Connect",
+    actionLabel: "Connect Instagram directly",
     integrationKey: "instagram_business",
     logoUrl: "https://cdn.simpleicons.org/instagram",
     logoAlt: "Instagram logo",

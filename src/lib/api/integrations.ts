@@ -651,9 +651,7 @@ function extractMetaConnectionStatus(payload: unknown): IntegrationsStatusResult
     const mentionsMeta =
       haystack.includes("meta") ||
       haystack.includes("facebook") ||
-      haystack.includes("facebook_pages") ||
-      haystack.includes("instagram") ||
-      haystack.includes("instagram_business");
+      haystack.includes("facebook_pages");
     const mentionsInstagramBusiness =
       haystack.includes("instagram_business") ||
       haystack.includes("instagram business") ||
@@ -713,6 +711,7 @@ export async function connectMetaIntegration(input?: {
   workspaceId?: string | null;
   source?: string | null;
   reconnect?: boolean;
+  includeLinkedInstagram?: boolean;
 }) {
   const activeWorkspaceId = await getRequiredWorkspaceId(input?.workspaceId);
   const source = input?.source || "facebook_pages";
@@ -729,6 +728,10 @@ export async function connectMetaIntegration(input?: {
 
   if (input?.reconnect) {
     searchParams.set("reconnect", "true");
+  }
+
+  if (input?.includeLinkedInstagram) {
+    searchParams.set("include_linked_instagram", "true");
   }
 
   const endpoint = `/integrations/meta/connect-pages?${searchParams.toString()}`;

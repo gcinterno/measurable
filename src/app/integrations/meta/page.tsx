@@ -27,6 +27,7 @@ import {
   clearMetaOAuthDebugUrl,
   hasMetaConnectPrerequisites,
   isMetaOAuthWindowMessage,
+  getMetaOAuthFriendlyErrorMessage,
   logMetaOAuthDev,
   markMetaRedirectStarted,
   META_OAUTH_POPUP_CLOSE_GRACE_MS,
@@ -191,6 +192,7 @@ function MetaIntegrationPageContent() {
   const currentMetaSource = isPendingMetaSource(storedContext?.source)
     ? storedContext.source
     : "facebook_pages";
+  const isInstagramBusinessFlow = currentMetaSource === "instagram_business";
 
   const stopPopupPolling = useCallback(() => {
     if (popupPollRef.current !== null && typeof window !== "undefined") {
@@ -307,7 +309,9 @@ function MetaIntegrationPageContent() {
 
       if (pageData.length === 0) {
         setStatusMessage(
-          "Connected but no authorized pages were found. Reconnect and approve at least one page."
+          isInstagramBusinessFlow
+            ? "Connected but no authorized Instagram accounts were found. Reconnect and approve at least one account."
+            : "Connected but no authorized pages were found. Reconnect and approve at least one page."
         );
       }
 
@@ -328,7 +332,15 @@ function MetaIntegrationPageContent() {
         setLoading(false);
       }
     }
-  }, [currentMetaSource, integrationId, selectedPageId, storedContext?.integrationId, storedContext?.workspaceId, workspaceId]);
+  }, [
+    currentMetaSource,
+    integrationId,
+    isInstagramBusinessFlow,
+    selectedPageId,
+    storedContext?.integrationId,
+    storedContext?.workspaceId,
+    workspaceId,
+  ]);
 
   useEffect(() => {
     if (!storedContext || storedContext.integration !== "meta") {
@@ -378,7 +390,10 @@ function MetaIntegrationPageContent() {
       setConnected(pagesCount > 0);
       setHasNoAuthorizedPages(pagesCount === 0);
       setStatusMessage(
-        message || "Connection completed. Now choose the page you want to use."
+        message ||
+          (isInstagramBusinessFlow
+            ? "Connection completed. Now choose the account you want to use."
+            : "Connection completed. Now choose the page you want to use.")
       );
       const pendingConnectSource = consumePendingMetaConnectAnalytics();
       if (pendingConnectSource) {
@@ -394,7 +409,9 @@ function MetaIntegrationPageContent() {
       setPages([]);
       setStatusMessage(
         message ||
-          "Meta connected but no authorized pages were returned. Reconnect and approve at least one page."
+          (isInstagramBusinessFlow
+            ? "Instagram connected but no authorized accounts were returned. Reconnect and approve at least one account."
+            : "Meta connected but no authorized pages were returned. Reconnect and approve at least one page.")
       );
     } else if (metaError) {
       clearPendingMetaConnectAnalytics();
@@ -406,6 +423,7 @@ function MetaIntegrationPageContent() {
     router.replace("/integrations/meta");
   }, [
     currentMetaSource,
+    isInstagramBusinessFlow,
     router,
     searchParams,
     workspace?.plan,
@@ -418,6 +436,10 @@ function MetaIntegrationPageContent() {
 
     async function handleMetaWindowMessage(event: MessageEvent) {
       if (event.origin !== window.location.origin || !isMetaOAuthWindowMessage(event.data)) {
+        return;
+      }
+
+      if (event.data.provider === "meta_ads") {
         return;
       }
 
@@ -454,7 +476,11 @@ function MetaIntegrationPageContent() {
           }
         } catch (error) {
           console.error("meta page popup refresh error:", error);
-          setError("The connection finished, but we couldn’t refresh the pages.");
+          setError(
+            isInstagramBusinessFlow
+              ? "The connection finished, but we couldn’t refresh the Instagram accounts."
+              : "The connection finished, but we couldn’t refresh the pages."
+          );
         }
 
         return;
@@ -463,7 +489,12 @@ function MetaIntegrationPageContent() {
       setStatusMessage("");
       clearPendingMetaConnectAnalytics();
       setError(
-        event.data.message || "We couldn’t complete the Meta connection. Please try again."
+        currentMetaSource === "instagram_business"
+          ? getMetaOAuthFriendlyErrorMessage(
+              "instagram_business",
+              event.data.message || ""
+            )
+          : event.data.message || "We couldn’t complete the Meta connection. Please try again."
       );
     }
 
@@ -473,7 +504,14 @@ function MetaIntegrationPageContent() {
       stopPopupPolling();
       window.removeEventListener("message", handleMetaWindowMessage);
     };
-  }, [currentMetaSource, integrationId, refreshMetaPagesState, stopPopupPolling, workspace?.plan]);
+  }, [
+    currentMetaSource,
+    isInstagramBusinessFlow,
+    integrationId,
+    refreshMetaPagesState,
+    stopPopupPolling,
+    workspace?.plan,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -488,7 +526,9 @@ function MetaIntegrationPageContent() {
             setStatusMessage("");
           } else {
             setStatusMessage(
-              "Connection detected. Waiting for integration_id to load the pages."
+              isInstagramBusinessFlow
+                ? "Connection detected. Waiting for integration_id to load the Instagram accounts."
+                : "Connection detected. Waiting for integration_id to load the pages."
             );
           }
         }
@@ -525,11 +565,13 @@ function MetaIntegrationPageContent() {
           route: "/integrations/meta",
         });
 
-        if (pageData.length === 0) {
-          setStatusMessage(
-            "Connected but no authorized pages were found. Reconnect and approve at least one page."
-          );
-        }
+      if (pageData.length === 0) {
+        setStatusMessage(
+          isInstagramBusinessFlow
+            ? "Connected but no authorized Instagram accounts were found. Reconnect and approve at least one account."
+            : "Connected but no authorized pages were found. Reconnect and approve at least one page."
+        );
+      }
       } catch (err: unknown) {
         if (!active) {
           return;
@@ -537,7 +579,9 @@ function MetaIntegrationPageContent() {
 
         console.error("meta pages load error:", err);
         setError(
-          "We could not load the Facebook pages. Try refreshing the view."
+          isInstagramBusinessFlow
+            ? "We could not load the Instagram accounts. Try refreshing the view."
+            : "We could not load the Facebook pages. Try refreshing the view."
         );
       } finally {
         if (active) {
@@ -551,7 +595,14 @@ function MetaIntegrationPageContent() {
     return () => {
       active = false;
     };
-  }, [connected, integrationId, selectedPageId, storedContext?.workspaceId, workspaceId]);
+  }, [
+    connected,
+    integrationId,
+    isInstagramBusinessFlow,
+    selectedPageId,
+    storedContext?.workspaceId,
+    workspaceId,
+  ]);
 
   useEffect(() => {
     if (!storedContext || storedContext.pageName || !selectedPageId) {
@@ -678,6 +729,11 @@ function MetaIntegrationPageContent() {
       });
 
       if (currentMetaSource === "instagram_business") {
+        console.info("INSTAGRAM_BUSINESS_CONNECT_REQUESTED", {
+          route: "/integrations/meta",
+          integration_type: "instagram_business",
+          workspace_id: connectWorkspaceId,
+        });
         console.info("INSTAGRAM_BUSINESS_CONNECT_CLICKED", {
           route: "/integrations/meta",
           integration_type: "instagram_business",
@@ -714,6 +770,13 @@ function MetaIntegrationPageContent() {
 
       if (currentMetaSource === "instagram_business") {
         console.info("INSTAGRAM_BUSINESS_AUTH_URL_RECEIVED", {
+          route: "/integrations/meta",
+          integration_type: "instagram_business",
+          workspace_id: connectWorkspaceId,
+          auth_url: authUrl || null,
+          integration_id: response.integrationId || null,
+        });
+        console.info("INSTAGRAM_BUSINESS_AUTH_URL_CREATED", {
           route: "/integrations/meta",
           integration_type: "instagram_business",
           workspace_id: connectWorkspaceId,
@@ -788,7 +851,9 @@ function MetaIntegrationPageContent() {
             source: currentMetaSource,
           });
           setStatusMessage(
-            "This is taking longer than expected. Finish the Facebook flow in the popup and we’ll update the connection automatically."
+            currentMetaSource === "instagram_business"
+              ? "This is taking longer than expected. Finish the Instagram flow in the popup and we’ll update the connection automatically."
+              : "This is taking longer than expected. Finish the Facebook flow in the popup and we’ll update the connection automatically."
           );
         }, META_OAUTH_POPUP_TIMEOUT_MS);
         popupPollRef.current = window.setInterval(async () => {
@@ -846,15 +911,20 @@ function MetaIntegrationPageContent() {
           workspace_id: connectWorkspaceId,
           reason: err instanceof Error ? err.message : "unknown_error",
         });
+        setError(
+          getMetaOAuthFriendlyErrorMessage(
+            "instagram_business",
+            err instanceof Error ? err.message : ""
+          )
+        );
+      } else if (err instanceof ApiError && err.message) {
+        setError(err.message);
+      } else {
+        setError("We could not start the Facebook Pages connection. Try again.");
       }
       clearPendingMetaConnectAnalytics();
       setConnected(false);
       setHasNoAuthorizedPages(false);
-      setError(
-        err instanceof ApiError && err.message
-          ? err.message
-          : "We could not start the Facebook Pages connection. Try again."
-      );
     } finally {
       if (!popupStarted) {
         connectInFlightRef.current = false;
@@ -871,7 +941,9 @@ function MetaIntegrationPageContent() {
 
     if (!integrationId) {
       setError(
-        "We could not find the Meta integration_id. Reconnect Facebook Pages and try again."
+        isInstagramBusinessFlow
+          ? "We could not find the Instagram Business integration_id. Reconnect Instagram and try again."
+          : "We could not find the Meta integration_id. Reconnect Facebook Pages and try again."
       );
       return;
     }
@@ -895,7 +967,9 @@ function MetaIntegrationPageContent() {
       setPageSelected(true);
       setSyncCompleted(false);
       setStatusMessage(
-        "Page selected successfully. You can now sync the data."
+        isInstagramBusinessFlow
+          ? "Account selected successfully. You can now sync the data."
+          : "Page selected successfully. You can now sync the data."
       );
       setIntegrationReportContext({
         source: currentMetaSource,
@@ -912,7 +986,9 @@ function MetaIntegrationPageContent() {
       setError(
         err instanceof ApiError && err.message
           ? err.message
-          : "We could not save the selected page. Review the selection and try again."
+          : isInstagramBusinessFlow
+            ? "We could not save the selected account. Review the selection and try again."
+            : "We could not save the selected page. Review the selection and try again."
       );
     } finally {
       setSelectLoading(false);
@@ -927,7 +1003,9 @@ function MetaIntegrationPageContent() {
 
     if (!integrationId) {
       setError(
-        "We could not find the Meta integration_id. Reconnect Facebook Pages and try again."
+        isInstagramBusinessFlow
+          ? "We could not find the Instagram Business integration_id. Reconnect Instagram and try again."
+          : "We could not find the Meta integration_id. Reconnect Facebook Pages and try again."
       );
       return;
     }
@@ -951,7 +1029,9 @@ function MetaIntegrationPageContent() {
       setStatusMessage(
           response.message ||
           response.detail ||
-          "Data synced successfully. You can now generate the report."
+          (isInstagramBusinessFlow
+            ? "Instagram data synced successfully. You can now generate the report."
+            : "Data synced successfully. You can now generate the report.")
       );
 
       setIntegrationReportContext({
@@ -973,11 +1053,20 @@ function MetaIntegrationPageContent() {
     } catch (err: unknown) {
       console.error("meta pages sync error:", err);
       if (isLimitError(err)) {
-        setError(err.message || "We could not sync the page data. Try again in a few seconds.");
+        setError(
+          err.message ||
+            (isInstagramBusinessFlow
+              ? "We could not sync the Instagram data. Try again in a few seconds."
+              : "We could not sync the page data. Try again in a few seconds.")
+        );
       } else if (err instanceof ApiError && err.message) {
         setError(err.message);
       } else {
-        setError("We could not sync the page data. Try again in a few seconds.");
+        setError(
+          isInstagramBusinessFlow
+            ? "We could not sync the Instagram data. Try again in a few seconds."
+            : "We could not sync the page data. Try again in a few seconds."
+        );
       }
     } finally {
       setSyncLoading(false);
@@ -1076,8 +1165,12 @@ function MetaIntegrationPageContent() {
         label: connectLoading
           ? "Connecting..."
           : hasNoAuthorizedPages
-            ? "Reconnect Facebook Pages"
-            : "Connect Facebook Pages",
+            ? isInstagramBusinessFlow
+              ? "Reconnect Instagram"
+              : "Reconnect Facebook Pages"
+            : isInstagramBusinessFlow
+              ? "Connect Instagram directly"
+              : "Connect Facebook Pages",
         onClick: handleConnect,
         disabled: connectLoading || loading,
       };
@@ -1086,7 +1179,13 @@ function MetaIntegrationPageContent() {
     if (!pageSelected) {
       return {
         label:
-          selectLoading ? "Saving page..." : "Save selected page",
+          selectLoading
+            ? isInstagramBusinessFlow
+              ? "Saving account..."
+              : "Saving page..."
+            : isInstagramBusinessFlow
+              ? "Save selected account"
+              : "Save selected page",
         onClick: handleSelectPage,
         disabled:
           selectLoading || syncLoading || createReportLoading || !selectedPageId,
@@ -1158,19 +1257,31 @@ function MetaIntegrationPageContent() {
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">
-              Meta Pages flow
+              {isInstagramBusinessFlow ? "Instagram Business flow" : "Meta Pages flow"}
             </p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
-              Connect, sync, and generate your report
+              {isInstagramBusinessFlow
+                ? "Connect Instagram, sync, and generate your report"
+                : "Connect, sync, and generate your report"}
             </h2>
             <p className="mt-3 text-sm leading-6 text-slate-500 sm:text-base">
               This flow is already connected to the real backend. You only need to move step by step until the report is generated.
             </p>
             <ol className="mt-6 space-y-3 text-sm leading-6 text-slate-600">
-              <li>1. Connect Facebook Pages to the current workspace.</li>
-              <li>2. Choose the correct page and save the selection.</li>
-              <li>3. Sync the real data from that page.</li>
-              <li>4. Generate the report and open it inside the platform.</li>
+              {isInstagramBusinessFlow ? (
+                <>
+                  <li>1. Connect Instagram directly to the current workspace.</li>
+                  <li>2. Sync the real data from that account.</li>
+                  <li>3. Generate the report and open it inside the platform.</li>
+                </>
+              ) : (
+                <>
+                  <li>1. Connect Facebook Pages to the current workspace.</li>
+                  <li>2. Choose the correct page and save the selection.</li>
+                  <li>3. Sync the real data from that page.</li>
+                  <li>4. Generate the report and open it inside the platform.</li>
+                </>
+              )}
             </ol>
 
             {statusMessage ? (
@@ -1227,10 +1338,10 @@ function MetaIntegrationPageContent() {
                   Connected: {connected ? "Yes" : "No"}
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  Pages loaded: {formatNumber(pages.length, 0)}
+                  {isInstagramBusinessFlow ? "Accounts loaded" : "Pages loaded"}: {formatNumber(pages.length, 0)}
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  Page: {selectedPageId || "Not selected"}
+                  {isInstagramBusinessFlow ? "Account" : "Page"}: {selectedPageId || "Not selected"}
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
                   Integration ID: {integrationId || "No integration_id"}
@@ -1248,13 +1359,21 @@ function MetaIntegrationPageContent() {
               <div className="mt-5 space-y-3">
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
                   {connected
-                    ? "Facebook Pages connection is active."
-                    : "Facebook Pages still needs to be connected."}
+                    ? isInstagramBusinessFlow
+                      ? "Instagram Business connection is active."
+                      : "Facebook Pages connection is active."
+                    : isInstagramBusinessFlow
+                      ? "Instagram Business still needs to be connected."
+                      : "Facebook Pages still needs to be connected."}
                 </div>
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
                   {pageSelected && selectedPageId
-                    ? "Page selected and saved successfully."
-                    : "You have not confirmed a page yet."}
+                    ? isInstagramBusinessFlow
+                      ? "Account selected and saved successfully."
+                      : "Page selected and saved successfully."
+                    : isInstagramBusinessFlow
+                      ? "You have not confirmed an account yet."
+                      : "You have not confirmed a page yet."}
                 </div>
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
                   {syncCompleted
@@ -1264,7 +1383,9 @@ function MetaIntegrationPageContent() {
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
                   {datasetId
                     ? "Data ready to generate the report."
-                    : "The report will be enabled when a synced dataset exists."}
+                    : isInstagramBusinessFlow
+                      ? "The report will be enabled when a synced Instagram dataset exists."
+                      : "The report will be enabled when a synced dataset exists."}
                 </div>
               </div>
             </section>

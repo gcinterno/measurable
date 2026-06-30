@@ -42,9 +42,12 @@ function MetaAdsCallbackContent() {
         if (hasPopupOpener) {
           postMetaOAuthMessageToOpener({
             type: META_OAUTH_CONNECT_ERROR,
-            provider: "meta",
+            provider: "meta_ads",
             message: error || "We couldn’t complete the Meta Ads connection.",
           });
+          window.setTimeout(() => {
+            window.close();
+          }, 600);
           return;
         }
 
@@ -109,9 +112,12 @@ function MetaAdsCallbackContent() {
           if (hasPopupOpener) {
             postMetaOAuthMessageToOpener({
               type: META_OAUTH_CONNECT_ERROR,
-              provider: "meta",
+              provider: "meta_ads",
               message,
             });
+            window.setTimeout(() => {
+              window.close();
+            }, 600);
             return;
           }
 
@@ -122,7 +128,7 @@ function MetaAdsCallbackContent() {
         if (hasPopupOpener) {
           postMetaOAuthMessageToOpener({
             type: META_OAUTH_CONNECT_SUCCESS,
-            provider: "meta",
+            provider: "meta_ads",
             integrationId: resolvedIntegrationId,
             redirectTo: "/integrations",
           });
@@ -140,10 +146,13 @@ function MetaAdsCallbackContent() {
         if (hasPopupOpener) {
           postMetaOAuthMessageToOpener({
             type: META_OAUTH_CONNECT_ERROR,
-            provider: "meta",
+            provider: "meta_ads",
             message:
               "We could not verify the Meta Ads connection after the callback. Try reconnecting.",
           });
+          window.setTimeout(() => {
+            window.close();
+          }, 600);
           return;
         }
 
