@@ -923,17 +923,37 @@ export async function fetchMetaAdsStatus(workspaceId?: string | null) {
     ...getScopesFromRecord(record),
     ...getScopesFromRecord(data),
   ];
-
-  return {
-    connected:
+  const missingScopes = [
+    ...normalizeScopeList(record.missing_scopes),
+    ...normalizeScopeList(record.missingScopes),
+    ...normalizeScopeList(data.missing_scopes),
+    ...normalizeScopeList(data.missingScopes),
+  ];
+  const rawStatus =
+    getRecordStatus(record) || getRecordStatus(data) || "";
+  const status = rawStatus || "";
+  const disconnectedStatuses = new Set([
+    "needs_permission",
+    "connected_no_assets",
+    "no_authorized_assets",
+    "no_token",
+    "config_missing",
+    "disconnected",
+  ]);
+  const connected =
+    !disconnectedStatuses.has(status) &&
+    (status === "connected" ||
       Boolean(record.connected) ||
       Boolean(record.is_connected) ||
       Boolean(data.connected) ||
-      Boolean(data.is_connected) ||
-      getRecordStatus(record) === "connected" ||
-      getRecordStatus(data) === "connected",
+      Boolean(data.is_connected));
+
+  return {
+    connected,
     integrationId: getRecordIntegrationId(record) || getRecordIntegrationId(data),
     tokenScopes: tokenScopes.length > 0 ? Array.from(new Set(tokenScopes)) : [],
+    status,
+    missingScopes: missingScopes.length > 0 ? Array.from(new Set(missingScopes)) : [],
     selectedAccountId:
       typeof record.selected_account_id === "string"
         ? record.selected_account_id

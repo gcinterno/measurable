@@ -4,7 +4,14 @@ import Image from "next/image";
 
 import { useI18n } from "@/components/providers/LanguageProvider";
 
-type IntegrationStatus = "Available" | "Connected" | "Coming soon" | "Checking";
+type IntegrationStatus =
+  | "Available"
+  | "Connected"
+  | "Needs permission"
+  | "Connected, no ad accounts"
+  | "Configuration missing"
+  | "Coming soon"
+  | "Checking";
 
 type IntegrationCardProps = {
   name: string;
@@ -29,6 +36,12 @@ function getBadgeClasses(status: IntegrationStatus) {
   switch (status) {
     case "Connected":
       return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
+    case "Needs permission":
+      return "bg-amber-50 text-amber-800 ring-1 ring-amber-100";
+    case "Connected, no ad accounts":
+      return "bg-sky-50 text-sky-700 ring-1 ring-sky-100";
+    case "Configuration missing":
+      return "bg-rose-50 text-rose-700 ring-1 ring-rose-100";
     case "Available":
       return "bg-sky-50 text-sky-700 ring-1 ring-sky-100";
     case "Checking":

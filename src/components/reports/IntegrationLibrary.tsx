@@ -27,6 +27,7 @@ import {
   clearMetaOAuthDebugUrl,
   hasMetaConnectPrerequisites,
   getMetaOAuthFriendlyErrorMessage,
+  getMetaAdsStatusMessage,
   isMetaOAuthWindowMessage,
   markMetaRedirectStarted,
   normalizeMetaAuthUrl,
@@ -479,6 +480,54 @@ export function IntegrationLibrary({
         return;
       }
 
+      if (event.data.provider === "meta_ads") {
+        stopPopupPolling();
+        clearPendingMetaOAuth();
+        connectInFlightRef.current = false;
+        setConnectingIntegrationKey(null);
+
+        if (event.data.type === "MEASURABLE_META_CONNECT_SUCCESS") {
+          setConnectError("");
+          try {
+            const connected = await refreshMetaAdsState();
+            if (connected) {
+              void trackMetaEvent("MetaConnected", {
+                source: "meta_ads",
+                surface: "report_flow",
+              });
+            } else {
+              const status = await fetchMetaAdsStatus(activeWorkspaceId);
+              const fallbackStatus =
+                status.connected && status.integrationId && status.status === "connected"
+                  ? "connected_no_assets"
+                  : status.status;
+              setConnectError(
+                getMetaAdsStatusMessage({
+                  status: fallbackStatus,
+                  missingScopes: status.missingScopes,
+                }) ||
+                  "The connection finished, but we couldn’t confirm the Meta Ads status."
+              );
+            }
+          } catch (error) {
+            console.error("integration library meta ads popup refresh error:", error);
+            setConnectError("The connection finished, but we couldn’t refresh the Meta Ads status.");
+          }
+
+          return;
+        }
+
+        setConnectError(
+          getMetaAdsStatusMessage({
+            status: event.data.status,
+            message: event.data.message,
+            missingScopes: event.data.missingScopes,
+          }) || event.data.message || "We couldn’t complete the Meta Ads connection."
+        );
+
+        return;
+      }
+
       stopPopupPolling();
       clearPendingMetaOAuth();
       connectInFlightRef.current = false;
@@ -521,7 +570,13 @@ export function IntegrationLibrary({
       stopPopupPolling();
       window.removeEventListener("message", handleMetaWindowMessage);
     };
-  }, [connectingIntegrationKey, refreshMetaAdsState, refreshMetaState, stopPopupPolling]);
+  }, [
+    activeWorkspaceId,
+    connectingIntegrationKey,
+    refreshMetaAdsState,
+    refreshMetaState,
+    stopPopupPolling,
+  ]);
 
   const metaUi = useMemo(() => {
     switch (metaFlowState) {
@@ -746,6 +801,47 @@ export function IntegrationLibrary({
           setConnectingIntegrationKey(null);
 
           try {
+            if (integration.integrationKey === "meta_ads") {
+              const status = await fetchMetaAdsStatus(activeWorkspaceId);
+
+              if (status.connected && status.integrationId) {
+                const accounts = await fetchMetaAdsAccounts({
+                  integrationId: status.integrationId,
+                  workspaceId: activeWorkspaceId,
+                });
+                setMetaAdsIntegrationId(status.integrationId);
+                setMetaCounts((current) => ({
+                  ...current,
+                  meta_ads: accounts.length,
+                }));
+                setMetaAdsFlowState(accounts.length > 0 ? "connected" : "not_connected");
+
+                if (accounts.length > 0) {
+                  void trackMetaEvent("MetaConnected", {
+                    source: "meta_ads",
+                    surface: "report_flow",
+                  });
+                  setConnectError("");
+                  return;
+                }
+              }
+
+              const fallbackStatus =
+                status.connected && status.integrationId && status.status === "connected"
+                  ? "connected_no_assets"
+                  : status.status;
+              const statusMessage = getMetaAdsStatusMessage({
+                status: fallbackStatus,
+                missingScopes: status.missingScopes,
+              });
+
+              setConnectError(
+                statusMessage ||
+                  "The connection window was closed before authorization was completed."
+              );
+              return;
+            }
+
             const connectedAfterClose = await refreshMetaState();
             if (connectedAfterClose) {
               void trackMetaEvent("MetaConnected", {
@@ -759,7 +855,7 @@ export function IntegrationLibrary({
             console.error("integration library popup closed refresh error:", error);
           }
 
-          setConnectError("The connection window closed before authorization was completed.");
+          setConnectError("The connection window was closed before authorization was completed.");
         }, 2500);
       }
     } catch (error) {

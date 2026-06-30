@@ -77,11 +77,14 @@ export type MetaOAuthWindowMessage =
       integrationId?: string;
       pagesCount?: number;
       redirectTo?: string;
+      status?: string;
     }
   | {
       type: typeof META_OAUTH_CONNECT_ERROR;
       provider: "meta" | "meta_ads";
       message: string;
+      status?: string;
+      missingScopes?: string[];
     };
 
 function readPendingMetaOAuth() {
@@ -246,6 +249,53 @@ export function getMetaOAuthFriendlyErrorMessage(
   }
 
   return rawMessage || "We couldn’t complete the Meta connection. Please try again.";
+}
+
+export function getMetaAdsStatusMessage(input: {
+  status?: string | null;
+  message?: string | null;
+  missingScopes?: string[];
+}) {
+  const status = (input.status || "").trim().toLowerCase();
+  const rawMessage = (input.message || "").trim();
+  const missingScopes = input.missingScopes || [];
+
+  if (status === "connected") {
+    return "Meta Ads connected successfully.";
+  }
+
+  if (status === "needs_permission") {
+    if (missingScopes.includes("business_management")) {
+      return "Meta Ads connected, but Business Manager access is required to discover ad accounts. Please reconnect and approve business_management.";
+    }
+
+    return (
+      rawMessage ||
+      "Meta Ads connected, but additional permissions are required to discover ad accounts."
+    );
+  }
+
+  if (status === "connected_no_assets" || status === "no_authorized_assets") {
+    return "Meta Ads connected, but no ad accounts were found. Make sure your Meta user has access to an ad account in Business Manager.";
+  }
+
+  if (status === "config_missing") {
+    return "Meta Ads OAuth is not fully configured.";
+  }
+
+  if (status === "no_token") {
+    return rawMessage || "Meta Ads OAuth did not return an access token.";
+  }
+
+  if (status === "disconnected") {
+    return rawMessage || "Meta Ads is disconnected.";
+  }
+
+  if (status === "error") {
+    return rawMessage || "We couldn’t complete the Meta Ads connection. Please try again.";
+  }
+
+  return rawMessage || "";
 }
 
 export function isValidMetaAuthUrlForSource(

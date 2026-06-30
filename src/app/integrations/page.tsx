@@ -67,6 +67,80 @@ type MetaRefreshResult = {
   catalogsLoaded: boolean;
 };
 
+function getMetaAdsCardStatus(input: {
+  loading: boolean;
+  status: string;
+  connected: boolean;
+}) {
+  if (input.loading) {
+    return "Checking" as const;
+  }
+
+  switch ((input.status || "").toLowerCase()) {
+    case "needs_permission":
+      return "Needs permission" as const;
+    case "connected_no_assets":
+    case "no_authorized_assets":
+      return "Connected, no ad accounts" as const;
+    case "config_missing":
+      return "Configuration missing" as const;
+    case "connected":
+      return input.connected ? ("Connected" as const) : ("Connected, no ad accounts" as const);
+    default:
+      return input.connected ? ("Connected" as const) : ("Available" as const);
+  }
+}
+
+function getMetaAdsActionLabel(input: {
+  loading: boolean;
+  status: string;
+  connected: boolean;
+}) {
+  if (input.loading) {
+    return "Connecting...";
+  }
+
+  switch ((input.status || "").toLowerCase()) {
+    case "needs_permission":
+    case "connected_no_assets":
+    case "no_authorized_assets":
+      return "Reconnect";
+    case "config_missing":
+    case "no_token":
+    case "disconnected":
+      return "Connect";
+    case "connected":
+      return input.connected ? "Sync" : "Reconnect";
+    default:
+      return input.connected ? "Sync" : "Connect";
+  }
+}
+
+function getMetaAdsHelperText(input: {
+  connected: boolean;
+  status: string;
+  accountsCount: number;
+  lastSyncedAt: string;
+}) {
+  switch ((input.status || "").toLowerCase()) {
+    case "needs_permission":
+      return "Meta Ads connected, but Business Manager access is required to discover ad accounts. Please reconnect and approve business_management.";
+    case "connected_no_assets":
+    case "no_authorized_assets":
+      return "Meta Ads connected, but no ad accounts were found. Make sure your Meta user has access to an ad account in Business Manager.";
+    case "config_missing":
+      return "Meta Ads OAuth is not fully configured.";
+    case "connected":
+      return input.connected
+        ? `${input.accountsCount} ad account${input.accountsCount === 1 ? "" : "s"} available${input.lastSyncedAt ? ` • Last synced ${new Date(input.lastSyncedAt).toLocaleString()}` : ""}`
+        : "Meta Ads connected, but no ad accounts were found. Make sure your Meta user has access to an ad account in Business Manager.";
+    default:
+      return input.connected
+        ? `${input.accountsCount} ad account${input.accountsCount === 1 ? "" : "s"} available${input.lastSyncedAt ? ` • Last synced ${new Date(input.lastSyncedAt).toLocaleString()}` : ""}`
+        : "Connect your ad account to generate paid media performance reports.";
+  }
+}
+
 function IntegrationsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -80,6 +154,7 @@ function IntegrationsPageContent() {
   const [metaConnected, setMetaConnected] = useState(false);
   const [instagramBusinessConnected, setInstagramBusinessConnected] = useState(false);
   const [metaAdsConnected, setMetaAdsConnected] = useState(false);
+  const [metaAdsStatus, setMetaAdsStatus] = useState("");
   const [metaAdsLoading, setMetaAdsLoading] = useState(false);
   const [metaAdsDisconnectLoading, setMetaAdsDisconnectLoading] = useState(false);
   const [metaAdsError, setMetaAdsError] = useState("");
@@ -125,22 +200,29 @@ function IntegrationsPageContent() {
         integrationId: "",
         accountsCount: 0,
         lastSyncedAt: "",
+        status: "",
+        missingScopes: [] as string[],
       };
     }
 
     const status = await fetchMetaAdsStatus(activeWorkspaceId);
+    const normalizedStatus = (status.status || "").toLowerCase();
+    const statusConnected = normalizedStatus === "connected" && Boolean(status.connected);
 
-    setMetaAdsConnected(status.connected);
+    setMetaAdsStatus(normalizedStatus);
+    setMetaAdsConnected(statusConnected);
     setMetaAdsIntegrationId(status.integrationId);
     setMetaAdsLastSyncedAt(status.lastSyncedAt || "");
 
-    if (!status.connected || !status.integrationId) {
+    if (!statusConnected || !status.integrationId) {
       setMetaAdsAccountsCount(0);
       return {
-        connected: false,
+        connected: statusConnected,
         integrationId: status.integrationId || "",
         accountsCount: 0,
         lastSyncedAt: status.lastSyncedAt || "",
+        status: normalizedStatus,
+        missingScopes: status.missingScopes || [],
       };
     }
 
@@ -150,12 +232,16 @@ function IntegrationsPageContent() {
     });
 
     setMetaAdsAccountsCount(accounts.length);
+    const finalConnected = normalizedStatus === "connected" && accounts.length > 0;
+    setMetaAdsConnected(finalConnected);
 
     return {
-      connected: true,
+      connected: finalConnected,
       integrationId: status.integrationId,
       accountsCount: accounts.length,
       lastSyncedAt: status.lastSyncedAt || "",
+      status: normalizedStatus,
+      missingScopes: status.missingScopes || [],
     };
   }, [activeWorkspaceId]);
 
@@ -405,6 +491,7 @@ function IntegrationsPageContent() {
         setMetaAdsConnected(false);
         setMetaAdsIntegrationId("");
         setMetaAdsAccountsCount(0);
+        setMetaAdsStatus("");
       }
     }
 
@@ -447,9 +534,21 @@ function IntegrationsPageContent() {
             const result = await refreshMetaAdsState();
             if (result.connected) {
               setMetaAdsStatusMessage("Meta Ads connected successfully.");
-            } else {
+            } else if (result.status === "connected" && result.accountsCount === 0) {
               setMetaAdsStatusMessage(
-                "The connection finished, but we couldn’t confirm the Meta Ads status."
+                getMetaAdsStatusMessage({
+                  status: "connected_no_assets",
+                  missingScopes: result.missingScopes,
+                }) ||
+                  "Meta Ads connected, but no ad accounts were found. Make sure your Meta user has access to an ad account in Business Manager."
+              );
+            } else if (!result.connected) {
+              setMetaAdsStatusMessage(
+                getMetaAdsStatusMessage({
+                  status: result.status,
+                  missingScopes: result.missingScopes,
+                }) ||
+                  "The connection finished, but we couldn’t confirm the Meta Ads status."
               );
             }
           } catch (error) {
@@ -459,10 +558,35 @@ function IntegrationsPageContent() {
             );
           }
         } else {
-          setMetaAdsStatusMessage("");
-          setMetaAdsError(
-            event.data.message || "We couldn’t complete the Meta Ads connection. Please try again."
-          );
+          const nextStatusMessage = getMetaAdsStatusMessage({
+            status: event.data.status,
+            message: event.data.message,
+            missingScopes: event.data.missingScopes,
+          });
+          setMetaAdsStatus((event.data.status || "").toLowerCase());
+          if (event.data.status === "config_missing") {
+            setMetaAdsStatusMessage("");
+            setMetaAdsError(nextStatusMessage || "Meta Ads OAuth is not fully configured.");
+          } else if (
+            event.data.status === "needs_permission" ||
+            event.data.status === "connected_no_assets" ||
+            event.data.status === "no_authorized_assets"
+          ) {
+            setMetaAdsError("");
+            setMetaAdsStatusMessage(nextStatusMessage);
+          } else {
+            setMetaAdsStatusMessage("");
+            setMetaAdsError(
+              nextStatusMessage ||
+                event.data.message ||
+                "We couldn’t complete the Meta Ads connection. Please try again."
+            );
+          }
+          try {
+            await refreshMetaAdsState();
+          } catch (error) {
+            console.error("meta ads popup error refresh failed:", error);
+          }
         }
 
         return;
@@ -1179,6 +1303,30 @@ function IntegrationsPageContent() {
                 setMetaAdsStatusMessage("Meta Ads connected successfully.");
                 return;
               }
+
+              const fallbackStatus =
+                result.status === "connected" && result.accountsCount === 0
+                  ? "connected_no_assets"
+                  : result.status;
+              const nextMessage = getMetaAdsStatusMessage({
+                status: fallbackStatus,
+                missingScopes: result.missingScopes,
+              });
+              if (nextMessage) {
+                if (
+                  fallbackStatus === "config_missing" ||
+                  fallbackStatus === "no_token" ||
+                  fallbackStatus === "disconnected"
+                ) {
+                  setMetaAdsStatusMessage("");
+                  setMetaAdsError(nextMessage);
+                  return;
+                }
+
+                setMetaAdsError("");
+                setMetaAdsStatusMessage(nextMessage);
+                return;
+              }
             } catch (error) {
               console.error("meta ads popup closed refresh error:", error);
             }
@@ -1408,9 +1556,11 @@ function IntegrationsPageContent() {
                       ? "Connected"
                       : integration.status
                 : integration.integrationKey === "meta_ads"
-                  ? metaAdsConnected
-                    ? "Connected"
-                    : "Available"
+                  ? getMetaAdsCardStatus({
+                      loading: metaAdsLoading || integrationsStateLoading,
+                      status: metaAdsStatus,
+                      connected: metaAdsConnected,
+                    })
                 : integration.status
             }
             actionLabel={
@@ -1427,9 +1577,11 @@ function IntegrationsPageContent() {
                       ? undefined
                       : integration.actionLabel
                 : integration.integrationKey === "meta_ads"
-                  ? metaAdsConnected
-                    ? "Sync"
-                    : "Connect"
+                  ? getMetaAdsActionLabel({
+                      loading: metaAdsLoading,
+                      status: metaAdsStatus,
+                      connected: metaAdsConnected,
+                    })
                 : integration.actionLabel
             }
             loadingLabel={
@@ -1465,7 +1617,8 @@ function IntegrationsPageContent() {
                 ? disconnectLoading
                   ? "Disconnecting..."
                   : "Disconnect"
-                : integration.integrationKey === "meta_ads" && metaAdsConnected
+                : integration.integrationKey === "meta_ads" &&
+                    metaAdsConnected
                   ? metaAdsDisconnectLoading
                     ? "Disconnecting..."
                     : "Disconnect"
@@ -1501,9 +1654,12 @@ function IntegrationsPageContent() {
             }
             helperText={
               integration.integrationKey === "meta_ads"
-                ? metaAdsConnected
-                  ? `${metaAdsAccountsCount} ad account${metaAdsAccountsCount === 1 ? "" : "s"} available${metaAdsLastSyncedAt ? ` • Last synced ${new Date(metaAdsLastSyncedAt).toLocaleString()}` : ""}`
-                  : "Connect your ad account to generate paid media performance reports."
+                ? getMetaAdsHelperText({
+                    connected: metaAdsConnected,
+                    status: metaAdsStatus,
+                    accountsCount: metaAdsAccountsCount,
+                    lastSyncedAt: metaAdsLastSyncedAt,
+                  })
                 : undefined
             }
             error=""
