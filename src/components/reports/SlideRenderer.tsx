@@ -82,6 +82,14 @@ const MULTI_SERIES_BLOCKS = new Set([
   "audience_growth",
 ]);
 
+const FACEBOOK_PAGES_MVP_SLIDE_TYPES = [
+  "cover",
+  "organic_impressions_overview",
+  "engagement_overview",
+  "page_views_overview",
+  "executive_summary",
+] as const;
+
 const STANDARDIZED_TEN_SLIDE_ORDER = [
   "cover",
   "reach",
@@ -283,6 +291,8 @@ function getMultiSourceStagePalette(templateId: ReportTemplateId) {
 
 function getBlockSemanticName(block: ReportVersionBlock) {
   const value =
+    block.data.slide_type ??
+    block.data.slideType ??
     block.data.semantic_name ??
     block.data.semanticName ??
     block.data.name ??
@@ -336,13 +346,34 @@ export function getReportBlockDiagnostics(blocks: ReportVersionBlock[]) {
 
 export function shouldRenderBlocksAsSlides(blocks?: ReportVersionBlock[]) {
   const templateSlideCount = getReportTemplate("default").slides.length;
-  return Boolean(blocks?.length && blocks.length > templateSlideCount);
+  if (!blocks?.length) {
+    return false;
+  }
+
+  const semanticNames = blocks.map((block) => getNormalizedBlockSemanticName(block));
+  const hasFacebookPagesMvpSlides = FACEBOOK_PAGES_MVP_SLIDE_TYPES.every((slideType) =>
+    semanticNames.includes(slideType)
+  );
+
+  return hasFacebookPagesMvpSlides || blocks.length > templateSlideCount;
 }
 
 function getBlockMetricKey(block: ReportVersionBlock) {
   const haystack = [
+    getStringValue(block.data.slide_type),
+    getStringValue(block.data.slideType),
     getStringValue(block.data.metric_key),
     getStringValue(block.data.metricKey),
+    getStringValue(block.data.normalized_field),
+    getStringValue(block.data.normalizedField),
+    getStringValue(block.data.raw_metric_name),
+    getStringValue(block.data.rawMetricName),
+    Array.isArray(block.data.source_metrics_used)
+      ? block.data.source_metrics_used.map((item) => getStringValue(item)).join(" ")
+      : "",
+    Array.isArray(block.data.sourceMetricsUsed)
+      ? block.data.sourceMetricsUsed.map((item) => getStringValue(item)).join(" ")
+      : "",
     getStringValue(block.data.metric_label),
     getStringValue(block.data.metricLabel),
     getStringValue(block.data.semantic_name),
@@ -354,6 +385,14 @@ function getBlockMetricKey(block: ReportVersionBlock) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+
+  if (
+    haystack.includes("organic_impressions") ||
+    haystack.includes("organic impressions") ||
+    haystack.includes("organic visibility")
+  ) {
+    return "organic_impressions";
+  }
 
   if (haystack.includes("impression") || haystack.includes("impresion")) {
     return "impressions";
@@ -440,6 +479,7 @@ function normalizeFiveSlideBlockOrder(blocks: ReportVersionBlock[]) {
       pick((block) => getBlockSlideType(block) === "cover") ||
       pick((block) => block.type === "title"),
     pick((block) => getBlockOrder(block, 0) === 2) ||
+      pick((block) => getBlockMetricKey(block) === "organic_impressions") ||
       pick((block) => getBlockMetricKey(block) === "reach"),
     pick((block) => getBlockOrder(block, 0) === 3) ||
       pick((block) => getBlockMetricKey(block) === "engagement"),
@@ -1466,6 +1506,34 @@ function formatMetricCandidateDisplay(value: unknown) {
   return "";
 }
 
+function isBlockMetricUnavailable(block: ReportVersionBlock) {
+  const status = (
+    getStringValue(block.data.availability_status) ||
+    getStringValue(block.data.availabilityStatus) ||
+    getStringValue(block.data.status)
+  ).toLowerCase();
+
+  return (
+    block.data.is_available === false ||
+    block.data.isAvailable === false ||
+    block.data.available === false ||
+    status === "unavailable" ||
+    status === "not_available" ||
+    status === "n/a" ||
+    status === "na"
+  );
+}
+
+function getBlockUnavailableMessage(block: ReportVersionBlock, fallback: string) {
+  return (
+    getStringValue(block.data.unavailable_message) ||
+    getStringValue(block.data.unavailableMessage) ||
+    getStringValue(block.data.unavailable_reason) ||
+    getStringValue(block.data.unavailableReason) ||
+    fallback
+  );
+}
+
 function getObjectArray(value: unknown) {
   return Array.isArray(value) ? value.filter((item) => item && typeof item === "object") as Record<string, unknown>[] : [];
 }
@@ -1756,16 +1824,6 @@ function getMetricDisplay(block: ReportVersionBlock, aliases: string[], fallback
   return formatted || fallback;
 }
 
-function getMetricNumber(block: ReportVersionBlock, aliases: string[]) {
-  const value = getBlockMetricCandidateValue(block, aliases);
-
-  if (value === undefined) {
-    return null;
-  }
-
-  return getNumericCandidateValue(value);
-}
-
 function getBlockInsightText(block: ReportVersionBlock, fallback?: string) {
   return (
     getStringValue(block.data.insight_short) ||
@@ -1989,16 +2047,6 @@ function isMultiSourceTenSlideReport(blocks: ReportVersionBlock[]) {
       semanticNames.includes("recommendations") ||
       semanticNames.includes("top_performing_post")
     )
-  );
-}
-
-function hasMultiSourcePlatformSemantics(blocks: ReportVersionBlock[]) {
-  const semanticNames = blocks.map((block) => getNormalizedBlockSemanticName(block));
-
-  return (
-    semanticNames.filter((name) => name === "reach_overview").length >= 2 &&
-    semanticNames.filter((name) => name === "engagement_overview").length >= 2 &&
-    semanticNames.filter((name) => name === "audience_growth").length >= 2
   );
 }
 
@@ -2998,13 +3046,42 @@ function OverviewSlide({
 }
 
 function getExecutiveSummaryPayloadCards(block: ReportVersionBlock) {
-  const rawCards = block.data.insight_cards || block.data.insightCards;
+  const rawCards =
+    block.data.insight_cards ||
+    block.data.insightCards ||
+    block.data.metric_cards ||
+    block.data.metricCards ||
+    block.data.summary_cards ||
+    block.data.summaryCards ||
+    block.data.cards ||
+    block.data.kpis ||
+    block.data.metrics;
 
-  if (!Array.isArray(rawCards)) {
+  const normalizedCards = Array.isArray(rawCards)
+    ? rawCards
+    : rawCards && typeof rawCards === "object"
+      ? Object.entries(rawCards as Record<string, unknown>).map(([key, value]) => {
+          const record = getObjectRecord(value);
+
+          return record
+            ? {
+                id: key,
+                ...record,
+                label: record.label || record.title || humanizeSemanticName(key, key),
+              }
+            : {
+                id: key,
+                label: humanizeSemanticName(key, key),
+                value,
+              };
+        })
+      : [];
+
+  if (!Array.isArray(normalizedCards)) {
     return [];
   }
 
-  return rawCards
+  return normalizedCards
     .map((item, index) => {
       if (!item || typeof item !== "object") {
         return null;
@@ -3135,10 +3212,16 @@ function ExecutiveSummarySlide({
     getStringValue(block.data.heading) ||
     "Insights Summary";
   const payloadCards = getExecutiveSummaryPayloadCards(block);
-  const cards = payloadCards.length > 0 ? payloadCards : getInsightSummaryCards(blocks);
+  const isOfficialExecutiveSummary =
+    getNormalizedBlockSemanticName(block) === "executive_summary";
+  const cards = payloadCards.length > 0
+    ? payloadCards
+    : isOfficialExecutiveSummary
+      ? []
+      : getInsightSummaryCards(blocks);
   const visibleCards = cards.slice(0, 8);
   const aiAnalysis = getExecutiveAiAnalysis(block, cards, {
-    allowLegacyFallback: payloadCards.length === 0,
+    allowLegacyFallback: !isOfficialExecutiveSummary && payloadCards.length === 0,
   });
   const fallbackText = getTextContent(block);
 
@@ -4522,6 +4605,7 @@ function StandardizedSemanticMetricSlide({
   insightFallback,
   growthAliases = [],
   totalOnlyWhenMissingChart = false,
+  unavailableFallback,
 }: {
   block: ReportVersionBlock;
   index: number;
@@ -4537,15 +4621,28 @@ function StandardizedSemanticMetricSlide({
   insightFallback: string;
   growthAliases?: string[];
   totalOnlyWhenMissingChart?: boolean;
+  unavailableFallback?: string;
 }) {
   const tone = getTemplateTone(templateId);
   const slideId = String(index + 1).padStart(2, "0");
   const timeframeLabel = getBlockTimeframeLabel(block);
   const chartPoints = getBlockChartPoints(block);
-  const hasChart = chartPoints.length > 0;
-  const insightText = getBlockInsightText(block, insightFallback);
-  const growth = getGrowthBadgeData(block, growthAliases);
-  const primaryMetric = getSemanticMetricStat(block, mainMetricLabel, mainMetricAliases);
+  const isUnavailable = isBlockMetricUnavailable(block);
+  const unavailableMessage = getBlockUnavailableMessage(
+    block,
+    unavailableFallback || chartPlaceholderText
+  );
+  const hasChart = !isUnavailable && chartPoints.length > 0;
+  const insightText = isUnavailable
+    ? unavailableMessage
+    : getBlockInsightText(block, insightFallback);
+  const growth = isUnavailable ? null : getGrowthBadgeData(block, growthAliases);
+  const primaryMetric = getSemanticMetricStat(
+    block,
+    mainMetricLabel,
+    mainMetricAliases,
+    isUnavailable ? "N/A" : "—"
+  );
   const visibleStats = secondaryStats
     .map((stat) => getSemanticMetricStat(block, stat.label, stat.aliases))
     .filter((stat) => stat.value !== "—");
@@ -4571,7 +4668,11 @@ function StandardizedSemanticMetricSlide({
             <p className={`mt-3 text-sm ${tone.cardStrongSubtitle}`}>
               {primaryMetric.label}
             </p>
-            {renderGrowthBadge(growth, tone) || (
+            {isUnavailable ? (
+              <p className={`mt-4 text-xs font-medium ${tone.cardStrongSubtitle}`}>
+                {unavailableMessage}
+              </p>
+            ) : renderGrowthBadge(growth, tone) || (
               <p className={`mt-4 text-xs font-medium ${tone.cardStrongSubtitle}`}>
                 No comparison available
               </p>
@@ -5102,6 +5203,100 @@ function ReportBlockSlide({
             workspaceId,
           },
         }}
+      />
+    );
+  }
+
+  if (normalizedSemanticName === "organic_impressions_overview") {
+    return (
+      <StandardizedSemanticMetricSlide
+        block={block}
+        index={index}
+        totalSlides={totalSlides}
+        renderMode={renderMode}
+        templateId={templateId}
+        title="Organic Visibility"
+        mainMetricLabel="Organic Impressions"
+        mainMetricAliases={[
+          "organic_impressions_total",
+          "organicImpressionsTotal",
+          "impressions_total",
+          "impressionsTotal",
+          "formatted_total",
+          "formattedTotal",
+          "raw_value",
+          "rawValue",
+          "total",
+          "value",
+        ]}
+        chartMetricLabel="Organic Impressions"
+        chartPlaceholderText="Meta did not return organic impressions for the selected period."
+        insightFallback="Based on organic Facebook Page post impressions"
+        unavailableFallback="Meta did not return organic impressions for the selected period."
+        growthAliases={["organic_impressions", "impressions"]}
+      />
+    );
+  }
+
+  if (normalizedSemanticName === "engagement_overview") {
+    return (
+      <StandardizedSemanticMetricSlide
+        block={block}
+        index={index}
+        totalSlides={totalSlides}
+        renderMode={renderMode}
+        templateId={templateId}
+        title="Engagement"
+        mainMetricLabel="Total Engagement"
+        mainMetricAliases={[
+          "engagement_total",
+          "engagementTotal",
+          "engagement",
+          "interactions_total",
+          "interactionsTotal",
+          "formatted_total",
+          "formattedTotal",
+          "raw_value",
+          "rawValue",
+          "total",
+          "value",
+        ]}
+        chartMetricLabel="Engagement"
+        chartPlaceholderText="No daily engagement trend available"
+        insightFallback="Engagement reflects how strongly the audience responded to the published content."
+        growthAliases={["engagement", "engagement_total", "interactions_total"]}
+      />
+    );
+  }
+
+  if (normalizedSemanticName === "page_views_overview") {
+    return (
+      <StandardizedSemanticMetricSlide
+        block={block}
+        index={index}
+        totalSlides={totalSlides}
+        renderMode={renderMode}
+        templateId={templateId}
+        title="Page Views"
+        mainMetricLabel="Total Page Views"
+        mainMetricAliases={[
+          "page_views_total",
+          "pageViewsTotal",
+          "page_views",
+          "pageViews",
+          "page_visits_total",
+          "pageVisitsTotal",
+          "formatted_total",
+          "formattedTotal",
+          "raw_value",
+          "rawValue",
+          "total",
+          "value",
+        ]}
+        chartMetricLabel="Page Views"
+        chartPlaceholderText="No daily page views trend available"
+        insightFallback="Page Views show how often people visited the Facebook Page during the selected period."
+        growthAliases={["page_views", "page_views_total", "page_visits"]}
       />
     );
   }

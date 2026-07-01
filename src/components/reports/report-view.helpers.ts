@@ -222,8 +222,20 @@ function normalizeSlideToken(value: string) {
 
 function getBlockMetricKey(block: ReportVersionBlock) {
   const candidates = [
+    block.data.slide_type,
+    block.data.slideType,
     block.data.metric_key,
     block.data.metricKey,
+    block.data.normalized_field,
+    block.data.normalizedField,
+    block.data.raw_metric_name,
+    block.data.rawMetricName,
+    Array.isArray(block.data.source_metrics_used)
+      ? block.data.source_metrics_used.join(" ")
+      : "",
+    Array.isArray(block.data.sourceMetricsUsed)
+      ? block.data.sourceMetricsUsed.join(" ")
+      : "",
     block.data.metric_label,
     block.data.metricLabel,
     block.data.semantic_name,
@@ -237,6 +249,14 @@ function getBlockMetricKey(block: ReportVersionBlock) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+
+  if (
+    haystack.includes("organic_impressions") ||
+    haystack.includes("organic impressions") ||
+    haystack.includes("organic visibility")
+  ) {
+    return "organic_impressions";
+  }
 
   if (haystack.includes("impression") || haystack.includes("impresion")) {
     return "impressions";
@@ -318,6 +338,7 @@ function getBlockSlideNumber(block: ReportVersionBlock) {
 function hasImpressionsMetricBlock(blocks: ReportVersionBlock[]) {
   return blocks.some(
     (block) =>
+      getBlockMetricKey(block) === "organic_impressions" ||
       getBlockMetricKey(block) === "impressions" ||
       block.type === "impressions_slide"
   );
@@ -358,20 +379,21 @@ function normalizeFiveSlideBlocks(blocks: ReportVersionBlock[]) {
     pick((block) => block.type === "title");
   const reachBlock =
     pick((block) => getBlockSlideNumber(block) === 2) ||
+    pick((block) => getBlockMetricKey(block) === "organic_impressions") ||
     pick((block) => getBlockMetricKey(block) === "reach");
   const hasImpressions = hasImpressionsLayout(blocks);
   const impressionsBlock = hasImpressions
-    ? pick((block) => getBlockMetricKey(block) === "impressions") ||
+    ? pick((block) => getBlockMetricKey(block) === "organic_impressions") ||
+      pick((block) => getBlockMetricKey(block) === "impressions") ||
       pick((block) => block.type === "impressions_slide") ||
       pick((block) => getBlockSlideNumber(block) === 3)
     : null;
   const engagementBlock =
     pick((block) => getBlockMetricKey(block) === "engagement") ||
     pick((block) => getBlockSlideNumber(block) === (hasImpressions ? 4 : 3));
-  const pageViewsBlock = !hasImpressions
-    ? pick((block) => getBlockMetricKey(block) === "page_views") ||
-      pick((block) => getBlockSlideNumber(block) === 4)
-    : null;
+  const pageViewsBlock =
+    pick((block) => getBlockMetricKey(block) === "page_views") ||
+    (!hasImpressions ? pick((block) => getBlockSlideNumber(block) === 4) : null);
   const summaryBlock =
     pick((block) => getBlockSlideNumber(block) === 5) ||
     pick((block) => getBlockSlideType(block) === "summary");
@@ -691,6 +713,7 @@ function getMetricTotalValue(
 function getImpressionsSlideData(blocks: ReportVersionBlock[]) {
   const hasImpressions = hasImpressionsLayout(blocks);
   const block =
+    blocks.find((item) => getBlockMetricKey(item) === "organic_impressions") ||
     blocks.find((item) => getBlockMetricKey(item) === "impressions") ||
     blocks.find((item) => item.type === "impressions_slide") ||
     (hasImpressions
@@ -704,6 +727,8 @@ function getImpressionsSlideData(blocks: ReportVersionBlock[]) {
   const timeframeSince = getTrimmedText(String(block.data.timeframe_since ?? ""));
   const timeframeUntil = getTrimmedText(String(block.data.timeframe_until ?? ""));
   const explicitTotal = getFormattedMetricTotal(block.data as Record<string, unknown>, [
+    "organic_impressions_total",
+    "organicImpressionsTotal",
     "impressions_total",
     "impressionsTotal",
   ]);
@@ -843,13 +868,9 @@ function getEngagementSlideData(blocks: ReportVersionBlock[]) {
 
 function getPageViewsSlideData(blocks: ReportVersionBlock[]) {
   const hasImpressions = hasImpressionsLayout(blocks);
-  if (hasImpressions) {
-    return null;
-  }
-
   const block =
     blocks.find((item) => getBlockMetricKey(item) === "page_views") ||
-    blocks.find((item) => getBlockSlideNumber(item) === 4) ||
+    (!hasImpressions ? blocks.find((item) => getBlockSlideNumber(item) === 4) : null) ||
     null;
 
   if (!block) {
@@ -1171,9 +1192,7 @@ export function buildExecutiveDarkViewModel(
   const generalInsightsSlideData = getGeneralInsightsSlideData(orderedBlocks);
   const summarySlideData = getSummarySlideData(orderedBlocks);
   const reachSlideBlock =
-    orderedBlocks.find((item) => getBlockMetricKey(item) === "reach") ||
-    orderedBlocks.find((item) => getBlockSlideNumber(item) === 2) ||
-    null;
+    orderedBlocks.find((item) => getBlockMetricKey(item) === "reach") || null;
   const viewersChart = getMetricChartData(orderedBlocks, ["viewers", "viewer", "reach", "espectadores"]);
   const impressionsChart = getMetricChartData(orderedBlocks, ["impressions", "impresiones", "views", "view", "visualizaciones"]);
   const engagementChart = getMetricChartData(orderedBlocks, ["engagement", "interactions", "interacciones"]);

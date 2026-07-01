@@ -1,7 +1,13 @@
 import type { ExecutiveDarkSeriesPoint } from "@/components/reports/report-view.helpers";
 
 type DailySeriesPoint = ExecutiveDarkSeriesPoint;
-type MetricSeriesKey = "reach" | "engagement" | "page_views" | "impressions" | "unknown";
+type MetricSeriesKey =
+  | "reach"
+  | "engagement"
+  | "page_views"
+  | "impressions"
+  | "organic_impressions"
+  | "unknown";
 
 function getRecord(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -104,6 +110,18 @@ function inferMetricSeriesKey(record: Record<string, unknown>): MetricSeriesKey 
   const haystack = [
     record.metric_key,
     record.metricKey,
+    record.slide_type,
+    record.slideType,
+    record.normalized_field,
+    record.normalizedField,
+    record.raw_metric_name,
+    record.rawMetricName,
+    Array.isArray(record.source_metrics_used)
+      ? record.source_metrics_used.join(" ")
+      : "",
+    Array.isArray(record.sourceMetricsUsed)
+      ? record.sourceMetricsUsed.join(" ")
+      : "",
     record.metric_label,
     record.metricLabel,
     record.semantic_name,
@@ -118,6 +136,14 @@ function inferMetricSeriesKey(record: Record<string, unknown>): MetricSeriesKey 
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+
+  if (
+    haystack.includes("organic_impressions") ||
+    haystack.includes("organic impressions") ||
+    haystack.includes("organic visibility")
+  ) {
+    return "organic_impressions";
+  }
 
   if (
     haystack.includes("page_views") ||
@@ -185,8 +211,11 @@ function collectMetricSpecificSeries(
     ];
   }
 
-  if (metricKey === "impressions") {
+  if (metricKey === "impressions" || metricKey === "organic_impressions") {
     return [
+      ...collectSeries(record.daily_organic_impressions, metricKey),
+      ...collectSeries(record.organic_impressions_daily, metricKey),
+      ...collectSeries(record.dailyOrganicImpressions, metricKey),
       ...collectSeries(record.daily_impressions, metricKey),
       ...collectSeries(record.impressions_daily, metricKey),
     ];

@@ -51,7 +51,7 @@ export const integrationCatalog: readonly IntegrationCatalogItem[] = [
     name: "Facebook Pages",
     category: "Paid social",
     description:
-      "Connect Facebook Pages to generate reach, followers, and engagement reports.",
+      "Connect Facebook Pages to generate organic visibility, engagement, page views, and audience reports.",
     status: "Available",
     actionLabel: "Connect",
     integrationKey: "facebook_pages",
