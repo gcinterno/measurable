@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 
 import { getTemplateTone } from "@/components/reports/slides/template";
+import { ReportWatermarkBadge } from "@/components/reports/slides/shared";
 import type { ReportTemplateId } from "@/lib/reports/template-selection";
 import {
   REPORT_SLIDE_THEME,
@@ -31,6 +32,9 @@ type SlideCanvasProps = {
   renderMode?: ReportRenderMode;
   templateId?: ReportTemplateId;
   watermarkText?: string;
+  watermarkLogoLightUrl?: string | null;
+  watermarkLogoDarkUrl?: string | null;
+  watermarkWorkspaceId?: string | null;
 };
 
 function ModernDotMatrix() {
@@ -204,6 +208,9 @@ export function SlideCanvas({
   renderMode = "preview",
   templateId = "executive",
   watermarkText,
+  watermarkLogoLightUrl,
+  watermarkLogoDarkUrl,
+  watermarkWorkspaceId,
 }: SlideCanvasProps) {
   const hasHeaderCopy = Boolean(eyebrow || title);
   const isExportMode = renderMode === "export";
@@ -302,8 +309,15 @@ export function SlideCanvas({
           <div className={`pointer-events-none absolute inset-0 ${tone.overlay}`} />
           <div className={`pointer-events-none absolute inset-x-10 top-0 h-px ${tone.topLine}`} />
           {watermarkText ? (
-            <div className="pointer-events-none absolute bottom-8 right-10 z-10 rounded-full border border-white/10 bg-slate-950/70 px-3 py-1.5 text-[11px] font-medium tracking-[0.04em] text-white/85 backdrop-blur">
-              {watermarkText}
+            <div className="pointer-events-none absolute bottom-8 right-10 z-10">
+              <ReportWatermarkBadge
+                enabled
+                label={watermarkText}
+                logoLightUrl={watermarkLogoLightUrl}
+                logoDarkUrl={watermarkLogoDarkUrl}
+                workspaceId={watermarkWorkspaceId}
+                dark={tone.dark}
+              />
             </div>
           ) : null}
           {templateId === "modern" ? <ModernTemplateArtwork /> : null}

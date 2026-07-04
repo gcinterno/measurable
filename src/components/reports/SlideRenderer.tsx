@@ -3287,6 +3287,10 @@ function ExecutiveSummarySlide({
   totalSlides,
   renderMode,
   templateId,
+  watermarkText,
+  watermarkLogoLightUrl,
+  watermarkLogoDarkUrl,
+  watermarkWorkspaceId,
 }: {
   block: ReportVersionBlock;
   blocks: ReportVersionBlock[];
@@ -3294,6 +3298,10 @@ function ExecutiveSummarySlide({
   totalSlides: number;
   renderMode: ReportRenderMode;
   templateId: ReportTemplateId;
+  watermarkText?: string;
+  watermarkLogoLightUrl?: string | null;
+  watermarkLogoDarkUrl?: string | null;
+  watermarkWorkspaceId?: string | null;
 }) {
   const tone = getTemplateTone(templateId);
   const slideId = String(index + 1).padStart(2, "0");
@@ -3330,6 +3338,10 @@ function ExecutiveSummarySlide({
       title={title}
       renderMode={renderMode}
       templateId={templateId}
+      watermarkText={watermarkText}
+      watermarkLogoLightUrl={watermarkLogoLightUrl}
+      watermarkLogoDarkUrl={watermarkLogoDarkUrl}
+      watermarkWorkspaceId={watermarkWorkspaceId}
     >
       <div className="flex h-full min-h-0 flex-col gap-5">
         <div className="flex items-center justify-between gap-4">
@@ -4712,6 +4724,10 @@ function StandardizedSemanticMetricSlide({
   growthAliases = [],
   totalOnlyWhenMissingChart = false,
   unavailableFallback,
+  watermarkText,
+  watermarkLogoLightUrl,
+  watermarkLogoDarkUrl,
+  watermarkWorkspaceId,
 }: {
   block: ReportVersionBlock;
   index: number;
@@ -4728,6 +4744,10 @@ function StandardizedSemanticMetricSlide({
   growthAliases?: string[];
   totalOnlyWhenMissingChart?: boolean;
   unavailableFallback?: string;
+  watermarkText?: string;
+  watermarkLogoLightUrl?: string | null;
+  watermarkLogoDarkUrl?: string | null;
+  watermarkWorkspaceId?: string | null;
 }) {
   const tone = getTemplateTone(templateId);
   const slideId = String(index + 1).padStart(2, "0");
@@ -4761,6 +4781,10 @@ function StandardizedSemanticMetricSlide({
       title=""
       renderMode={renderMode}
       templateId={templateId}
+      watermarkText={watermarkText}
+      watermarkLogoLightUrl={watermarkLogoLightUrl}
+      watermarkLogoDarkUrl={watermarkLogoDarkUrl}
+      watermarkWorkspaceId={watermarkWorkspaceId}
     >
       <div className="grid h-full min-h-0 grid-cols-[0.82fr_1.18fr] gap-6">
         <section className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-4">
@@ -5143,6 +5167,9 @@ function ReportBlockSlide({
   locale,
   hideOverviewInsights = false,
   watermarkText,
+  watermarkLogoLightUrl,
+  watermarkLogoDarkUrl,
+  watermarkWorkspaceId,
 }: {
   block: ReportVersionBlock;
   blocks: ReportVersionBlock[];
@@ -5158,6 +5185,9 @@ function ReportBlockSlide({
   locale?: string;
   hideOverviewInsights?: boolean;
   watermarkText?: string;
+  watermarkLogoLightUrl?: string | null;
+  watermarkLogoDarkUrl?: string | null;
+  watermarkWorkspaceId?: string | null;
 }) {
   const tone = getTemplateTone(templateId);
   const semanticName = getBlockSemanticName(block);
@@ -5310,6 +5340,10 @@ function ReportBlockSlide({
         insightFallback="Based on organic Facebook Page post impressions"
         unavailableFallback="Meta did not return organic impressions for the selected period."
         growthAliases={["organic_impressions", "impressions"]}
+        watermarkText={watermarkText}
+        watermarkLogoLightUrl={watermarkLogoLightUrl}
+        watermarkLogoDarkUrl={watermarkLogoDarkUrl}
+        watermarkWorkspaceId={watermarkWorkspaceId}
       />
     );
   }
@@ -5341,6 +5375,10 @@ function ReportBlockSlide({
         chartPlaceholderText="No daily engagement trend available"
         insightFallback="Engagement reflects how strongly the audience responded to the published content."
         growthAliases={["engagement", "engagement_total", "interactions_total"]}
+        watermarkText={watermarkText}
+        watermarkLogoLightUrl={watermarkLogoLightUrl}
+        watermarkLogoDarkUrl={watermarkLogoDarkUrl}
+        watermarkWorkspaceId={watermarkWorkspaceId}
       />
     );
   }
@@ -5373,6 +5411,10 @@ function ReportBlockSlide({
         chartPlaceholderText="No daily page views trend available"
         insightFallback="Page Views show how often people visited the Facebook Page during the selected period."
         growthAliases={["page_views", "page_views_total", "page_visits"]}
+        watermarkText={watermarkText}
+        watermarkLogoLightUrl={watermarkLogoLightUrl}
+        watermarkLogoDarkUrl={watermarkLogoDarkUrl}
+        watermarkWorkspaceId={watermarkWorkspaceId}
       />
     );
   }
@@ -5566,6 +5608,10 @@ function ReportBlockSlide({
         totalSlides={totalSlides}
         renderMode={renderMode}
         templateId={templateId}
+        watermarkText={watermarkText}
+        watermarkLogoLightUrl={watermarkLogoLightUrl}
+        watermarkLogoDarkUrl={watermarkLogoDarkUrl}
+        watermarkWorkspaceId={watermarkWorkspaceId}
       />
     );
   }
@@ -5838,6 +5884,9 @@ export function buildReportBlockSlideElements(input: {
   locale?: string;
   hideOverviewInsights?: boolean;
   watermarkText?: string;
+  watermarkLogoLightUrl?: string | null;
+  watermarkLogoDarkUrl?: string | null;
+  watermarkWorkspaceId?: string | null;
 }) {
   const sortedBlocks = sortBlocksByOrder(input.blocks);
 
@@ -5858,6 +5907,9 @@ export function buildReportBlockSlideElements(input: {
       locale={input.locale}
       hideOverviewInsights={input.hideOverviewInsights}
       watermarkText={input.watermarkText}
+      watermarkLogoLightUrl={input.watermarkLogoLightUrl}
+      watermarkLogoDarkUrl={input.watermarkLogoDarkUrl}
+      watermarkWorkspaceId={input.watermarkWorkspaceId}
     />
   )) as ReactElement[];
 }
@@ -5949,6 +6001,11 @@ export function SlideRenderer({
   const shouldUseBlockSlides =
     renderMode !== "export" && shouldRenderBlocksAsSlides(blocks);
   const sortedBlocks = blocks ? sortBlocksByOrder(blocks) : [];
+  const isFacebookPagesMvpBlockDeck =
+    shouldUseBlockSlides &&
+    FACEBOOK_PAGES_MVP_SLIDE_TYPES.every((slideType) =>
+      sortedBlocks.some((block) => getNormalizedBlockSemanticName(block) === slideType)
+    );
   const coverBlock =
     sortedBlocks.find((block) => {
       const semanticName = getNormalizedBlockSemanticName(block);
@@ -5981,6 +6038,10 @@ export function SlideRenderer({
       null,
     blockType: block.type,
   }));
+  const internalWatermarkText =
+    resolvedWatermark.enabled || isFacebookPagesMvpBlockDeck
+      ? resolvedWatermark.label
+      : undefined;
 
   if (process.env.NODE_ENV === "development") {
     console.log("[5-slide renderer source of truth]", {
@@ -6031,7 +6092,10 @@ export function SlideRenderer({
           templateId: effectiveTemplate as ReportTemplateId,
           locale,
           hideOverviewInsights,
-          watermarkText,
+          watermarkText: internalWatermarkText,
+          watermarkLogoLightUrl: resolvedWatermark.logoLightUrl,
+          watermarkLogoDarkUrl: resolvedWatermark.logoDarkUrl,
+          watermarkWorkspaceId: renderWorkspaceId,
         })
       : template.slides.map((slide) => {
           const SlideComponent = slide.component;
