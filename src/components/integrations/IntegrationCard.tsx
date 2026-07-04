@@ -76,15 +76,23 @@ export function IntegrationCard({
   const translatedStatus =
     status === "Connected"
       ? messages.integrationsPage.connected
+      : status === "Connected, no ad accounts"
+        ? "Connected"
       : status === "Checking"
         ? "Checking"
       : status === "Needs setup"
         ? "Needs setup"
       : status === "Needs Facebook connection"
         ? "Needs Facebook connection"
+      : status === "Needs permission"
+        ? "Needs permission"
+      : status === "Configuration missing"
+        ? "Configuration missing"
       : status === "Available"
         ? messages.integrationsPage.available
-        : messages.integrationsPage.comingSoon;
+        : status === "Coming soon"
+          ? messages.common.comingSoon
+          : status;
 
   return (
     <section className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">

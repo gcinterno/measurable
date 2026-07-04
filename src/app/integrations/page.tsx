@@ -124,7 +124,7 @@ function getMetaAdsHelperText(input: {
       return "Reconnect and approve the required permissions.";
     case "connected_no_assets":
     case "no_authorized_assets":
-      return "Connected, but no assets were found.";
+      return "Connected, but no ad accounts were found.";
     case "config_missing":
       return "Meta Ads OAuth is not fully configured.";
     case "connected":
@@ -232,7 +232,7 @@ function getInstagramBusinessHelperText(input: {
   }
 
   if (status === "connected_no_assets") {
-    return "Connected, but no assets were found.";
+    return "Connected, but no Instagram Business accounts were found.";
   }
 
   if (status === "needs_page_ig_link") {
