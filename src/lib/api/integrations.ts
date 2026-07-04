@@ -316,7 +316,9 @@ export function validateMetaAuthUrl(
     const startsWithExpectedDomain = value.includes(expectedDomain);
     const containsExpectedOAuthPath =
       source === "instagram_business"
-        ? parsedUrl.pathname.includes("/oauth/authorize")
+        ? parsedUrl.pathname.includes("/dialog/oauth") ||
+          `${parsedUrl.pathname}${parsedUrl.search}`.includes("/dialog/oauth") ||
+          parsedUrl.pathname.includes("/oauth/authorize")
         : parsedUrl.pathname.includes("/dialog/oauth") ||
           `${parsedUrl.pathname}${parsedUrl.search}`.includes("/dialog/oauth");
 

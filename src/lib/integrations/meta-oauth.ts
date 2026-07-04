@@ -38,8 +38,7 @@ export const META_OAUTH_SCOPE_SETS = {
   meta_ads: META_ADS_SCOPES,
 } as const;
 
-// Instagram Business uses its own Instagram Login flow and must not be normalized
-// to facebook.com/dialog/oauth.
+// Instagram Business uses the same Meta/Facebook OAuth route as the Pages + linked Instagram flow.
 
 export function getMetaOAuthScopesForSource(source: MetaOAuthSource) {
   return [...META_OAUTH_SCOPE_SETS[source]];
@@ -51,7 +50,7 @@ export function getMetaOAuthScopeStringForSource(source: MetaOAuthSource) {
 
 export function getMetaOAuthAuthDomainForSource(source: MetaOAuthSource) {
   if (source === "instagram_business") {
-    return "api.instagram.com";
+    return "facebook.com";
   }
 
   return "facebook.com";
@@ -328,7 +327,9 @@ export function isValidMetaAuthUrlForSource(
     const startsWithExpectedDomain = value.includes(expectedDomain);
     const containsExpectedOAuthPath =
       source === "instagram_business"
-        ? parsedUrl.pathname.includes("/oauth/authorize")
+        ? parsedUrl.pathname.includes("/dialog/oauth") ||
+          `${parsedUrl.pathname}${parsedUrl.search}`.includes("/dialog/oauth") ||
+          parsedUrl.pathname.includes("/oauth/authorize")
         : parsedUrl.pathname.includes("/dialog/oauth") ||
           `${parsedUrl.pathname}${parsedUrl.search}`.includes("/dialog/oauth");
 

@@ -5,6 +5,7 @@ type MetaConnectChoiceModalProps = {
   onClose: () => void;
   onPagesOnly: () => void;
   onPagesWithInstagram: () => void;
+  variant?: "facebook_pages" | "instagram_business";
 };
 
 function ChoiceCard(props: {
@@ -36,6 +37,7 @@ export function MetaConnectChoiceModal({
   onClose,
   onPagesOnly,
   onPagesWithInstagram,
+  variant = "facebook_pages",
 }: MetaConnectChoiceModalProps) {
   if (!open) {
     return null;
@@ -55,14 +57,16 @@ export function MetaConnectChoiceModal({
 
         <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-5 [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden sm:px-6 sm:py-6">
           <div className="space-y-3">
-            <ChoiceCard
-              title="Facebook Pages only"
-              description="Connect pages, page insights, engagement, followers, reactions and page views."
-              onClick={onPagesOnly}
-            />
+            {variant === "facebook_pages" ? (
+              <ChoiceCard
+                title="Facebook Pages only"
+                description="Connect pages, page insights, engagement, followers, reactions and page views."
+                onClick={onPagesOnly}
+              />
+            ) : null}
             <ChoiceCard
               title="Facebook Pages + linked Instagram"
-              description="Connect Facebook Pages and detect Instagram accounts linked to those Pages. Recommended if you manage Instagram through a Facebook Page."
+              description="Connect Facebook Pages and detect Instagram Business accounts linked to those Pages."
               onClick={onPagesWithInstagram}
             />
           </div>
