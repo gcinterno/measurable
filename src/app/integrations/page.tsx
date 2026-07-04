@@ -11,6 +11,7 @@ import { UserSuggestionModal } from "@/components/suggestions/UserSuggestionModa
 import { ApiError } from "@/lib/api";
 import {
   connectMetaAdsIntegration,
+  connectInstagramBusinessIntegration,
   connectMetaIntegration,
   disconnectMetaAdsIntegration,
   disconnectMetaIntegration,
@@ -780,21 +781,20 @@ function IntegrationsPageContent() {
           ? storedContext.source
           : "facebook_pages");
 
+      if (source === "instagram_business") {
+        console.warn("INSTAGRAM_BUSINESS_META_CONNECT_BLOCKED", {
+          route: "/integrations",
+          reason: "dedicated_instagram_business_endpoint_required",
+        });
+        setMetaError("Use the Instagram Business card to connect Instagram through Facebook.");
+        return;
+      }
+
       if (source === "facebook_pages") {
         console.info("FACEBOOK_PAGES_CONNECT_REQUESTED", {
           route: "/integrations",
           workspace_id: connectWorkspaceId,
           include_linked_instagram: input?.includeLinkedInstagram === true,
-          reconnect,
-        });
-      }
-
-      if (source === "instagram_business") {
-        console.info("INSTAGRAM_BUSINESS_CONNECT_REQUESTED", {
-          route: "/integrations",
-          integration_type: "instagram_business",
-          workspace_id: connectWorkspaceId,
-          include_linked_instagram: true,
           reconnect,
         });
       }
@@ -825,14 +825,12 @@ function IntegrationsPageContent() {
         workspaceId: connectWorkspaceId,
         source,
         reconnect,
-        includeLinkedInstagram:
-          source === "instagram_business" || input?.includeLinkedInstagram === true,
+        includeLinkedInstagram: input?.includeLinkedInstagram === true,
       });
 
       const rawAuthUrl = response.authUrlFromBackend || response.redirectUrl;
-      const authUrlSource = source === "instagram_business" ? "facebook_pages" : source;
-      const authUrl = normalizeMetaAuthUrl(rawAuthUrl, authUrlSource);
-      const validation = validateMetaAuthUrl(authUrl, authUrlSource);
+      const authUrl = normalizeMetaAuthUrl(rawAuthUrl, source);
+      const validation = validateMetaAuthUrl(authUrl, source);
 
       console.info("META_CONNECT_AUTH_URL", {
         workspace_id: connectWorkspaceId,
@@ -842,31 +840,14 @@ function IntegrationsPageContent() {
         integration_id: response.integrationId || null,
       });
 
-      if (source === "instagram_business") {
-        console.info("INSTAGRAM_BUSINESS_AUTH_URL_RECEIVED", {
-          route: "/integrations",
-          integration_type: "instagram_business",
-          workspace_id: connectWorkspaceId,
-          auth_url: authUrl || null,
-          integration_id: response.integrationId || null,
-        });
-        console.info("INSTAGRAM_BUSINESS_AUTH_URL_CREATED", {
-          route: "/integrations",
-          integration_type: "instagram_business",
-          workspace_id: connectWorkspaceId,
-          auth_url: authUrl || null,
-          integration_id: response.integrationId || null,
-        });
-      }
-
-        console.info("META_CONNECT_AUTH_URL_FINAL", {
-          workspace_id: connectWorkspaceId,
-          source,
-          integration_type: source,
-          auth_url: authUrl || null,
-          starts_with_expected_domain: validation.startsWithExpectedDomain,
-          contains_expected_oauth_path: validation.containsExpectedOAuthPath,
-        });
+      console.info("META_CONNECT_AUTH_URL_FINAL", {
+        workspace_id: connectWorkspaceId,
+        source,
+        integration_type: source,
+        auth_url: authUrl || null,
+        starts_with_expected_domain: validation.startsWithExpectedDomain,
+        contains_expected_oauth_path: validation.containsExpectedOAuthPath,
+      });
 
       if (!validation.isValid) {
         console.error("META_CONNECT_INVALID_AUTH_URL", {
@@ -877,14 +858,6 @@ function IntegrationsPageContent() {
           starts_with_expected_domain: validation.startsWithExpectedDomain,
           contains_expected_oauth_path: validation.containsExpectedOAuthPath,
         });
-        if (source === "instagram_business") {
-          console.info("INSTAGRAM_BUSINESS_CONNECT_FAILED", {
-            route: "/integrations",
-            integration_type: "instagram_business",
-            workspace_id: connectWorkspaceId,
-            auth_url: authUrl || null,
-          });
-        }
         throw new Error(
           "The backend did not return a valid Meta OAuth URL for the selected integration."
         );
@@ -925,9 +898,7 @@ function IntegrationsPageContent() {
             source,
           });
           setMetaStatusMessage(
-            source === "instagram_business"
-              ? "This is taking longer than expected. Finish the Instagram flow in the popup and we’ll update the connection automatically."
-              : "This is taking longer than expected. Finish the Facebook flow in the popup and we’ll update the connection automatically."
+            "This is taking longer than expected. Finish the Facebook flow in the popup and we’ll update the connection automatically."
           );
         }, META_OAUTH_POPUP_TIMEOUT_MS);
         popupPollRef.current = window.setInterval(async () => {
@@ -1017,28 +988,13 @@ function IntegrationsPageContent() {
       }
     } catch (err: unknown) {
       console.error("meta connect error:", err);
-      if (source === "instagram_business") {
-        console.info("INSTAGRAM_BUSINESS_CONNECT_FAILED", {
-          route: "/integrations",
-          integration_type: "instagram_business",
-          workspace_id: connectWorkspaceId,
-          reason: err instanceof Error ? err.message : "unknown_error",
-        });
-        setMetaError(
-          getMetaOAuthFriendlyErrorMessage(
-            "instagram_business",
-            err instanceof Error ? err.message : ""
-          )
-        );
-      } else {
-        setMetaError(
-          err instanceof ApiError && err.message
-            ? err.message
-            : reconnect
-              ? "We couldn’t reconnect Meta. Please try again."
-              : "We could not start the Facebook Pages connection. Try again."
-        );
-      }
+      setMetaError(
+        err instanceof ApiError && err.message
+          ? err.message
+          : reconnect
+            ? "We couldn’t reconnect Meta. Please try again."
+            : "We could not start the Facebook Pages connection. Try again."
+      );
       setMetaStatusMessage("");
       setMetaConnectMode(null);
     } finally {
@@ -1245,11 +1201,9 @@ function IntegrationsPageContent() {
         postConnectRedirect: "/integrations",
       });
 
-      const response = await connectMetaIntegration({
+      const response = await connectInstagramBusinessIntegration({
         workspaceId,
-        source: "instagram_business",
         reconnect,
-        includeLinkedInstagram: true,
       });
       const rawAuthUrl = response.authUrlFromBackend || response.redirectUrl;
       const authUrl = normalizeMetaAuthUrl(rawAuthUrl, "facebook_pages");
@@ -1405,6 +1359,36 @@ function IntegrationsPageContent() {
         include_linked_instagram: true,
         reconnect: true,
       });
+
+      if (typeof window === "undefined") {
+        setMetaError("We could not open the Instagram connection window. Please try again.");
+        return;
+      }
+
+      const { tokenReady } = hasMetaConnectPrerequisites();
+
+      if (!tokenReady) {
+        setMetaError("Your session is not ready yet. Refresh and try again.");
+        return;
+      }
+
+      const popup = window.open(
+        "about:blank",
+        "measurable_instagram_business_oauth",
+        META_OAUTH_POPUP_FEATURES
+      );
+
+      if (!popup) {
+        setMetaError("Please allow popups to connect Instagram through Facebook.");
+        return;
+      }
+
+      void handleInstagramBusinessMetaConnect({
+        popup,
+        workspaceId: contextWorkspaceId,
+        reconnect: true,
+      });
+      return;
     }
 
     setPendingMetaSource(reconnectSource);
@@ -1426,7 +1410,6 @@ function IntegrationsPageContent() {
     void handleMetaConnect({
       source: reconnectSource,
       reconnect: true,
-      includeLinkedInstagram: reconnectSource === "instagram_business",
     });
   }
 

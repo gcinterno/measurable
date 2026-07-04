@@ -788,8 +788,6 @@ export async function connectInstagramBusinessIntegration(input?: {
   });
   const searchParams = new URLSearchParams({
     workspace_id: activeWorkspaceId,
-    source,
-    integration_type: source,
   });
 
   if (input?.reconnect) {
