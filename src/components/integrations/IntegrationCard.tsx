@@ -7,6 +7,7 @@ import { useI18n } from "@/components/providers/LanguageProvider";
 type IntegrationStatus =
   | "Available"
   | "Connected"
+  | "Needs Facebook connection"
   | "Needs permission"
   | "Connected, no ad accounts"
   | "Configuration missing"
@@ -37,6 +38,7 @@ function getBadgeClasses(status: IntegrationStatus) {
     case "Connected":
       return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
     case "Needs permission":
+    case "Needs Facebook connection":
       return "bg-amber-50 text-amber-800 ring-1 ring-amber-100";
     case "Connected, no ad accounts":
       return "bg-sky-50 text-sky-700 ring-1 ring-sky-100";
@@ -76,6 +78,8 @@ export function IntegrationCard({
       ? messages.integrationsPage.connected
       : status === "Checking"
         ? "Checking"
+      : status === "Needs Facebook connection"
+        ? "Needs Facebook connection"
       : status === "Available"
         ? messages.integrationsPage.available
         : messages.integrationsPage.comingSoon;

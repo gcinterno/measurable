@@ -11,7 +11,6 @@ import { UserSuggestionModal } from "@/components/suggestions/UserSuggestionModa
 import { ApiError } from "@/lib/api";
 import {
   connectMetaAdsIntegration,
-  connectInstagramBusinessIntegration,
   connectMetaIntegration,
   disconnectMetaAdsIntegration,
   disconnectMetaIntegration,
@@ -141,6 +140,46 @@ function getMetaAdsHelperText(input: {
   }
 }
 
+function getInstagramBusinessCardStatus(input: {
+  loading: boolean;
+  connected: boolean;
+  metaConnected: boolean;
+}) {
+  if (input.loading) {
+    return "Checking" as const;
+  }
+
+  if (input.connected) {
+    return "Connected" as const;
+  }
+
+  return input.metaConnected ? ("Available" as const) : ("Needs Facebook connection" as const);
+}
+
+function getInstagramBusinessHelperText(input: {
+  connected: boolean;
+  accountsCount: number;
+}) {
+  if (input.connected) {
+    return `${input.accountsCount} Instagram account${
+      input.accountsCount === 1 ? "" : "s"
+    } available through Facebook.`;
+  }
+
+  return "Direct Instagram Login requires App Review. For now, connect Instagram through Facebook.";
+}
+
+function isInstagramDirectLoginReviewError(value: string) {
+  const normalized = value.toLowerCase();
+
+  return (
+    normalized.includes("insufficient_developer_role") ||
+    normalized.includes("insufficient developer role") ||
+    normalized.includes("needs_app_review") ||
+    normalized.includes("app review")
+  );
+}
+
 function IntegrationsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -260,12 +299,15 @@ function IntegrationsPageContent() {
           ? "meta_ads"
           : "facebook_pages";
 
+    const isNonBlockingInstagramReviewError =
+      normalizedProvider === "instagram_business" &&
+      isInstagramDirectLoginReviewError(metaErrorParam);
     const friendlyMessage =
-      normalizedProvider === "instagram_business"
+      normalizedProvider === "instagram_business" && !isNonBlockingInstagramReviewError
         ? getMetaOAuthFriendlyErrorMessage("instagram_business", metaErrorParam)
         : metaErrorParam;
 
-    setMetaError(friendlyMessage);
+    setMetaError(isNonBlockingInstagramReviewError ? "" : friendlyMessage);
     setMetaStatusMessage("");
     setMetaReconnectMessage("");
     setMetaAdsError("");
@@ -284,8 +326,8 @@ function IntegrationsPageContent() {
       fetchInstagramBusinessStatus(activeWorkspaceId),
     ]);
 
-    const instagramBusinessConnected = Boolean(instagramStatus.connected);
-    const hasAnyConnectedRecord = response.metaConnected || instagramBusinessConnected;
+    const instagramBusinessStatusConnected = Boolean(instagramStatus.connected);
+    const hasAnyConnectedRecord = response.metaConnected || instagramBusinessStatusConnected;
 
     if (!hasAnyConnectedRecord) {
       setMetaConnected(false);
@@ -310,10 +352,10 @@ function IntegrationsPageContent() {
     }
 
     setMetaConnected(Boolean(response.metaConnected));
-    setInstagramBusinessConnected(instagramBusinessConnected);
+    setInstagramBusinessConnected(false);
     const resolvedWorkspaceId = storedContext?.workspaceId || activeWorkspaceId || "";
     const resolvedMetaSourceForContext =
-      instagramBusinessConnected && !response.metaConnected
+      instagramBusinessStatusConnected && !response.metaConnected
         ? "instagram_business"
         : storedContext && isMetaFrontendIntegrationKey(storedContext.source)
           ? storedContext.source
@@ -322,6 +364,7 @@ function IntegrationsPageContent() {
     if (!response.integrationId) {
       setFacebookPagesCount(0);
       setInstagramAccountsCount(0);
+      setInstagramBusinessConnected(false);
       setMetaCatalogsResolved(false);
       setMetaReconnectMessage("");
 
@@ -348,7 +391,7 @@ function IntegrationsPageContent() {
       return {
         connected: Boolean(hasAnyConnectedRecord),
         integrationId: "",
-        instagramBusinessConnected,
+        instagramBusinessConnected: false,
         facebookPagesCount: 0,
         instagramAccountsCount: 0,
         catalogsLoaded: false,
@@ -370,11 +413,13 @@ function IntegrationsPageContent() {
       catalogsLoaded = true;
       setFacebookPagesCount(facebookPagesCount);
       setInstagramAccountsCount(instagramAccountsCount);
+      setInstagramBusinessConnected(instagramAccountsCount > 0);
       setMetaCatalogsResolved(true);
     } catch (error) {
       console.error("meta catalog refresh error:", error);
       setFacebookPagesCount(0);
       setInstagramAccountsCount(0);
+      setInstagramBusinessConnected(false);
       setMetaCatalogsResolved(false);
     }
 
@@ -405,7 +450,7 @@ function IntegrationsPageContent() {
     return {
       connected: Boolean(hasAnyConnectedRecord),
       integrationId: response.integrationId || "",
-      instagramBusinessConnected,
+      instagramBusinessConnected: instagramAccountsCount > 0,
       facebookPagesCount,
       instagramAccountsCount,
       catalogsLoaded,
@@ -748,6 +793,7 @@ function IntegrationsPageContent() {
           route: "/integrations",
           integration_type: "instagram_business",
           workspace_id: connectWorkspaceId,
+          include_linked_instagram: true,
           reconnect,
         });
       }
@@ -774,29 +820,18 @@ function IntegrationsPageContent() {
         route: "/integrations",
       });
 
-      const response =
-        source === "instagram_business"
-          ? await connectInstagramBusinessIntegration({
-              workspaceId: connectWorkspaceId,
-              source,
-              reconnect,
-            })
-          : await connectMetaIntegration({
-              workspaceId: connectWorkspaceId,
-              source,
-              reconnect,
-              includeLinkedInstagram: input?.includeLinkedInstagram === true,
-            });
+      const response = await connectMetaIntegration({
+        workspaceId: connectWorkspaceId,
+        source,
+        reconnect,
+        includeLinkedInstagram:
+          source === "instagram_business" || input?.includeLinkedInstagram === true,
+      });
 
       const rawAuthUrl = response.authUrlFromBackend || response.redirectUrl;
-      const normalizedSource =
-        source === "instagram_business"
-          ? "instagram_business"
-          : source === "meta_ads"
-            ? "meta_ads"
-            : "facebook_pages";
-      const authUrl = normalizeMetaAuthUrl(rawAuthUrl, normalizedSource);
-      const validation = validateMetaAuthUrl(authUrl, normalizedSource);
+      const authUrlSource = source === "instagram_business" ? "facebook_pages" : source;
+      const authUrl = normalizeMetaAuthUrl(rawAuthUrl, authUrlSource);
+      const validation = validateMetaAuthUrl(authUrl, authUrlSource);
 
       console.info("META_CONNECT_AUTH_URL", {
         workspace_id: connectWorkspaceId,
@@ -1133,6 +1168,7 @@ function IntegrationsPageContent() {
       route: "/integrations",
       integration_type: "instagram_business",
       workspace_id: contextWorkspaceId,
+      include_linked_instagram: true,
     });
 
     setPendingMetaSource("instagram_business");
@@ -1149,7 +1185,11 @@ function IntegrationsPageContent() {
       postConnectRedirect: "/integrations",
     });
 
-    void handleMetaConnect({ source: "instagram_business", reconnect: false });
+    void handleMetaConnect({
+      source: "instagram_business",
+      reconnect: false,
+      includeLinkedInstagram: true,
+    });
   }
 
   function handleMetaReconnect(source?: "facebook_pages" | "instagram_business") {
@@ -1174,6 +1214,7 @@ function IntegrationsPageContent() {
         route: "/integrations",
         integration_type: "instagram_business",
         workspace_id: contextWorkspaceId,
+        include_linked_instagram: true,
         reconnect: true,
       });
     }
@@ -1194,7 +1235,11 @@ function IntegrationsPageContent() {
       postConnectRedirect: "/integrations",
     });
 
-    void handleMetaConnect({ source: reconnectSource, reconnect: true });
+    void handleMetaConnect({
+      source: reconnectSource,
+      reconnect: true,
+      includeLinkedInstagram: reconnectSource === "instagram_business",
+    });
   }
 
   function handleMetaAdsConnect(reconnect = false) {
@@ -1549,9 +1594,11 @@ function IntegrationsPageContent() {
                 ? integrationsStateLoading
                   ? "Checking"
                   : integration.integrationKey === "instagram_business"
-                    ? instagramBusinessConnected
-                      ? "Connected"
-                      : integration.status
+                    ? getInstagramBusinessCardStatus({
+                        loading: integrationsStateLoading,
+                        connected: instagramBusinessConnected,
+                        metaConnected,
+                      })
                     : metaConnected
                       ? "Connected"
                       : integration.status
@@ -1660,6 +1707,11 @@ function IntegrationsPageContent() {
                     accountsCount: metaAdsAccountsCount,
                     lastSyncedAt: metaAdsLastSyncedAt,
                   })
+                : integration.integrationKey === "instagram_business"
+                  ? getInstagramBusinessHelperText({
+                      connected: instagramBusinessConnected,
+                      accountsCount: instagramAccountsCount,
+                    })
                 : undefined
             }
             error=""
