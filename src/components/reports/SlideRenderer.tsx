@@ -1165,6 +1165,12 @@ type InsightSummaryCard = {
   insight: string;
 };
 
+type ExecutiveSummaryMetricDefinition = {
+  key: string;
+  title: string;
+  aliases: string[];
+};
+
 type GrowthBadgeTone = "up" | "down" | "flat" | "na";
 
 type GrowthBadgeData = {
@@ -3109,6 +3115,90 @@ function getExecutiveSummaryPayloadCards(block: ReportVersionBlock) {
     .filter(Boolean) as InsightSummaryCard[];
 }
 
+const EXECUTIVE_SUMMARY_METRIC_DEFINITIONS: ExecutiveSummaryMetricDefinition[] = [
+  {
+    key: "organic_impressions",
+    title: "Organic Impressions",
+    aliases: [
+      "organic_impressions",
+      "organicImpressions",
+      "organic_impressions_total",
+      "organicImpressionsTotal",
+      "impressions_total",
+      "impressionsTotal",
+    ],
+  },
+  {
+    key: "engagement",
+    title: "Engagement",
+    aliases: [
+      "engagement",
+      "engagement_total",
+      "engagementTotal",
+      "interactions_total",
+      "interactionsTotal",
+    ],
+  },
+  {
+    key: "page_views",
+    title: "Page Views",
+    aliases: [
+      "page_views",
+      "pageViews",
+      "page_views_total",
+      "pageViewsTotal",
+      "page_visits",
+      "pageVisits",
+      "page_visits_total",
+      "pageVisitsTotal",
+    ],
+  },
+  {
+    key: "reactions",
+    title: "Reactions",
+    aliases: ["reactions", "reactions_total", "reactionsTotal", "post_reactions", "postReactions"],
+  },
+  {
+    key: "followers",
+    title: "Followers",
+    aliases: ["followers", "followers_total", "followersTotal", "page_followers", "pageFollowers"],
+  },
+  {
+    key: "fans",
+    title: "Fans",
+    aliases: ["fans", "fans_total", "fansTotal", "page_fans", "pageFans"],
+  },
+];
+
+function getExecutiveSummaryMetricCards(block: ReportVersionBlock) {
+  return EXECUTIVE_SUMMARY_METRIC_DEFINITIONS
+    .map((definition) => {
+      const value = getBlockMetricCandidateValue(block, definition.aliases);
+      const formattedValue = formatDisplayNumber(value);
+
+      if (formattedValue === "N/A") {
+        return null;
+      }
+
+      const insight = getStringValue(
+        getBlockMetricCandidateValue(block, [
+          ...definition.aliases.map((alias) => `${alias}_insight`),
+          ...definition.aliases.map((alias) => `${alias}Insight`),
+          ...definition.aliases.map((alias) => `${alias}_summary`),
+          ...definition.aliases.map((alias) => `${alias}Summary`),
+        ])
+      );
+
+      return {
+        key: definition.key,
+        title: definition.title,
+        value: formattedValue,
+        insight,
+      };
+    })
+    .filter(Boolean) as InsightSummaryCard[];
+}
+
 function getInsightSummaryCards(blocks: ReportVersionBlock[]) {
   const excludedSemanticNames = new Set([
     "cover",
@@ -3207,15 +3297,22 @@ function ExecutiveSummarySlide({
 }) {
   const tone = getTemplateTone(templateId);
   const slideId = String(index + 1).padStart(2, "0");
-  const title =
-    getStringValue(block.data.title) ||
-    getStringValue(block.data.heading) ||
-    "Insights Summary";
-  const payloadCards = getExecutiveSummaryPayloadCards(block);
   const isOfficialExecutiveSummary =
     getNormalizedBlockSemanticName(block) === "executive_summary";
+  const title =
+    isOfficialExecutiveSummary
+      ? "Executive Summary"
+      : getStringValue(block.data.title) ||
+        getStringValue(block.data.heading) ||
+        "Insights Summary";
+  const payloadCards = getExecutiveSummaryPayloadCards(block);
+  const metricCards = isOfficialExecutiveSummary
+    ? getExecutiveSummaryMetricCards(block)
+    : [];
   const cards = payloadCards.length > 0
     ? payloadCards
+    : metricCards.length > 0
+      ? metricCards
     : isOfficialExecutiveSummary
       ? []
       : getInsightSummaryCards(blocks);
@@ -3235,6 +3332,15 @@ function ExecutiveSummarySlide({
       templateId={templateId}
     >
       <div className="flex h-full min-h-0 flex-col gap-5">
+        <div className="flex items-center justify-between gap-4">
+          <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.accent}`}>
+            Key Insights
+          </p>
+          <p className={`text-sm ${tone.subtle}`}>
+            Executive readout
+          </p>
+        </div>
+
         <div className="grid min-h-0 flex-1 grid-cols-4 gap-3">
           {visibleCards.length > 0 ? (
             visibleCards.map((card) => (
@@ -3258,7 +3364,7 @@ function ExecutiveSummarySlide({
           ) : (
             <article className={`col-span-4 rounded-[24px] border p-5 ${tone.card}`}>
               <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.accent}`}>
-                Summary
+                Key Insights
               </p>
               <p className={`mt-3 text-sm leading-6 ${tone.subtitle}`}>
                 {fallbackText || "No insight cards were available for this report yet."}
@@ -3270,7 +3376,7 @@ function ExecutiveSummarySlide({
         {aiAnalysis ? (
           <div className={`rounded-[28px] border p-5 ${templateId === "modern" ? tone.cardStrong : tone.insight}`}>
             <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${templateId === "modern" ? tone.cardStrongAccent : tone.accentSoft}`}>
-              AI analysis
+              AI Insight
             </p>
             <p className={`mt-3 line-clamp-5 text-[0.92rem] leading-6 ${templateId === "modern" ? tone.cardStrongSubtitle : tone.subtitle}`}>
               {aiAnalysis}
@@ -5056,7 +5162,8 @@ function ReportBlockSlide({
   const tone = getTemplateTone(templateId);
   const semanticName = getBlockSemanticName(block);
   const normalizedSemanticName = getNormalizedBlockSemanticName(block);
-  const isFiveSlideClosingCover = totalSlides === 5 && index === totalSlides - 1;
+  const explicitSlideType =
+    getStringValue(block.data.slide_type) || getStringValue(block.data.slideType);
   const slideId = String(index + 1).padStart(2, "0");
   const title = getSlideTitle(block, index);
   const text = getTextContent(block);
@@ -5149,37 +5256,6 @@ function ReportBlockSlide({
       blockKeys: Object.keys(block.data || {}),
       blocksLength: blocks.length,
     });
-  }
-
-  if (isFiveSlideClosingCover) {
-    const coverBlock =
-      blocks.find((item) => getBlockSemanticName(item) === "cover") ||
-      blocks.find((item) => item.type === "title") ||
-      blocks[0];
-    const coverTitle = coverBlock ? getSlideTitle(coverBlock, 0) : title;
-    const coverText = coverBlock ? getTextContent(coverBlock) : text;
-    const coverMeta = coverBlock ? getBlockTimeframeLabel(coverBlock, locale) : "";
-
-    return (
-      <CoverSlide
-        slideId={slideId}
-        eyebrow=""
-        title=""
-        renderMode={renderMode}
-        templateId={templateId}
-        model={{
-          reportHeading: "Marketing Report",
-          reportTitle: coverSourceName || coverTitle || "Marketing Report",
-          subtitle: coverText,
-          meta: coverMeta,
-          branding: {
-            logoUrl,
-            brandName,
-            workspaceId,
-          },
-        }}
-      />
-    );
   }
 
   if (normalizedSemanticName === "cover" || (index === 0 && block.type === "title")) {
@@ -5637,6 +5713,32 @@ function ReportBlockSlide({
           templateId={templateId}
           rightSlot={<CoverLogo logoDataUrl={logoUrl} dark={tone.dark} />}
         />
+      </SlideCanvas>
+    );
+  }
+
+  if (explicitSlideType) {
+    return (
+      <SlideCanvas
+        index={slideId}
+        totalSlides={totalSlides}
+        eyebrow=""
+        title="Unsupported slide type"
+        renderMode={renderMode}
+        templateId={templateId}
+        watermarkText={watermarkText}
+      >
+        <div className={`flex h-full flex-col items-center justify-center rounded-[30px] border px-8 text-center ${tone.card}`}>
+          <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.accent}`}>
+            Debug
+          </p>
+          <p className={`mt-4 text-3xl font-semibold ${tone.title}`}>
+            Unsupported slide type
+          </p>
+          <p className={`mt-3 max-w-xl text-sm leading-6 ${tone.subtitle}`}>
+            The renderer does not have a visual component for &quot;{explicitSlideType}&quot;.
+          </p>
+        </div>
       </SlideCanvas>
     );
   }
