@@ -550,6 +550,33 @@ function getScopesFromRecord(record: Record<string, unknown>) {
   ];
 }
 
+function getNumberFromRecord(
+  record: Record<string, unknown>,
+  keys: string[]
+) {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value);
+
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+
+    if (Array.isArray(value)) {
+      return value.length;
+    }
+  }
+
+  return 0;
+}
+
 function getNestedSourcePayload(
   payload: unknown,
   aliases: string[]
@@ -995,6 +1022,42 @@ export async function fetchInstagramBusinessStatus(workspaceId?: string | null) 
     ...getScopesFromRecord(record),
     ...getScopesFromRecord(data),
   ];
+  const missingScopes = [
+    ...normalizeScopeList(record.missing_scopes),
+    ...normalizeScopeList(record.missingScopes),
+    ...normalizeScopeList(data.missing_scopes),
+    ...normalizeScopeList(data.missingScopes),
+  ];
+  const status = getRecordStatus(record) || getRecordStatus(data) || "";
+  const assetCount =
+    getNumberFromRecord(record, [
+      "asset_count",
+      "assetCount",
+      "account_count",
+      "accountCount",
+      "accounts_count",
+      "accountsCount",
+      "instagram_accounts_count",
+      "instagramAccountsCount",
+      "authorized_accounts_count",
+      "authorizedAccountsCount",
+      "accounts",
+      "items",
+    ]) ||
+    getNumberFromRecord(data, [
+      "asset_count",
+      "assetCount",
+      "account_count",
+      "accountCount",
+      "accounts_count",
+      "accountsCount",
+      "instagram_accounts_count",
+      "instagramAccountsCount",
+      "authorized_accounts_count",
+      "authorizedAccountsCount",
+      "accounts",
+      "items",
+    ]);
 
   const accountId =
     typeof record.instagram_account_id === "string"
@@ -1013,10 +1076,12 @@ export async function fetchInstagramBusinessStatus(workspaceId?: string | null) 
       Boolean(record.is_connected) ||
       Boolean(data.connected) ||
       Boolean(data.is_connected) ||
-      getRecordStatus(record) === "connected" ||
-      getRecordStatus(data) === "connected",
+      status === "connected",
     integrationId: getRecordIntegrationId(record) || getRecordIntegrationId(data),
     tokenScopes: tokenScopes.length > 0 ? Array.from(new Set(tokenScopes)) : [],
+    status,
+    assetCount,
+    missingScopes: missingScopes.length > 0 ? Array.from(new Set(missingScopes)) : [],
     instagramAccountId: accountId,
     lastSyncedAt:
       typeof record.last_synced_at === "string"
@@ -1028,6 +1093,7 @@ export async function fetchInstagramBusinessStatus(workspaceId?: string | null) 
             : typeof data.lastSyncedAt === "string"
               ? data.lastSyncedAt
               : "",
+    message: getRecordMessage(record) || getRecordMessage(data),
   };
 }
 

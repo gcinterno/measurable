@@ -171,6 +171,71 @@ function getInstagramBusinessHelperText(input: {
   return "Direct Instagram Login requires App Review. For now, connect Instagram through Facebook.";
 }
 
+function isInstagramBusinessMessageSource(message: {
+  provider?: string;
+  source?: string;
+  integration_type?: string;
+}) {
+  return (
+    message.provider === "instagram_business" ||
+    message.source === "instagram_business" ||
+    message.integration_type === "instagram_business"
+  );
+}
+
+function isInstagramBusinessMissingPermissionsStatus(status?: string) {
+  const normalized = (status || "").toLowerCase();
+
+  return (
+    normalized === "needs_permission" ||
+    normalized === "missing_permissions" ||
+    normalized === "insufficient_permissions" ||
+    normalized === "permissions_required"
+  );
+}
+
+function isInstagramBusinessProcessedStatus(status?: string) {
+  const normalized = (status || "").toLowerCase();
+
+  return (
+    normalized === "connected" ||
+    normalized === "connected_no_assets" ||
+    normalized === "needs_page_ig_link"
+  );
+}
+
+function getInstagramBusinessStatusMessage(input: {
+  status?: string;
+  connected?: boolean;
+  assetCount?: number;
+  missingScopes?: string[];
+  message?: string;
+}) {
+  const status = (input.status || "").toLowerCase();
+  const assetCount = input.assetCount || 0;
+
+  if (
+    isInstagramBusinessMissingPermissionsStatus(status) ||
+    (input.missingScopes?.length || 0) > 0
+  ) {
+    return "Instagram Business needs additional permissions. Please reconnect and approve all requested access.";
+  }
+
+  if (input.connected && assetCount > 0) {
+    return "Instagram Business connected successfully.";
+  }
+
+  if (
+    status === "connected_no_assets" ||
+    status === "needs_page_ig_link" ||
+    (input.connected && assetCount === 0)
+  ) {
+    return "Facebook authorization succeeded, but no Instagram Business accounts linked to the selected Pages were found.";
+  }
+
+  return input.message || "";
+}
+
 function isInstagramDirectLoginReviewError(value: string) {
   const normalized = value.toLowerCase();
 
@@ -639,6 +704,96 @@ function IntegrationsPageContent() {
         return;
       }
 
+      if (isInstagramBusinessMessageSource(event.data)) {
+        if (!metaLoading && !connectInFlightRef.current) {
+          return;
+        }
+
+        popupCallbackReceivedRef.current = true;
+        logMetaOAuthDev("instagram business callback message received", {
+          route: "/integrations",
+          type: event.data.type,
+          status: event.data.status || null,
+          integrationId: "integrationId" in event.data ? event.data.integrationId || null : null,
+        });
+        stopPopupPolling();
+        clearPendingMetaOAuth();
+        connectInFlightRef.current = false;
+        setMetaLoading(false);
+        setMetaStatusLoading(false);
+        setMetaCatalogsLoading(false);
+
+        const eventAssetCount =
+          event.data.assetCount ?? event.data.asset_count ?? 0;
+        const eventMissingScopes =
+          event.data.missingScopes || event.data.missing_scopes || [];
+
+        try {
+          setMetaStatusLoading(true);
+          setMetaCatalogsLoading(true);
+          const statusResult = await fetchInstagramBusinessStatus(activeWorkspaceId);
+          const refreshResult = await refreshMetaIntegrationState();
+          const message = getInstagramBusinessStatusMessage({
+            status: statusResult.status || event.data.status,
+            connected:
+              statusResult.connected || refreshResult.instagramBusinessConnected,
+            assetCount:
+              statusResult.assetCount ||
+              refreshResult.instagramAccountsCount ||
+              eventAssetCount,
+            missingScopes:
+              statusResult.missingScopes.length > 0
+                ? statusResult.missingScopes
+                : eventMissingScopes,
+            message: statusResult.message || event.data.message,
+          });
+          const processed =
+            statusResult.connected ||
+            refreshResult.instagramBusinessConnected ||
+            isInstagramBusinessProcessedStatus(statusResult.status) ||
+            isInstagramBusinessProcessedStatus(event.data.status);
+
+          if (processed) {
+            setMetaError("");
+            setMetaReconnectMessage("");
+            setMetaStatusMessage(
+              message || "Instagram Business connected successfully."
+            );
+          } else if (
+            isInstagramBusinessMissingPermissionsStatus(statusResult.status) ||
+            isInstagramBusinessMissingPermissionsStatus(event.data.status) ||
+            statusResult.missingScopes.length > 0 ||
+            eventMissingScopes.length > 0
+          ) {
+            setMetaStatusMessage("");
+            setMetaError(
+              message ||
+                "Instagram Business needs additional permissions. Please reconnect and approve all requested access."
+            );
+          } else {
+            setMetaStatusMessage("");
+            setMetaError(
+              message ||
+                event.data.message ||
+                "We couldn’t complete the Instagram Business connection. Please try again."
+            );
+          }
+        } catch (error) {
+          console.error("instagram business popup refresh error:", error);
+          setMetaStatusMessage("");
+          setMetaError(
+            event.data.message ||
+              "The connection finished, but we couldn’t refresh the Instagram Business status."
+          );
+        } finally {
+          setMetaStatusLoading(false);
+          setMetaCatalogsLoading(false);
+          setMetaConnectMode(null);
+        }
+
+        return;
+      }
+
       popupCallbackReceivedRef.current = true;
       logMetaOAuthDev("callback message received", {
         route: "/integrations",
@@ -731,6 +886,7 @@ function IntegrationsPageContent() {
     activeWorkspaceId,
     metaAdsLoading,
     metaConnectMode,
+    metaLoading,
     refreshMetaAdsState,
     refreshMetaIntegrationState,
     stopPopupPolling,
@@ -1286,12 +1442,40 @@ function IntegrationsPageContent() {
           try {
             setMetaStatusLoading(true);
             setMetaCatalogsLoading(true);
-            const result = await refreshMetaIntegrationState();
+            const statusResult = await fetchInstagramBusinessStatus(workspaceId);
+            const refreshResult = await refreshMetaIntegrationState();
+            const message = getInstagramBusinessStatusMessage({
+              status: statusResult.status,
+              connected:
+                statusResult.connected || refreshResult.instagramBusinessConnected,
+              assetCount:
+                statusResult.assetCount || refreshResult.instagramAccountsCount,
+              missingScopes: statusResult.missingScopes,
+              message: statusResult.message,
+            });
 
-            if (result.instagramBusinessConnected) {
+            if (
+              statusResult.connected ||
+              refreshResult.instagramBusinessConnected ||
+              isInstagramBusinessProcessedStatus(statusResult.status)
+            ) {
               setMetaError("");
               setMetaReconnectMessage("");
-              setMetaStatusMessage("Instagram Business connected successfully.");
+              setMetaStatusMessage(
+                message || "Instagram Business connected successfully."
+              );
+              return;
+            }
+
+            if (
+              isInstagramBusinessMissingPermissionsStatus(statusResult.status) ||
+              statusResult.missingScopes.length > 0
+            ) {
+              setMetaStatusMessage("");
+              setMetaError(
+                message ||
+                  "Instagram Business needs additional permissions. Please reconnect and approve all requested access."
+              );
               return;
             }
           } catch (error) {

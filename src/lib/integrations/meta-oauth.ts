@@ -73,18 +73,28 @@ type PendingMetaOAuth = {
 export type MetaOAuthWindowMessage =
   | {
       type: typeof META_OAUTH_CONNECT_SUCCESS;
-      provider: "meta" | "meta_ads";
+      provider?: "meta" | "meta_ads" | "instagram_business";
+      source?: string;
+      integration_type?: string;
       integrationId?: string;
       pagesCount?: number;
       redirectTo?: string;
       status?: string;
+      assetCount?: number;
+      asset_count?: number;
+      message?: string;
+      missingScopes?: string[];
+      missing_scopes?: string[];
     }
   | {
       type: typeof META_OAUTH_CONNECT_ERROR;
-      provider: "meta" | "meta_ads";
+      provider?: "meta" | "meta_ads" | "instagram_business";
+      source?: string;
+      integration_type?: string;
       message: string;
       status?: string;
       missingScopes?: string[];
+      missing_scopes?: string[];
     };
 
 function readPendingMetaOAuth() {
@@ -518,10 +528,19 @@ export function isMetaOAuthWindowMessage(
     return false;
   }
 
-  const candidate = data as { type?: string; provider?: string };
+  const candidate = data as {
+    type?: string;
+    provider?: string;
+    source?: string;
+    integration_type?: string;
+  };
+  const provider =
+    candidate.provider || candidate.source || candidate.integration_type;
 
   return (
-    (candidate.provider === "meta" || candidate.provider === "meta_ads") &&
+    (provider === "meta" ||
+      provider === "meta_ads" ||
+      provider === "instagram_business") &&
     (candidate.type === META_OAUTH_CONNECT_SUCCESS ||
       candidate.type === META_OAUTH_CONNECT_ERROR)
   );
