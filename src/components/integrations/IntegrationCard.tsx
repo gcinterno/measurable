@@ -7,6 +7,7 @@ import { useI18n } from "@/components/providers/LanguageProvider";
 type IntegrationStatus =
   | "Available"
   | "Connected"
+  | "Needs setup"
   | "Needs Facebook connection"
   | "Needs permission"
   | "Connected, no ad accounts"
@@ -20,7 +21,6 @@ type IntegrationCardProps = {
   description: string;
   status: IntegrationStatus;
   actionLabel?: string;
-  loadingLabel?: string;
   onAction?: () => void;
   secondaryActionLabel?: string;
   onSecondaryAction?: () => void;
@@ -37,6 +37,7 @@ function getBadgeClasses(status: IntegrationStatus) {
   switch (status) {
     case "Connected":
       return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
+    case "Needs setup":
     case "Needs permission":
     case "Needs Facebook connection":
       return "bg-amber-50 text-amber-800 ring-1 ring-amber-100";
@@ -59,7 +60,6 @@ export function IntegrationCard({
   description,
   status,
   actionLabel,
-  loadingLabel,
   onAction,
   secondaryActionLabel,
   onSecondaryAction,
@@ -78,6 +78,8 @@ export function IntegrationCard({
       ? messages.integrationsPage.connected
       : status === "Checking"
         ? "Checking"
+      : status === "Needs setup"
+        ? "Needs setup"
       : status === "Needs Facebook connection"
         ? "Needs Facebook connection"
       : status === "Available"
@@ -116,19 +118,13 @@ export function IntegrationCard({
             className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-sm font-semibold transition sm:w-auto sm:px-4 ${
               blockedComingSoon
                 ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-70 blur-[0.2px]"
-                : status === "Connected"
-                  ? "!border-[#081327] !bg-[#081327] !text-white hover:!bg-[#0d1d39] disabled:cursor-not-allowed disabled:!border-slate-300 disabled:!bg-slate-300"
-                  : "!border-[#081327] !bg-[#081327] !text-white hover:!bg-[#0d1d39] disabled:cursor-not-allowed disabled:!border-slate-200 disabled:!bg-slate-100 disabled:!text-slate-400"
+                : "!border-[#081327] !bg-[#081327] !text-white hover:!bg-[#0d1d39] disabled:cursor-not-allowed disabled:!border-slate-200 disabled:!bg-slate-100 disabled:!text-slate-400"
             }`}
           >
             {loading ? (
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/35 border-t-white" />
             ) : null}
-            {loading
-              ? loadingLabel || messages.integrationsPage.connecting
-              : blockedComingSoon
-                ? messages.common.comingSoon
-                : actionLabel}
+            {blockedComingSoon ? messages.common.comingSoon : actionLabel}
           </button>
         ) : null}
         {secondaryActionLabel && onSecondaryAction ? (

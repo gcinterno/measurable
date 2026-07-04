@@ -62,9 +62,9 @@ export const integrationCatalog: readonly IntegrationCatalogItem[] = [
   {
     name: "Instagram Business",
     category: "Paid social",
-    description: "Connect your Instagram through Facebook.",
+    description: "Connect Instagram Business accounts linked to your Facebook Pages.",
     status: "Available",
-    actionLabel: "Connect Instagram through Facebook",
+    actionLabel: "Connect",
     integrationKey: "instagram_business",
     logoUrl: "https://cdn.simpleicons.org/instagram",
     logoAlt: "Instagram logo",
@@ -73,8 +73,7 @@ export const integrationCatalog: readonly IntegrationCatalogItem[] = [
   {
     name: "Meta Ads",
     category: "Paid social",
-    description:
-      "Connect your ad account to generate paid media performance reports.",
+    description: "Connect ad accounts to generate paid media performance reports.",
     status: "Available",
     actionLabel: "Connect",
     integrationKey: "meta_ads",

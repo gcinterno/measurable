@@ -906,11 +906,8 @@ export async function connectMetaAdsIntegration(input?: {
   source?: string | null;
 }) {
   const activeWorkspaceId = await getRequiredWorkspaceId(input?.workspaceId);
-  const source = input?.source || "meta_ads";
   const searchParams = new URLSearchParams({
     workspace_id: activeWorkspaceId,
-    source,
-    integration_type: source,
   });
 
   if (input?.reconnect) {
