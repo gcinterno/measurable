@@ -11,6 +11,7 @@ import { UserSuggestionModal } from "@/components/suggestions/UserSuggestionModa
 import { ApiError } from "@/lib/api";
 import {
   connectMetaAdsIntegration,
+  connectInstagramBusinessIntegration,
   connectMetaIntegration,
   disconnectMetaAdsIntegration,
   disconnectMetaIntegration,
@@ -1384,15 +1385,202 @@ function IntegrationsPageContent() {
       postConnectRedirect: "/integrations",
     });
 
+    if (source === "instagram_business") {
+      void handleInstagramBusinessDedicatedConnect({
+        reconnect: false,
+        workspaceId: contextWorkspaceId,
+      });
+      return;
+    }
+
     void handleMetaConnect({
       source,
       reconnect: false,
-      includeLinkedInstagram: source === "instagram_business" ? true : includeLinkedInstagram,
+      includeLinkedInstagram,
     });
   }
 
   function handleInstagramBusinessConnect() {
     openInstagramBusinessConnectModal();
+  }
+
+  async function handleInstagramBusinessDedicatedConnect(input: {
+    workspaceId: string;
+    reconnect: boolean;
+  }) {
+    if (connectInFlightRef.current) {
+      console.warn("INSTAGRAM_BUSINESS_CONNECT_DUPLICATE_IGNORED", {
+        route: "/integrations",
+      });
+      return;
+    }
+
+    let popupStarted = false;
+    let popup: Window | null = null;
+
+    try {
+      connectInFlightRef.current = true;
+      popupCallbackReceivedRef.current = false;
+      setMetaLoading(true);
+      setMetaConnectMode(input.reconnect ? "reconnect" : "connect");
+      setInstagramBusinessError("");
+      setMetaReconnectMessage("");
+      setMetaStatusMessage(input.reconnect ? "Reconnecting..." : "Connecting...");
+
+      clearMetaOAuthDebugUrl();
+      clearStoredMetaIntegrationState();
+
+      setIntegrationReportContext({
+        source: "instagram_business",
+        integration: "meta",
+        workspaceId: input.workspaceId,
+        integrationId: undefined,
+        datasetId: undefined,
+        pageId: undefined,
+        pageName: undefined,
+        synced: false,
+        postConnectRedirect: "/integrations",
+      });
+
+      if (typeof window === "undefined") {
+        throw new Error("We could not open the Instagram connection window. Please try again.");
+      }
+
+      popup = window.open(
+        "about:blank",
+        "measurable_instagram_business_oauth",
+        META_OAUTH_POPUP_FEATURES
+      );
+
+      if (!popup) {
+        throw new Error("Please allow popups to connect this integration.");
+      }
+
+      const response = await connectInstagramBusinessIntegration({
+        workspaceId: input.workspaceId,
+        reconnect: input.reconnect,
+      });
+      const rawAuthUrl = response.authUrlFromBackend || response.redirectUrl;
+      const authUrl = normalizeMetaAuthUrl(rawAuthUrl, "facebook_pages");
+      const validation = validateMetaAuthUrl(authUrl, "facebook_pages");
+
+      if (!validation.isValid || !authUrl) {
+        throw new Error("The backend did not return a valid Meta OAuth URL for Instagram Business.");
+      }
+
+      createPendingMetaOAuth({
+        authUrl,
+        source: "instagram_business",
+        route: "/integrations",
+        transport: "popup",
+      });
+      storeMetaOAuthDebugUrl(authUrl);
+      void showMetaOAuthReadyBanner();
+      markMetaRedirectStarted();
+
+      if (popup.closed) {
+        throw new Error("The connection window was closed before authorization was completed.");
+      }
+
+      popup.location.href = authUrl;
+      popupStarted = true;
+      stopPopupPolling();
+      popupTimeoutRef.current = window.setTimeout(() => {
+        setMetaStatusMessage(
+          "This is taking longer than expected. Finish the Instagram flow in the popup and we’ll update the connection automatically."
+        );
+      }, META_OAUTH_POPUP_TIMEOUT_MS);
+      popupPollRef.current = window.setInterval(async () => {
+        if (!popup || !popup.closed) {
+          return;
+        }
+
+        stopPopupPolling();
+        popupCloseGraceRef.current = window.setTimeout(async () => {
+          if (popupCallbackReceivedRef.current) {
+            return;
+          }
+
+          clearPendingMetaOAuth();
+          connectInFlightRef.current = false;
+          setMetaLoading(false);
+          setMetaStatusLoading(false);
+          setMetaCatalogsLoading(false);
+          setMetaConnectMode(null);
+
+          try {
+            setMetaStatusLoading(true);
+            setMetaCatalogsLoading(true);
+            const statusResult = await fetchInstagramBusinessStatus(input.workspaceId);
+            const refreshResult = await refreshMetaIntegrationState();
+            const message = getInstagramBusinessStatusMessage({
+              status: statusResult.status,
+              connected:
+                statusResult.connected || refreshResult.instagramBusinessConnected,
+              assetCount:
+                statusResult.assetCount || refreshResult.instagramAccountsCount,
+              missingScopes: statusResult.missingScopes,
+              message: statusResult.message,
+            });
+
+            if (
+              statusResult.connected ||
+              refreshResult.instagramBusinessConnected ||
+              isInstagramBusinessProcessedStatus(statusResult.status)
+            ) {
+              setInstagramBusinessError("");
+              setMetaReconnectMessage("");
+              setMetaStatusMessage(message || "Instagram Business connected successfully.");
+              return;
+            }
+
+            if (
+              isInstagramBusinessMissingPermissionsStatus(statusResult.status) ||
+              statusResult.missingScopes.length > 0
+            ) {
+              setMetaStatusMessage("");
+              setInstagramBusinessError(
+                message ||
+                  "Instagram Business needs additional permissions. Please reconnect and approve all requested access."
+              );
+              return;
+            }
+          } catch (error) {
+            console.error("instagram business popup closed refresh error:", error);
+          } finally {
+            setMetaStatusLoading(false);
+            setMetaCatalogsLoading(false);
+          }
+
+          setMetaStatusMessage("");
+          setInstagramBusinessError(
+            "The connection window was closed before authorization was completed."
+          );
+        }, META_OAUTH_POPUP_CLOSE_GRACE_MS);
+      }, 500);
+    } catch (error) {
+      console.error("instagram business connect error:", error);
+      try {
+        popup?.close();
+      } catch {
+        // Ignore cross-browser popup close failures.
+      }
+      setMetaStatusMessage("");
+      setInstagramBusinessError(
+        error instanceof Error && error.message
+          ? error.message
+          : "We couldn’t connect Instagram through Facebook. Please try again."
+      );
+      setMetaConnectMode(null);
+    } finally {
+      if (!popupStarted) {
+        connectInFlightRef.current = false;
+        setMetaLoading(false);
+        setMetaStatusLoading(false);
+        setMetaCatalogsLoading(false);
+        setMetaConnectMode(null);
+      }
+    }
   }
 
   function handleMetaReconnect(source?: "facebook_pages" | "instagram_business") {
