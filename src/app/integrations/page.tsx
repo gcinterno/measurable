@@ -88,6 +88,17 @@ function isPopupResolvedStatus(status?: string | null) {
   return isIntegrationConnectedStatus(normalizedStatus) || normalizedStatus === "needs_permission";
 }
 
+function isAvailableProviderStatus(status?: string | null) {
+  const normalizedStatus = normalizeProviderStatus(status);
+
+  return (
+    normalizedStatus === "" ||
+    normalizedStatus === "available" ||
+    normalizedStatus === "no_token" ||
+    normalizedStatus === "disconnected"
+  );
+}
+
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -507,6 +518,10 @@ function IntegrationsPageContent() {
       setMetaAdsError("");
     }
 
+    if (!connectInFlightRef.current && isAvailableProviderStatus(normalizedStatus)) {
+      setMetaAdsError("");
+    }
+
     if (!statusConnected || !status.integrationId) {
       setMetaAdsAccountsCount(0);
       return {
@@ -608,8 +623,14 @@ function IntegrationsPageContent() {
     if (response.metaConnected) {
       setMetaError("");
     }
+    if (!connectInFlightRef.current && isAvailableProviderStatus(response.metaConnected ? "connected" : "")) {
+      setMetaError("");
+    }
 
     if (instagramBusinessStatusConnected) {
+      setInstagramBusinessError("");
+    }
+    if (!connectInFlightRef.current && isAvailableProviderStatus(resolvedInstagramStatus)) {
       setInstagramBusinessError("");
     }
 
