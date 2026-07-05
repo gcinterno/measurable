@@ -31,7 +31,9 @@ import {
   getMetaOAuthRequestedScopes,
   getMetaOAuthFriendlyErrorMessage,
   hasMetaConnectPrerequisites,
+  isIntegrationOAuthCompleteMessage,
   isMetaOAuthWindowMessage,
+  type IntegrationOAuthCompleteMessage,
   logMetaOAuthDev,
   markMetaRedirectStarted,
   META_OAUTH_POPUP_CLOSE_GRACE_MS,
@@ -65,6 +67,34 @@ type MetaRefreshResult = {
   instagramAccountsCount: number;
   catalogsLoaded: boolean;
 };
+
+type PopupProvider = "facebook_pages" | "instagram_business" | "meta_ads";
+
+type PopupStatusSnapshot = {
+  provider: PopupProvider;
+  status: string;
+  connected: boolean;
+  assetCount: number;
+};
+
+function normalizeProviderStatus(status?: string | null) {
+  return (status || "").trim().toLowerCase();
+}
+
+function isResolvedPopupStatus(status?: string | null) {
+  const normalizedStatus = normalizeProviderStatus(status);
+
+  return (
+    normalizedStatus === "connected" ||
+    normalizedStatus === "connected_no_assets" ||
+    normalizedStatus === "no_authorized_assets" ||
+    normalizedStatus === "needs_permission"
+  );
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 function getMetaAdsCardStatus(input: {
   loading: boolean;
@@ -371,6 +401,8 @@ function IntegrationsPageContent() {
   const popupPollRef = useRef<number | null>(null);
   const popupCloseGraceRef = useRef<number | null>(null);
   const popupTimeoutRef = useRef<number | null>(null);
+  const popupWindowRef = useRef<Window | null>(null);
+  const popupStatusSnapshotRef = useRef<PopupStatusSnapshot | null>(null);
 
   const stopPopupPolling = useCallback(() => {
     if (popupPollRef.current !== null && typeof window !== "undefined") {
@@ -386,6 +418,74 @@ function IntegrationsPageContent() {
       popupTimeoutRef.current = null;
     }
   }, []);
+
+  const closeActivePopup = useCallback(() => {
+    const popup = popupWindowRef.current;
+    popupWindowRef.current = null;
+
+    if (!popup || popup.closed) {
+      return;
+    }
+
+    try {
+      popup.close();
+    } catch {
+      // Ignore cross-browser popup close failures.
+    }
+  }, []);
+
+  const clearProviderErrors = useCallback((provider: PopupProvider) => {
+    if (provider === "facebook_pages") {
+      setMetaError("");
+      return;
+    }
+
+    if (provider === "instagram_business") {
+      setInstagramBusinessError("");
+      return;
+    }
+
+    setMetaAdsError("");
+  }, []);
+
+  const getPopupStatusSnapshot = useCallback(
+    (provider: PopupProvider): PopupStatusSnapshot => {
+      if (provider === "facebook_pages") {
+        return {
+          provider,
+          status: metaConnected ? "connected" : "",
+          connected: metaConnected,
+          assetCount: facebookPagesCount,
+        };
+      }
+
+      if (provider === "instagram_business") {
+        return {
+          provider,
+          status: normalizeProviderStatus(instagramBusinessStatus),
+          connected: instagramBusinessConnected,
+          assetCount: instagramBusinessAssetCount,
+        };
+      }
+
+      return {
+        provider,
+        status: normalizeProviderStatus(metaAdsStatus),
+        connected: metaAdsConnected,
+        assetCount: metaAdsAccountsCount,
+      };
+    },
+    [
+      facebookPagesCount,
+      instagramBusinessAssetCount,
+      instagramBusinessConnected,
+      instagramBusinessStatus,
+      metaAdsAccountsCount,
+      metaAdsConnected,
+      metaAdsStatus,
+      metaConnected,
+    ]
+  );
 
   const refreshMetaAdsState = useCallback(async () => {
     if (!activeWorkspaceId) {
@@ -463,6 +563,8 @@ function IntegrationsPageContent() {
 
     if (normalizedProvider === "instagram_business") {
       setInstagramBusinessError(isNonBlockingInstagramReviewError ? "" : friendlyMessage);
+    } else if (normalizedProvider === "meta_ads") {
+      setMetaAdsError(friendlyMessage);
     } else {
       setMetaError(friendlyMessage);
     }
@@ -629,8 +731,251 @@ function IntegrationsPageContent() {
     };
   }, [activeWorkspaceId]);
 
+  const refreshAllMetaStatuses = useCallback(async () => {
+    const [metaResult, metaAdsResult] = await Promise.all([
+      refreshMetaIntegrationState(),
+      refreshMetaAdsState(),
+    ]);
+
+    return {
+      metaResult,
+      metaAdsResult,
+    };
+  }, [refreshMetaAdsState, refreshMetaIntegrationState]);
+
+  const handleIntegrationOAuthComplete = useCallback(
+    async (message: IntegrationOAuthCompleteMessage) => {
+      const provider = message.provider || "facebook_pages";
+      const callbackStatus = normalizeProviderStatus(message.status);
+      const backendMessage = message.message || message.error || "";
+
+      popupCallbackReceivedRef.current = true;
+      stopPopupPolling();
+      closeActivePopup();
+      clearPendingMetaOAuth();
+      connectInFlightRef.current = false;
+      popupStatusSnapshotRef.current = null;
+
+      setMetaLoading(false);
+      setMetaAdsLoading(false);
+      setMetaStatusLoading(true);
+      setMetaCatalogsLoading(true);
+      setMetaStatusMessage("");
+      setMetaReconnectMessage("");
+      setMetaAdsStatusMessage("");
+      clearProviderErrors(provider);
+
+      try {
+        const { metaResult, metaAdsResult } = await refreshAllMetaStatuses();
+
+        if (provider === "instagram_business") {
+          const instagramStatusResult = await fetchInstagramBusinessStatus(
+            activeWorkspaceId
+          );
+          const resolvedStatus =
+            normalizeProviderStatus(instagramStatusResult.status) || callbackStatus;
+          const processed =
+            instagramStatusResult.connected ||
+            (instagramStatusResult.assetCount || 0) > 0 ||
+            isResolvedPopupStatus(resolvedStatus) ||
+            isResolvedPopupStatus(callbackStatus);
+
+          if (resolvedStatus === "connected" && instagramStatusResult.connected) {
+            setMetaStatusMessage("Instagram Business connected successfully.");
+          } else if (
+            resolvedStatus === "connected_no_assets" ||
+            resolvedStatus === "needs_page_ig_link" ||
+            (processed &&
+              !instagramStatusResult.connected &&
+              (instagramStatusResult.assetCount || 0) === 0)
+          ) {
+            setMetaStatusMessage(
+              getInstagramBusinessStatusMessage({
+                status: resolvedStatus || callbackStatus,
+                connected: instagramStatusResult.connected,
+                assetCount: instagramStatusResult.assetCount,
+                message: backendMessage,
+              })
+            );
+          } else if (resolvedStatus === "needs_permission" || callbackStatus === "needs_permission") {
+            setInstagramBusinessError(
+              getInstagramBusinessStatusMessage({
+                status: "needs_permission",
+                connected: instagramStatusResult.connected,
+                assetCount: instagramStatusResult.assetCount,
+                message: backendMessage,
+              }) ||
+                "Instagram Business needs additional permissions. Please reconnect and approve all requested access."
+            );
+          } else if (callbackStatus === "error") {
+            setInstagramBusinessError(
+              backendMessage ||
+                "We couldn’t complete the Instagram Business connection. Please try again."
+            );
+          } else if (metaResult.instagramBusinessConnected) {
+            setMetaStatusMessage("Instagram Business connected successfully.");
+          }
+
+          return;
+        }
+
+        if (provider === "meta_ads") {
+          const resolvedStatus = normalizeProviderStatus(metaAdsResult.status) || callbackStatus;
+
+          if (resolvedStatus === "connected" && metaAdsResult.connected) {
+            setMetaAdsStatusMessage("Meta Ads connected successfully.");
+          } else if (
+            resolvedStatus === "connected_no_assets" ||
+            resolvedStatus === "no_authorized_assets"
+          ) {
+            setMetaAdsStatusMessage(
+              getMetaAdsStatusMessage({
+                status: resolvedStatus,
+                message: backendMessage,
+                missingScopes: metaAdsResult.missingScopes,
+              })
+            );
+          } else if (resolvedStatus === "needs_permission" || callbackStatus === "needs_permission") {
+            setMetaAdsError(
+              getMetaAdsStatusMessage({
+                status: "needs_permission",
+                message: backendMessage,
+                missingScopes: metaAdsResult.missingScopes,
+              }) ||
+                "Reconnect and approve the required permissions."
+            );
+          } else if (callbackStatus === "error") {
+            setMetaAdsError(
+              backendMessage ||
+                "We couldn’t complete the Meta Ads connection. Please try again."
+            );
+          } else if (metaAdsResult.connected) {
+            setMetaAdsStatusMessage("Meta Ads connected successfully.");
+          }
+
+          return;
+        }
+
+        if (metaResult.connected) {
+          setMetaStatusMessage("Integration connected successfully.");
+        } else if (callbackStatus === "needs_permission" || callbackStatus === "error") {
+          setMetaError(
+            backendMessage ||
+              "We couldn’t complete the Meta connection. Please try again."
+          );
+        }
+      } catch (error) {
+        console.error("integration oauth callback refresh error:", error);
+
+        if (provider === "instagram_business") {
+          setInstagramBusinessError(
+            "The connection finished, but we couldn’t refresh the Instagram Business status."
+          );
+        } else if (provider === "meta_ads") {
+          setMetaAdsError(
+            "The connection finished, but we couldn’t refresh the Meta Ads status."
+          );
+        } else {
+          setMetaError("The connection finished, but we couldn’t refresh the status.");
+        }
+      } finally {
+        setMetaLoading(false);
+        setMetaAdsLoading(false);
+        setMetaStatusLoading(false);
+        setMetaCatalogsLoading(false);
+        setMetaConnectMode(null);
+      }
+    },
+    [
+      activeWorkspaceId,
+      clearProviderErrors,
+      closeActivePopup,
+      refreshAllMetaStatuses,
+      stopPopupPolling,
+    ]
+  );
+
+  const pollForPopupResolution = useCallback(
+    async (snapshot: PopupStatusSnapshot) => {
+      const deadline = Date.now() + 10000;
+      let lastResolvedStatus = snapshot.status;
+      let lastConnected = snapshot.connected;
+      let lastAssetCount = snapshot.assetCount;
+
+      while (Date.now() < deadline && !popupCallbackReceivedRef.current) {
+        const { metaResult, metaAdsResult } = await refreshAllMetaStatuses();
+
+        if (snapshot.provider === "facebook_pages") {
+          lastResolvedStatus = metaResult.connected ? "connected" : "";
+          lastConnected = metaResult.connected;
+          lastAssetCount = metaResult.facebookPagesCount;
+        } else if (snapshot.provider === "instagram_business") {
+          const instagramStatusResult = await fetchInstagramBusinessStatus(
+            activeWorkspaceId
+          );
+          lastResolvedStatus = normalizeProviderStatus(instagramStatusResult.status);
+          lastConnected = instagramStatusResult.connected;
+          lastAssetCount = instagramStatusResult.assetCount || 0;
+        } else {
+          lastResolvedStatus = normalizeProviderStatus(metaAdsResult.status);
+          lastConnected = metaAdsResult.connected;
+          lastAssetCount = metaAdsResult.accountsCount;
+        }
+
+        const stateChanged =
+          lastResolvedStatus !== snapshot.status ||
+          lastConnected !== snapshot.connected ||
+          lastAssetCount !== snapshot.assetCount;
+
+        if (isResolvedPopupStatus(lastResolvedStatus) || stateChanged) {
+          return {
+            resolved: true,
+            status: lastResolvedStatus,
+            connected: lastConnected,
+            assetCount: lastAssetCount,
+          };
+        }
+
+        await delay(1000);
+      }
+
+      return {
+        resolved: false,
+        status: lastResolvedStatus,
+        connected: lastConnected,
+        assetCount: lastAssetCount,
+      };
+    },
+    [
+      activeWorkspaceId,
+      refreshAllMetaStatuses,
+    ]
+  );
+
   const integrationsStateLoading = metaStatusLoading || metaCatalogsLoading;
-  const hasAnyMetaConnection = metaConnected || instagramBusinessConnected;
+  const facebookPagesCardStatus = integrationsStateLoading
+    ? "Checking"
+    : metaConnected
+      ? "Connected"
+      : "Available";
+  const instagramCardStatus = getInstagramBusinessCardStatus({
+    loading: integrationsStateLoading || metaLoading,
+    status: instagramBusinessStatus,
+    connected: instagramBusinessConnected,
+    assetCount: instagramBusinessAssetCount,
+  });
+  const metaAdsCardStatus = getMetaAdsCardStatus({
+    loading: metaAdsLoading || integrationsStateLoading,
+    status: metaAdsStatus,
+    connected: metaAdsConnected,
+    accountsCount: metaAdsAccountsCount,
+  });
+  const hasAnyConnectedIntegration =
+    facebookPagesCardStatus === "Connected" ||
+    instagramCardStatus === "Connected" ||
+    instagramCardStatus === "Needs permission" ||
+    metaAdsCardStatus === "Connected" ||
+    metaAdsCardStatus === "Needs permission";
   const connectedButNoAuthorizedPages =
     metaConnected &&
     metaCatalogsResolved &&
@@ -724,7 +1069,21 @@ function IntegrationsPageContent() {
     }
 
     async function handleMetaWindowMessage(event: MessageEvent) {
-      if (event.origin !== window.location.origin || !isMetaOAuthWindowMessage(event.data)) {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+
+      if (isIntegrationOAuthCompleteMessage(event.data)) {
+        if (
+          event.data.provider === "instagram_business" ||
+          event.data.provider === "meta_ads"
+        ) {
+          await handleIntegrationOAuthComplete(event.data);
+        }
+        return;
+      }
+
+      if (!isMetaOAuthWindowMessage(event.data)) {
         return;
       }
 
@@ -988,6 +1347,7 @@ function IntegrationsPageContent() {
     };
   }, [
     activeWorkspaceId,
+    handleIntegrationOAuthComplete,
     metaAdsLoading,
     metaConnectMode,
     metaLoading,
@@ -1142,6 +1502,8 @@ function IntegrationsPageContent() {
           route: "/integrations",
           source,
         });
+        popupWindowRef.current = popup;
+        popupStatusSnapshotRef.current = getPopupStatusSnapshot(source);
         popupStarted = true;
         setMetaStatusMessage(reconnect ? "Reconnecting..." : "Connecting...");
         stopPopupPolling();
@@ -1171,6 +1533,9 @@ function IntegrationsPageContent() {
             }
 
             clearPendingMetaOAuth();
+            const snapshot =
+              popupStatusSnapshotRef.current || getPopupStatusSnapshot(source);
+            popupStatusSnapshotRef.current = null;
             connectInFlightRef.current = false;
             setMetaLoading(false);
             setMetaStatusLoading(false);
@@ -1180,8 +1545,9 @@ function IntegrationsPageContent() {
             try {
               setMetaStatusLoading(true);
               setMetaCatalogsLoading(true);
+              const resolution = await pollForPopupResolution(snapshot);
               const result = await refreshMetaIntegrationState();
-              if (result.connected) {
+              if (resolution.resolved && result.connected) {
                 setMetaError("");
                 if (!result.catalogsLoaded) {
                   void trackMetaEvent("MetaConnected", {
@@ -1241,6 +1607,8 @@ function IntegrationsPageContent() {
       }
     } catch (err: unknown) {
       console.error("meta connect error:", err);
+      popupWindowRef.current = null;
+      popupStatusSnapshotRef.current = null;
       setMetaError(
         err instanceof ApiError && err.message
           ? err.message
@@ -1482,6 +1850,8 @@ function IntegrationsPageContent() {
         throw new Error("The connection window was closed before authorization was completed.");
       }
 
+      popupWindowRef.current = popup;
+      popupStatusSnapshotRef.current = getPopupStatusSnapshot("instagram_business");
       popup.location.href = authUrl;
       popupStarted = true;
       stopPopupPolling();
@@ -1502,15 +1872,21 @@ function IntegrationsPageContent() {
           }
 
           clearPendingMetaOAuth();
+          const snapshot =
+            popupStatusSnapshotRef.current ||
+            getPopupStatusSnapshot("instagram_business");
+          popupStatusSnapshotRef.current = null;
           connectInFlightRef.current = false;
           setMetaLoading(false);
           setMetaStatusLoading(false);
           setMetaCatalogsLoading(false);
           setMetaConnectMode(null);
+          let resolution: Awaited<ReturnType<typeof pollForPopupResolution>> | null = null;
 
           try {
             setMetaStatusLoading(true);
             setMetaCatalogsLoading(true);
+            resolution = await pollForPopupResolution(snapshot);
             const statusResult = await fetchInstagramBusinessStatus(input.workspaceId);
             const refreshResult = await refreshMetaIntegrationState();
             const message = getInstagramBusinessStatusMessage({
@@ -1524,6 +1900,7 @@ function IntegrationsPageContent() {
             });
 
             if (
+              resolution.resolved ||
               statusResult.connected ||
               refreshResult.instagramBusinessConnected ||
               isInstagramBusinessProcessedStatus(statusResult.status)
@@ -1553,9 +1930,11 @@ function IntegrationsPageContent() {
           }
 
           setMetaStatusMessage("");
-          setInstagramBusinessError(
-            "The connection window was closed before authorization was completed."
-          );
+          if (!resolution?.resolved) {
+            setInstagramBusinessError(
+              "The connection window was closed before authorization was completed."
+            );
+          }
         }, META_OAUTH_POPUP_CLOSE_GRACE_MS);
       }, 500);
     } catch (error) {
@@ -1565,6 +1944,8 @@ function IntegrationsPageContent() {
       } catch {
         // Ignore cross-browser popup close failures.
       }
+      popupWindowRef.current = null;
+      popupStatusSnapshotRef.current = null;
       setMetaStatusMessage("");
       setInstagramBusinessError(
         error instanceof Error && error.message
@@ -1694,6 +2075,8 @@ function IntegrationsPageContent() {
         await showMetaOAuthReadyBanner();
 
         markMetaRedirectStarted();
+        popupWindowRef.current = popup;
+        popupStatusSnapshotRef.current = getPopupStatusSnapshot("meta_ads");
         popup.location.href = authUrl;
 
         stopPopupPolling();
@@ -1714,10 +2097,15 @@ function IntegrationsPageContent() {
             }
 
             clearPendingMetaOAuth();
+            const snapshot =
+              popupStatusSnapshotRef.current || getPopupStatusSnapshot("meta_ads");
+            popupStatusSnapshotRef.current = null;
             connectInFlightRef.current = false;
             setMetaAdsLoading(false);
+            let resolution: Awaited<ReturnType<typeof pollForPopupResolution>> | null = null;
 
             try {
+              resolution = await pollForPopupResolution(snapshot);
               const result = await refreshMetaAdsState();
               if (result.connected) {
                 setMetaAdsError("");
@@ -1753,9 +2141,11 @@ function IntegrationsPageContent() {
             }
 
             setMetaAdsStatusMessage("");
-            setMetaAdsError(
-              "The connection window was closed before authorization was completed."
-            );
+            if (!resolution?.resolved) {
+              setMetaAdsError(
+                "The connection window was closed before authorization was completed."
+              );
+            }
           }, META_OAUTH_POPUP_CLOSE_GRACE_MS);
         }, 500);
       } catch (error) {
@@ -1765,6 +2155,8 @@ function IntegrationsPageContent() {
         } catch {
           // Ignore popup close failures.
         }
+        popupWindowRef.current = null;
+        popupStatusSnapshotRef.current = null;
         if (error instanceof ApiError && error.status === 409) {
           console.info("META_ADS_CONNECT_CONFIG_MISSING", {
             route: "/integrations",
@@ -1914,7 +2306,7 @@ function IntegrationsPageContent() {
         </section>
       ) : null}
 
-      {!integrationsStateLoading && !hasAnyMetaConnection ? (
+      {!integrationsStateLoading && !hasAnyConnectedIntegration ? (
         <section className="mb-5 rounded-[28px] border border-dashed border-slate-300 bg-slate-50 p-5 sm:mb-6 sm:p-6">
           <h3 className="text-lg font-semibold text-slate-950">
             There are no connected integrations yet
@@ -1942,29 +2334,12 @@ function IntegrationsPageContent() {
           const isFacebookPages = integration.integrationKey === "facebook_pages";
           const isInstagramBusiness = integration.integrationKey === "instagram_business";
           const isMetaAds = integration.integrationKey === "meta_ads";
-          const facebookPagesStatus = integrationsStateLoading
-            ? "Checking"
-            : metaConnected
-              ? "Connected"
-              : "Available";
-          const instagramStatus = getInstagramBusinessCardStatus({
-            loading: integrationsStateLoading || metaLoading,
-            status: instagramBusinessStatus,
-            connected: instagramBusinessConnected,
-            assetCount: instagramBusinessAssetCount,
-          });
-          const metaAdsStatusLabel = getMetaAdsCardStatus({
-            loading: metaAdsLoading || integrationsStateLoading,
-            status: metaAdsStatus,
-            connected: metaAdsConnected,
-            accountsCount: metaAdsAccountsCount,
-          });
           const cardStatus = isFacebookPages
-            ? facebookPagesStatus
+            ? facebookPagesCardStatus
             : isInstagramBusiness
-              ? instagramStatus
+              ? instagramCardStatus
               : isMetaAds
-                ? metaAdsStatusLabel
+                ? metaAdsCardStatus
                 : integration.status;
           const actionLabel = isFacebookPages
             ? metaConnected

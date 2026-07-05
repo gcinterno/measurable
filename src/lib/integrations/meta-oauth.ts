@@ -10,12 +10,26 @@ export const META_OAUTH_POPUP_NAME = "measurable_meta_oauth";
 export const META_OAUTH_POPUP_FEATURES = "width=720,height=780";
 export const META_OAUTH_CONNECT_SUCCESS = "MEASURABLE_META_CONNECT_SUCCESS";
 export const META_OAUTH_CONNECT_ERROR = "MEASURABLE_META_CONNECT_ERROR";
+export const INTEGRATION_OAUTH_COMPLETE_MESSAGE_TYPE =
+  "measurable:integration-oauth-complete";
 export const META_OAUTH_POPUP_CLOSE_GRACE_MS = 1500;
 export const META_OAUTH_POPUP_TIMEOUT_MS = 90000;
 export type MetaOAuthSource =
   | "facebook_pages"
   | "instagram_business"
   | "meta_ads";
+
+export type IntegrationOAuthCompleteProvider = MetaOAuthSource;
+
+export type IntegrationOAuthCompleteMessage = {
+  type: typeof INTEGRATION_OAUTH_COMPLETE_MESSAGE_TYPE;
+  provider?: IntegrationOAuthCompleteProvider;
+  status?: string;
+  integrationId?: string;
+  workspaceId?: string;
+  message?: string;
+  error?: string;
+};
 
 export const FACEBOOK_PAGES_SCOPES = [
   "public_profile",
@@ -557,6 +571,47 @@ export function postMetaOAuthMessageToOpener(message: MetaOAuthWindowMessage) {
     return true;
   } catch (error) {
     console.error("meta oauth opener postMessage error:", error);
+    return false;
+  }
+}
+
+export function isIntegrationOAuthCompleteMessage(
+  data: unknown
+): data is IntegrationOAuthCompleteMessage {
+  if (!data || typeof data !== "object") {
+    return false;
+  }
+
+  const candidate = data as {
+    type?: string;
+    provider?: string;
+    status?: string;
+    integrationId?: string;
+    workspaceId?: string;
+    message?: string;
+    error?: string;
+  };
+
+  return (
+    candidate.type === INTEGRATION_OAUTH_COMPLETE_MESSAGE_TYPE &&
+    (candidate.provider === "facebook_pages" ||
+      candidate.provider === "instagram_business" ||
+      candidate.provider === "meta_ads")
+  );
+}
+
+export function postIntegrationOAuthCompleteToOpener(
+  message: IntegrationOAuthCompleteMessage
+) {
+  if (typeof window === "undefined" || !window.opener) {
+    return false;
+  }
+
+  try {
+    window.opener.postMessage(message, window.location.origin);
+    return true;
+  } catch (error) {
+    console.error("integration oauth opener postMessage error:", error);
     return false;
   }
 }
