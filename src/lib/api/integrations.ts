@@ -167,6 +167,36 @@ type MetaAuthUrlValidationResult = {
   containsExpectedOAuthPath: boolean;
 };
 
+const CONNECTED_INTEGRATION_STATUSES = new Set([
+  "connected",
+  "connected_no_assets",
+  "connected_no_assets_found",
+  "connected_no_assets_available",
+  "connected_empty",
+  "connected_no_ad_accounts",
+  "connected_no_instagram_accounts",
+  "no_authorized_assets",
+  "needs_page_ig_link",
+  "needs_business_or_creator_account",
+]);
+
+export function isIntegrationConnectedStatus(status?: string | null) {
+  return CONNECTED_INTEGRATION_STATUSES.has((status || "").trim().toLowerCase());
+}
+
+function resolveIntegrationConnected(
+  status: string | null | undefined,
+  explicitConnected: boolean
+) {
+  const normalizedStatus = (status || "").trim().toLowerCase();
+
+  if (normalizedStatus) {
+    return isIntegrationConnectedStatus(normalizedStatus);
+  }
+
+  return explicitConnected;
+}
+
 function getAuthHeaders() {
   if (typeof window === "undefined") {
     return undefined;
@@ -469,11 +499,11 @@ function getRecordStatus(record: Record<string, unknown>) {
 }
 
 function getRecordConnected(record: Record<string, unknown>) {
-  if (record.connected === true || record.is_connected === true || record.isConnected === true) {
-    return true;
-  }
-
-  return getRecordStatus(record) === "connected";
+  return resolveIntegrationConnected(getRecordStatus(record), Boolean(
+    record.connected === true ||
+      record.is_connected === true ||
+      record.isConnected === true
+  ));
 }
 
 function getRecordIntegrationId(record: Record<string, unknown>) {
@@ -888,8 +918,18 @@ export async function disconnectMetaIntegration(input?: {
   };
 }
 
-export async function fetchIntegrationsConnectionStatus() {
-  const endpoint = "/integrations";
+export async function fetchIntegrationsConnectionStatus(input?: {
+  cacheBust?: number | string | null;
+}) {
+  const searchParams = new URLSearchParams();
+
+  if (input?.cacheBust) {
+    searchParams.set("_", String(input.cacheBust));
+  }
+
+  const endpoint = searchParams.size > 0
+    ? `/integrations?${searchParams.toString()}`
+    : "/integrations";
   const res = await fetch(apiUrl(endpoint), {
     method: "GET",
     headers: getAuthHeaders(),
@@ -928,11 +968,21 @@ export async function connectMetaAdsIntegration(input?: {
   return getRedirectUrl(text);
 }
 
-export async function fetchMetaAdsStatus(workspaceId?: string | null) {
+export async function fetchMetaAdsStatus(
+  input?: string | null | { workspaceId?: string | null; cacheBust?: number | string | null }
+) {
+  const workspaceId = typeof input === "object" && input !== null ? input.workspaceId : input;
+  const cacheBust = typeof input === "object" && input !== null ? input.cacheBust : undefined;
   const resolvedWorkspaceId = await getRequiredWorkspaceId(workspaceId);
-  const endpoint = `/integrations/meta-ads/status?workspace_id=${encodeURIComponent(
-    resolvedWorkspaceId
-  )}`;
+  const searchParams = new URLSearchParams({
+    workspace_id: resolvedWorkspaceId,
+  });
+
+  if (cacheBust) {
+    searchParams.set("_", String(cacheBust));
+  }
+
+  const endpoint = `/integrations/meta-ads/status?${searchParams.toString()}`;
   const res = await fetch(apiUrl(endpoint), {
     method: "GET",
     headers: getAuthHeaders(),
@@ -956,21 +1006,13 @@ export async function fetchMetaAdsStatus(workspaceId?: string | null) {
   const rawStatus =
     getRecordStatus(record) || getRecordStatus(data) || "";
   const status = rawStatus || "";
-  const disconnectedStatuses = new Set([
-    "needs_permission",
-    "connected_no_assets",
-    "no_authorized_assets",
-    "no_token",
-    "config_missing",
-    "disconnected",
-  ]);
-  const connected =
-    !disconnectedStatuses.has(status) &&
-    (status === "connected" ||
-      Boolean(record.connected) ||
+  const connected = resolveIntegrationConnected(
+    status,
+    Boolean(record.connected) ||
       Boolean(record.is_connected) ||
       Boolean(data.connected) ||
-      Boolean(data.is_connected));
+      Boolean(data.is_connected)
+  );
 
   return {
     connected,
@@ -1002,11 +1044,21 @@ export async function fetchMetaAdsStatus(workspaceId?: string | null) {
   };
 }
 
-export async function fetchInstagramBusinessStatus(workspaceId?: string | null) {
+export async function fetchInstagramBusinessStatus(
+  input?: string | null | { workspaceId?: string | null; cacheBust?: number | string | null }
+) {
+  const workspaceId = typeof input === "object" && input !== null ? input.workspaceId : input;
+  const cacheBust = typeof input === "object" && input !== null ? input.cacheBust : undefined;
   const resolvedWorkspaceId = await getRequiredWorkspaceId(workspaceId);
-  const endpoint = `/integrations/instagram-business/status?workspace_id=${encodeURIComponent(
-    resolvedWorkspaceId
-  )}`;
+  const searchParams = new URLSearchParams({
+    workspace_id: resolvedWorkspaceId,
+  });
+
+  if (cacheBust) {
+    searchParams.set("_", String(cacheBust));
+  }
+
+  const endpoint = `/integrations/instagram-business/status?${searchParams.toString()}`;
   const res = await fetch(apiUrl(endpoint), {
     method: "GET",
     headers: getAuthHeaders(),
@@ -1070,12 +1122,13 @@ export async function fetchInstagramBusinessStatus(workspaceId?: string | null) 
             : "";
 
   return {
-    connected:
+    connected: resolveIntegrationConnected(
+      status,
       Boolean(record.connected) ||
       Boolean(record.is_connected) ||
       Boolean(data.connected) ||
-      Boolean(data.is_connected) ||
-      status === "connected",
+      Boolean(data.is_connected)
+    ),
     integrationId: getRecordIntegrationId(record) || getRecordIntegrationId(data),
     tokenScopes: tokenScopes.length > 0 ? Array.from(new Set(tokenScopes)) : [],
     status,
