@@ -74,11 +74,16 @@ type MetaProviderConnectionState = {
   integrationId: string;
   assetCount: number;
   loading: boolean;
+  isActionInFlight: boolean;
+  lastUserAction: "connect" | "disconnect" | null;
+  lastActionAt: number;
+  error: string;
   lastSyncedAt: string;
   missingScopes: string[];
 };
 
 const META_PROVIDER_POPUP_STATUS_POLL_MS = 30000;
+const DISCONNECT_STATUS_PROTECTION_MS = 10000;
 
 function createMetaProviderConnectionState(
   loading = false
@@ -89,6 +94,10 @@ function createMetaProviderConnectionState(
     integrationId: "",
     assetCount: 0,
     loading,
+    isActionInFlight: false,
+    lastUserAction: null,
+    lastActionAt: 0,
+    error: "",
     lastSyncedAt: "",
     missingScopes: [],
   };
@@ -299,6 +308,7 @@ export function IntegrationLibrary({
   );
   const activeWorkspaceId = workspace?.id || null;
   const connectInFlightRef = useRef(false);
+  const providerConnectionsRef = useRef(providerConnections);
   const popupCallbackReceivedRef = useRef(false);
   const popupPollRef = useRef<number | null>(null);
   const popupTimeoutRef = useRef<number | null>(null);
@@ -321,19 +331,77 @@ export function IntegrationLibrary({
       provider: MetaFrontendIntegrationKey,
       nextConnection: Partial<MetaProviderConnectionState>
     ) => {
-      setProviderConnections((current) => ({
+      const current = providerConnectionsRef.current;
+      const nextState = {
         ...current,
         [provider]: {
           ...current[provider],
           ...nextConnection,
         },
-      }));
+      };
+
+      providerConnectionsRef.current = nextState;
+      setProviderConnections(nextState);
+    },
+    []
+  );
+
+  const beginProviderAction = useCallback(
+    (
+      provider: MetaFrontendIntegrationKey,
+      action: "connect" | "disconnect"
+    ) => {
+      setProviderConnection(provider, {
+        isActionInFlight: true,
+        lastUserAction: action,
+        lastActionAt: Date.now(),
+        error: "",
+      });
+    },
+    [setProviderConnection]
+  );
+
+  const completeProviderAction = useCallback(
+    (
+      provider: MetaFrontendIntegrationKey,
+      nextConnection: Partial<MetaProviderConnectionState> = {}
+    ) => {
+      setProviderConnection(provider, {
+        isActionInFlight: false,
+        ...nextConnection,
+      });
+    },
+    [setProviderConnection]
+  );
+
+  const shouldIgnoreProviderStatus = useCallback(
+    (
+      provider: MetaFrontendIntegrationKey,
+      requestStartedAt: number,
+      nextStatus: MetaProviderUiStatus
+    ) => {
+      const current = providerConnectionsRef.current[provider];
+
+      if (current.lastActionAt > 0 && requestStartedAt < current.lastActionAt) {
+        return true;
+      }
+
+      if (
+        current.lastUserAction === "disconnect" &&
+        Date.now() - current.lastActionAt < DISCONNECT_STATUS_PROTECTION_MS &&
+        nextStatus.connected
+      ) {
+        return true;
+      }
+
+      return false;
     },
     []
   );
 
   const refreshProviderState = useCallback(
     async (provider: MetaFrontendIntegrationKey, cacheBust?: number) => {
+      const requestStartedAt = Date.now();
       const emptyUiStatus = normalizeMetaProviderStatus({
         provider,
       });
@@ -386,6 +454,17 @@ export function IntegrationLibrary({
             lastSyncedAt: providerStatus.lastSyncedAt,
           });
 
+          if (shouldIgnoreProviderStatus(provider, requestStartedAt, uiStatus)) {
+            const current = providerConnectionsRef.current[provider];
+            return normalizeMetaProviderStatus({
+              provider,
+              status: current.status,
+              connected: current.connected,
+              assetCount: current.assetCount,
+              lastSyncedAt: current.lastSyncedAt,
+            });
+          }
+
           setProviderConnection(provider, {
             status: uiStatus.status,
             connected: uiStatus.connected,
@@ -431,6 +510,17 @@ export function IntegrationLibrary({
             lastSyncedAt: status.lastSyncedAt,
           });
 
+          if (shouldIgnoreProviderStatus(provider, requestStartedAt, uiStatus)) {
+            const current = providerConnectionsRef.current[provider];
+            return normalizeMetaProviderStatus({
+              provider,
+              status: current.status,
+              connected: current.connected,
+              assetCount: current.assetCount,
+              lastSyncedAt: current.lastSyncedAt,
+            });
+          }
+
           setProviderConnection(provider, {
             status: uiStatus.status,
             connected: uiStatus.connected,
@@ -474,6 +564,17 @@ export function IntegrationLibrary({
           lastSyncedAt: status.lastSyncedAt,
         });
 
+        if (shouldIgnoreProviderStatus(provider, requestStartedAt, uiStatus)) {
+          const current = providerConnectionsRef.current[provider];
+          return normalizeMetaProviderStatus({
+            provider,
+            status: current.status,
+            connected: current.connected,
+            assetCount: current.assetCount,
+            lastSyncedAt: current.lastSyncedAt,
+          });
+        }
+
         setProviderConnection(provider, {
           status: uiStatus.status,
           connected: uiStatus.connected,
@@ -500,7 +601,7 @@ export function IntegrationLibrary({
         throw error;
       }
     },
-    [activeWorkspaceId, embedded, setProviderConnection]
+    [activeWorkspaceId, embedded, setProviderConnection, shouldIgnoreProviderStatus]
   );
 
   useEffect(() => {
@@ -607,11 +708,16 @@ export function IntegrationLibrary({
             surface: "report_flow",
           });
           setConnectError("");
+          completeProviderAction(provider, { status: uiStatus.status });
           return;
         }
 
         if (uiStatus.status === "needs_permission") {
           setConnectError(uiStatus.helperText);
+          completeProviderAction(provider, {
+            status: uiStatus.status,
+            error: uiStatus.helperText,
+          });
           return;
         }
 
@@ -622,12 +728,16 @@ export function IntegrationLibrary({
               "We couldn’t complete the Meta connection."
           );
         }
+        completeProviderAction(provider);
       } catch (error) {
         console.error("integration library popup refresh error:", error);
         setConnectError("The connection finished, but we couldn’t refresh the status.");
+        completeProviderAction(provider, {
+          error: "The connection finished, but we couldn’t refresh the status.",
+        });
       }
     },
-    [refreshProviderState, stopPopupPolling]
+    [completeProviderAction, refreshProviderState, stopPopupPolling]
   );
 
   useEffect(() => {
@@ -767,6 +877,7 @@ export function IntegrationLibrary({
       }
 
       clearStoredMetaIntegrationState();
+      beginProviderAction(provider, "connect");
 
       if (typeof window === "undefined") {
         throw new Error("We could not open the connection window. Please try again.");
@@ -929,16 +1040,22 @@ export function IntegrationLibrary({
                 surface: "report_flow",
               });
               setConnectError("");
+              completeProviderAction(provider, { status: uiStatus.status });
               return;
             }
 
             if (uiStatus.status === "needs_permission") {
               setConnectError(uiStatus.helperText);
+              completeProviderAction(provider, {
+                status: uiStatus.status,
+                error: uiStatus.helperText,
+              });
               return;
             }
 
             if (!isMetaProviderAvailableStatus(uiStatus.status)) {
               setConnectError("");
+              completeProviderAction(provider, { status: uiStatus.status });
               return;
             }
           } catch (error) {
@@ -948,6 +1065,9 @@ export function IntegrationLibrary({
           setConnectError(
             "The connection window was closed before authorization was completed."
           );
+          completeProviderAction(provider, {
+            error: "The connection window was closed before authorization was completed.",
+          });
         }, META_OAUTH_POPUP_CLOSE_GRACE_MS);
       }, 500);
     } catch (error) {
@@ -992,6 +1112,7 @@ export function IntegrationLibrary({
       if (!popupStarted) {
         connectInFlightRef.current = false;
         setConnectingIntegrationKey(null);
+        completeProviderAction(provider);
       }
     }
   }
@@ -1096,6 +1217,8 @@ export function IntegrationLibrary({
       const currentContext = getIntegrationReportContext();
       setDisconnectingIntegrationKey("meta");
       setConnectError("");
+      beginProviderAction("facebook_pages", "disconnect");
+      beginProviderAction("instagram_business", "disconnect");
       await disconnectMetaIntegration({
         workspaceId: activeWorkspaceId || currentContext?.workspaceId || "",
       });
@@ -1107,17 +1230,41 @@ export function IntegrationLibrary({
         facebook_pages: 0,
         instagram_business: 0,
       }));
-      setProviderConnections((current) => ({
-        ...current,
-        facebook_pages: createMetaProviderConnectionState(false),
-        instagram_business: createMetaProviderConnectionState(false),
-      }));
+      const disconnectedAt = Date.now();
+      setProviderConnection("facebook_pages", {
+        status: "disconnected",
+        connected: false,
+        integrationId: "",
+        assetCount: 0,
+        loading: false,
+        isActionInFlight: false,
+        lastUserAction: "disconnect",
+        lastActionAt: disconnectedAt,
+        error: "",
+      });
+      setProviderConnection("instagram_business", {
+        status: "disconnected",
+        connected: false,
+        integrationId: "",
+        assetCount: 0,
+        loading: false,
+        isActionInFlight: false,
+        lastUserAction: "disconnect",
+        lastActionAt: disconnectedAt,
+        error: "",
+      });
       const nextParams = new URLSearchParams(searchParams.toString());
       nextParams.delete("resume");
       router.replace(`/reports/new/flow${nextParams.toString() ? `?${nextParams.toString()}` : ""}`);
     } catch (error) {
       console.error("integration library disconnect error:", error);
       setConnectError("We couldn’t disconnect Meta right now. Please try again.");
+      completeProviderAction("facebook_pages", {
+        error: "We couldn’t disconnect Meta right now. Please try again.",
+      });
+      completeProviderAction("instagram_business", {
+        error: "We couldn’t disconnect Meta right now. Please try again.",
+      });
     } finally {
       setDisconnectingIntegrationKey(null);
     }
@@ -1138,6 +1285,7 @@ export function IntegrationLibrary({
       const currentContext = getIntegrationReportContext();
       setDisconnectingIntegrationKey("meta_ads");
       setConnectError("");
+      beginProviderAction("meta_ads", "disconnect");
       await disconnectMetaAdsIntegration({
         workspaceId: activeWorkspaceId || currentContext?.workspaceId || "",
       });
@@ -1152,13 +1300,23 @@ export function IntegrationLibrary({
         ...current,
         meta_ads: 0,
       }));
-      setProviderConnections((current) => ({
-        ...current,
-        meta_ads: createMetaProviderConnectionState(false),
-      }));
+      setProviderConnection("meta_ads", {
+        status: "disconnected",
+        connected: false,
+        integrationId: "",
+        assetCount: 0,
+        loading: false,
+        isActionInFlight: false,
+        lastUserAction: "disconnect",
+        lastActionAt: Date.now(),
+        error: "",
+      });
     } catch (error) {
       console.error("integration library meta ads disconnect error:", error);
       setConnectError("We couldn’t disconnect Meta Ads right now. Please try again.");
+      completeProviderAction("meta_ads", {
+        error: "We couldn’t disconnect Meta Ads right now. Please try again.",
+      });
     } finally {
       setDisconnectingIntegrationKey(null);
     }
@@ -1442,7 +1600,9 @@ export function IntegrationLibrary({
                   provider: providerKey,
                   status: providerConnection.status,
                   connected: providerConnection.connected,
-                  loading: providerConnection.loading,
+                  loading:
+                    providerConnection.loading ||
+                    providerConnection.isActionInFlight,
                   assetCount: providerConnection.assetCount,
                   lastSyncedAt: providerConnection.lastSyncedAt,
                 })
