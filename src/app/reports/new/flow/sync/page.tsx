@@ -13,9 +13,7 @@ import { MobileFlowHeader } from "@/components/reports/flow/MobileFlowHeader";
 import { ApiError, isLimitError } from "@/lib/api";
 import {
   fetchMetaAdsAccounts,
-  fetchMetaAdsStatus,
-  fetchIntegrationsConnectionStatus,
-  fetchInstagramBusinessStatus,
+  fetchMetaBusinessSuiteStatus,
   fetchMetaInstagramAccounts,
   fetchMetaPages,
   refreshMetaPages,
@@ -424,35 +422,38 @@ function NewReportFlowSyncPageContent() {
         const requiresFacebookPages = selectedSources.includes("facebook_pages");
         const requiresInstagramBusiness =
           selectedSources.includes("instagram_business");
-        const [connectionStatus, instagramBusinessStatus, metaAdsStatus] =
-          await Promise.all([
-            requiresFacebookPages ? fetchIntegrationsConnectionStatus() : null,
-            requiresInstagramBusiness
-              ? fetchInstagramBusinessStatus(workspaceId || undefined)
-              : null,
-            requiresMetaAds ? fetchMetaAdsStatus(workspaceId || undefined) : null,
-          ]);
+        const suiteStatus = await fetchMetaBusinessSuiteStatus({
+          workspaceId: workspaceId || undefined,
+          refresh: false,
+        });
 
         if (!active) {
           return;
         }
 
-        const facebookPagesProvider =
-          connectionStatus?.providers.facebook_pages || null;
+        const facebookPagesProvider = suiteStatus.children.facebook_pages;
+        const instagramBusinessProvider =
+          suiteStatus.children.instagram_business;
+        const metaAdsProvider = suiteStatus.children.meta_ads;
         const facebookPagesIntegrationId =
-          facebookPagesProvider?.integrationId ||
-          connectionStatus?.facebookPagesIntegrationId ||
-          connectionStatus?.integrationId ||
-          "";
+          facebookPagesProvider.integrationId || suiteStatus.integrationId || "";
+        const instagramBusinessIntegrationId =
+          instagramBusinessProvider.integrationId || suiteStatus.integrationId || "";
+        const metaAdsIntegrationId =
+          metaAdsProvider.integrationId || suiteStatus.integrationId || "";
         const facebookPagesMissing =
           requiresFacebookPages &&
-          (!facebookPagesProvider?.connected || !facebookPagesIntegrationId);
+          (!suiteStatus.connected ||
+            !facebookPagesProvider.connected ||
+            !facebookPagesIntegrationId);
         const instagramBusinessMissing =
           requiresInstagramBusiness &&
-          (!instagramBusinessStatus?.connected ||
-            !instagramBusinessStatus.integrationId);
+          (!suiteStatus.connected ||
+            !instagramBusinessProvider.connected ||
+            !instagramBusinessIntegrationId);
         const metaAdsMissing =
-          requiresMetaAds && (!metaAdsStatus?.connected || !metaAdsStatus.integrationId);
+          requiresMetaAds &&
+          (!suiteStatus.connected || !metaAdsProvider.connected || !metaAdsIntegrationId);
 
         if (facebookPagesMissing || instagramBusinessMissing || metaAdsMissing) {
           clearMetaIntegrationSessionState();
@@ -489,9 +490,9 @@ function NewReportFlowSyncPageContent() {
         const firstSource = selectedSources[0];
         const firstIntegrationId =
           firstSource === "meta_ads"
-            ? metaAdsStatus?.integrationId || ""
+            ? metaAdsIntegrationId
             : firstSource === "instagram_business"
-              ? instagramBusinessStatus?.integrationId || ""
+              ? instagramBusinessIntegrationId
               : facebookPagesIntegrationId;
         setSelectedAccountsBySource((current) => ({
           ...current,
@@ -504,13 +505,13 @@ function NewReportFlowSyncPageContent() {
           instagram_business: {
             ...current.instagram_business,
             integrationId: requiresInstagramBusiness
-              ? instagramBusinessStatus?.integrationId || ""
+              ? instagramBusinessIntegrationId
               : current.instagram_business.integrationId,
           },
           meta_ads: {
             ...current.meta_ads,
             integrationId: requiresMetaAds
-              ? metaAdsStatus?.integrationId || ""
+              ? metaAdsIntegrationId
               : current.meta_ads.integrationId,
           },
         }));

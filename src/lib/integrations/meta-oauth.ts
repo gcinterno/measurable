@@ -19,11 +19,15 @@ export type MetaOAuthSource =
   | "instagram_business"
   | "meta_ads";
 
-export type IntegrationOAuthCompleteProvider = MetaOAuthSource;
+export type IntegrationOAuthCompleteProvider =
+  | MetaOAuthSource
+  | "meta_business_suite";
 
 export type IntegrationOAuthCompleteMessage = {
   type: typeof INTEGRATION_OAUTH_COMPLETE_MESSAGE_TYPE;
   provider?: IntegrationOAuthCompleteProvider;
+  source?: string;
+  integration_type?: string;
   status?: string;
   integrationId?: string;
   workspaceId?: string;
@@ -86,7 +90,7 @@ type PendingMetaOAuth = {
 export type MetaOAuthWindowMessage =
   | {
       type: typeof META_OAUTH_CONNECT_SUCCESS;
-      provider?: "meta" | "meta_ads" | "instagram_business";
+      provider?: "meta" | "meta_ads" | "instagram_business" | "meta_business_suite";
       source?: string;
       integration_type?: string;
       integrationId?: string;
@@ -101,7 +105,7 @@ export type MetaOAuthWindowMessage =
     }
   | {
       type: typeof META_OAUTH_CONNECT_ERROR;
-      provider?: "meta" | "meta_ads" | "instagram_business";
+      provider?: "meta" | "meta_ads" | "instagram_business" | "meta_business_suite";
       source?: string;
       integration_type?: string;
       message: string;
@@ -555,7 +559,8 @@ export function isMetaOAuthWindowMessage(
   return (
     (provider === "meta" ||
       provider === "meta_ads" ||
-      provider === "instagram_business") &&
+      provider === "instagram_business" ||
+      provider === "meta_business_suite") &&
     (candidate.type === META_OAUTH_CONNECT_SUCCESS ||
       candidate.type === META_OAUTH_CONNECT_ERROR)
   );
@@ -585,18 +590,23 @@ export function isIntegrationOAuthCompleteMessage(
   const candidate = data as {
     type?: string;
     provider?: string;
+    source?: string;
+    integration_type?: string;
     status?: string;
     integrationId?: string;
     workspaceId?: string;
     message?: string;
     error?: string;
   };
+  const provider =
+    candidate.provider || candidate.source || candidate.integration_type;
 
   return (
     candidate.type === INTEGRATION_OAUTH_COMPLETE_MESSAGE_TYPE &&
-    (candidate.provider === "facebook_pages" ||
-      candidate.provider === "instagram_business" ||
-      candidate.provider === "meta_ads")
+    (provider === "facebook_pages" ||
+      provider === "instagram_business" ||
+      provider === "meta_ads" ||
+      provider === "meta_business_suite")
   );
 }
 

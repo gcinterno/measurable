@@ -166,6 +166,10 @@ export type MetaProviderUiStatus = {
   loading: boolean;
 };
 
+export type MetaBusinessSuiteUiStatus = Omit<MetaProviderUiStatus, "provider"> & {
+  provider: "meta_business_suite";
+};
+
 export type MetaProviderConnectionStatus = {
   provider: MetaProviderKey;
   status: string;
@@ -176,6 +180,19 @@ export type MetaProviderConnectionStatus = {
   missingScopes: string[];
   lastSyncedAt: string;
   message: string;
+};
+
+export type MetaBusinessSuiteConnectionStatus = {
+  provider: "meta_business_suite";
+  status: string;
+  connected: boolean;
+  integrationId: string;
+  assetCount: number;
+  tokenScopes: string[];
+  missingScopes: string[];
+  lastSyncedAt: string;
+  message: string;
+  children: Record<MetaProviderKey, MetaProviderConnectionStatus>;
 };
 
 type IntegrationsStatusResult = {
@@ -360,6 +377,33 @@ export function normalizeMetaProviderStatus(input: {
     helperText: getMetaProviderAvailableHelper(input.provider),
     selectable: false,
     loading: false,
+  };
+}
+
+export function normalizeMetaBusinessSuiteStatus(input: {
+  status?: string | null;
+  connected?: boolean | null;
+  loading?: boolean;
+  assetCount?: number;
+  lastSyncedAt?: string | null;
+}): MetaBusinessSuiteUiStatus {
+  const normalized = normalizeMetaProviderStatus({
+    provider: "facebook_pages",
+    status: input.status,
+    connected: input.connected,
+    loading: input.loading,
+    assetCount: input.assetCount,
+    lastSyncedAt: input.lastSyncedAt,
+  });
+
+  return {
+    ...normalized,
+    provider: "meta_business_suite",
+    helperText:
+      normalized.status === "connected_no_assets" ||
+      normalized.status === "needs_permission"
+        ? normalized.helperText
+        : "",
   };
 }
 
@@ -1095,6 +1139,76 @@ function extractMetaConnectionStatus(payload: unknown): IntegrationsStatusResult
   };
 }
 
+function extractMetaBusinessSuiteStatus(payload: unknown): MetaBusinessSuiteConnectionStatus {
+  const record = isRecord(payload) ? payload : {};
+  const data = isRecord(record.data) ? record.data : record;
+  const providers = createEmptyMetaProviderConnectionStatuses();
+  const children = isRecord(data.children)
+    ? data.children
+    : isRecord(record.children)
+      ? record.children
+      : {};
+  const tokenScopes = [
+    ...getScopesFromRecord(record),
+    ...getScopesFromRecord(data),
+  ];
+  const missingScopes = [
+    ...normalizeScopeList(record.missing_scopes),
+    ...normalizeScopeList(record.missingScopes),
+    ...normalizeScopeList(data.missing_scopes),
+    ...normalizeScopeList(data.missingScopes),
+  ];
+  const status = normalizeMetaProviderStatusValue(
+    getRecordStatus(data) || getRecordStatus(record)
+  );
+
+  META_PROVIDER_KEYS.forEach((provider) => {
+    const childRecord = isRecord(children[provider])
+      ? children[provider]
+      : isRecord(data[provider])
+        ? data[provider]
+        : isRecord(record[provider])
+          ? record[provider]
+          : {};
+
+    providers[provider] = mergeMetaProviderConnectionStatus(
+      providers[provider],
+      {
+        provider,
+        ...childRecord,
+      }
+    );
+  });
+
+  const connected = normalizeMetaProviderStatus({
+    provider: "facebook_pages",
+    status,
+    connected:
+      getExplicitConnected(data) ||
+      getExplicitConnected(record) ||
+      Object.values(providers).some((providerStatus) => providerStatus.connected),
+  }).connected;
+
+  return {
+    provider: "meta_business_suite",
+    status,
+    connected,
+    integrationId: getRecordIntegrationId(data) || getRecordIntegrationId(record),
+    assetCount:
+      getProviderAssetCount(data) ||
+      getProviderAssetCount(record) ||
+      Object.values(providers).reduce(
+        (total, providerStatus) => total + providerStatus.assetCount,
+        0
+      ),
+    tokenScopes: tokenScopes.length > 0 ? Array.from(new Set(tokenScopes)) : [],
+    missingScopes: missingScopes.length > 0 ? Array.from(new Set(missingScopes)) : [],
+    lastSyncedAt: getRecordLastSyncedAt(data) || getRecordLastSyncedAt(record),
+    message: getRecordMessage(data) || getRecordMessage(record),
+    children: providers,
+  };
+}
+
 export async function connectMetaIntegration(input?: {
   workspaceId?: string | null;
   source?: string | null;
@@ -1269,6 +1383,81 @@ export async function fetchIntegrationsConnectionStatus(input?: {
   const payload = text ? (JSON.parse(text) as unknown) : null;
 
   return extractMetaConnectionStatus(payload);
+}
+
+export async function fetchMetaBusinessSuiteStatus(input?: {
+  workspaceId?: string | null;
+  refresh?: boolean;
+  cacheBust?: number | string | null;
+}) {
+  const activeWorkspaceId = await getRequiredWorkspaceId(input?.workspaceId);
+  const searchParams = new URLSearchParams({
+    workspace_id: activeWorkspaceId,
+    refresh: input?.refresh === true ? "true" : "false",
+  });
+
+  if (input?.cacheBust) {
+    searchParams.set("_", String(input.cacheBust));
+  }
+
+  const endpoint = `/integrations/meta-business-suite/status?${searchParams.toString()}`;
+  const res = await fetch(apiUrl(endpoint), {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+    credentials: "include",
+  });
+  const text = await readApiResponseText(endpoint, res);
+  const payload = text ? parseJsonText(text) : null;
+
+  return extractMetaBusinessSuiteStatus(payload);
+}
+
+export async function connectMetaBusinessSuiteIntegration(input?: {
+  workspaceId?: string | null;
+  reconnect?: boolean;
+}) {
+  const activeWorkspaceId = await getRequiredWorkspaceId(input?.workspaceId);
+  const searchParams = new URLSearchParams({
+    workspace_id: activeWorkspaceId,
+    reconnect: input?.reconnect === false ? "false" : "true",
+  });
+  const endpoint = `/integrations/meta-business-suite/connect?${searchParams.toString()}`;
+  const res = await fetch(apiUrl(endpoint), {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+    credentials: "include",
+  });
+  const text = await readApiResponseText(endpoint, res);
+
+  return getRedirectUrl(text);
+}
+
+export async function disconnectMetaBusinessSuiteIntegration(input?: {
+  workspaceId?: string | null;
+}) {
+  const activeWorkspaceId = await getRequiredWorkspaceId(input?.workspaceId);
+  const searchParams = new URLSearchParams({
+    workspace_id: activeWorkspaceId,
+  });
+  const endpoint = `/integrations/meta-business-suite/disconnect?${searchParams.toString()}`;
+  const res = await fetch(apiUrl(endpoint), {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+    credentials: "include",
+  });
+  const text = await readApiResponseText(endpoint, res);
+  const payload = text ? parseJsonText(text) : null;
+  const record = isRecord(payload) ? payload : {};
+
+  return {
+    ok: res.ok,
+    message:
+      getRecordMessage(record) ||
+      "Meta Business Suite disconnected successfully.",
+  };
 }
 
 export async function connectMetaAdsIntegration(input?: {
