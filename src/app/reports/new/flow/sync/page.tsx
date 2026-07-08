@@ -15,6 +15,7 @@ import {
   fetchMetaAdsAccounts,
   fetchMetaAdsStatus,
   fetchIntegrationsConnectionStatus,
+  fetchInstagramBusinessStatus,
   fetchMetaInstagramAccounts,
   fetchMetaPages,
   refreshMetaPages,
@@ -419,24 +420,41 @@ function NewReportFlowSyncPageContent() {
       }
 
       try {
-        const connectionStatus = await fetchIntegrationsConnectionStatus();
         const requiresMetaAds = selectedSources.includes("meta_ads");
-        const requiresOrganic = selectedSources.some((sourceKey) => sourceKey !== "meta_ads");
-        const metaAdsStatus = requiresMetaAds
-          ? await fetchMetaAdsStatus(workspaceId || undefined)
-          : null;
+        const requiresFacebookPages = selectedSources.includes("facebook_pages");
+        const requiresInstagramBusiness =
+          selectedSources.includes("instagram_business");
+        const [connectionStatus, instagramBusinessStatus, metaAdsStatus] =
+          await Promise.all([
+            requiresFacebookPages ? fetchIntegrationsConnectionStatus() : null,
+            requiresInstagramBusiness
+              ? fetchInstagramBusinessStatus(workspaceId || undefined)
+              : null,
+            requiresMetaAds ? fetchMetaAdsStatus(workspaceId || undefined) : null,
+          ]);
 
         if (!active) {
           return;
         }
 
-        const organicMissing =
-          requiresOrganic &&
-          (!connectionStatus.metaConnected || !connectionStatus.integrationId);
+        const facebookPagesProvider =
+          connectionStatus?.providers.facebook_pages || null;
+        const facebookPagesIntegrationId =
+          facebookPagesProvider?.integrationId ||
+          connectionStatus?.facebookPagesIntegrationId ||
+          connectionStatus?.integrationId ||
+          "";
+        const facebookPagesMissing =
+          requiresFacebookPages &&
+          (!facebookPagesProvider?.connected || !facebookPagesIntegrationId);
+        const instagramBusinessMissing =
+          requiresInstagramBusiness &&
+          (!instagramBusinessStatus?.connected ||
+            !instagramBusinessStatus.integrationId);
         const metaAdsMissing =
           requiresMetaAds && (!metaAdsStatus?.connected || !metaAdsStatus.integrationId);
 
-        if (organicMissing || metaAdsMissing) {
+        if (facebookPagesMissing || instagramBusinessMissing || metaAdsMissing) {
           clearMetaIntegrationSessionState();
           setMetaDisconnected(true);
           setResolvedIntegrationId("");
@@ -468,10 +486,36 @@ function NewReportFlowSyncPageContent() {
         hasLoadedRef.current = false;
         setLoading(true);
         setError("");
-        setResolvedIntegrationId(
-          selectedSources[0] === "meta_ads"
+        const firstSource = selectedSources[0];
+        const firstIntegrationId =
+          firstSource === "meta_ads"
             ? metaAdsStatus?.integrationId || ""
-            : connectionStatus.integrationId
+            : firstSource === "instagram_business"
+              ? instagramBusinessStatus?.integrationId || ""
+              : facebookPagesIntegrationId;
+        setSelectedAccountsBySource((current) => ({
+          ...current,
+          facebook_pages: {
+            ...current.facebook_pages,
+            integrationId: requiresFacebookPages
+              ? facebookPagesIntegrationId
+              : current.facebook_pages.integrationId,
+          },
+          instagram_business: {
+            ...current.instagram_business,
+            integrationId: requiresInstagramBusiness
+              ? instagramBusinessStatus?.integrationId || ""
+              : current.instagram_business.integrationId,
+          },
+          meta_ads: {
+            ...current.meta_ads,
+            integrationId: requiresMetaAds
+              ? metaAdsStatus?.integrationId || ""
+              : current.meta_ads.integrationId,
+          },
+        }));
+        setResolvedIntegrationId(
+          firstIntegrationId
         );
       } catch (connectionError) {
         if (!active) {
@@ -572,15 +616,23 @@ function NewReportFlowSyncPageContent() {
 
       const responses = await Promise.all(
         sourceKeys.map(async (selectedSource) => {
+          const sourceIntegrationId =
+            selectedAccountsBySource[selectedSource]?.integrationId ||
+            resolvedIntegrationId;
+
+          if (!sourceIntegrationId) {
+            throw new Error(messages.reports.missingIntegration);
+          }
+
           const accountData =
             selectedSource === "meta_ads"
               ? await fetchMetaAdsAccounts({
-                  integrationId: resolvedIntegrationId,
+                  integrationId: sourceIntegrationId,
                   workspaceId: workspaceId || undefined,
                 })
               : selectedSource === "instagram_business"
-              ? await fetchMetaInstagramAccounts(resolvedIntegrationId)
-              : await fetchMetaPages(resolvedIntegrationId);
+              ? await fetchMetaInstagramAccounts(sourceIntegrationId)
+              : await fetchMetaPages(sourceIntegrationId);
 
           return [selectedSource, accountData] as const;
         })
@@ -649,6 +701,7 @@ function NewReportFlowSyncPageContent() {
     messages.reports.loadPagesError,
     messages.reports.missingIntegration,
     resolvedIntegrationId,
+    selectedAccountsBySource,
     selectedSources,
     workspaceId,
   ]);

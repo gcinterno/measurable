@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { useI18n } from "@/components/providers/LanguageProvider";
@@ -16,9 +16,13 @@ import {
   fetchMetaAdsAccounts,
   fetchMetaAdsStatus,
   fetchIntegrationsConnectionStatus,
+  fetchInstagramBusinessStatus,
   fetchMetaInstagramAccounts,
   fetchMetaPages,
+  isMetaProviderAvailableStatus,
+  normalizeMetaProviderStatus,
   validateMetaAuthUrl,
+  type MetaProviderUiStatus,
 } from "@/lib/api/integrations";
 import {
   clearPendingMetaOAuth,
@@ -27,17 +31,19 @@ import {
   clearMetaOAuthDebugUrl,
   hasMetaConnectPrerequisites,
   getMetaOAuthFriendlyErrorMessage,
-  getMetaAdsStatusMessage,
+  isIntegrationOAuthCompleteMessage,
   isMetaOAuthWindowMessage,
   markMetaRedirectStarted,
+  META_OAUTH_POPUP_CLOSE_GRACE_MS,
+  META_OAUTH_POPUP_FEATURES,
   normalizeMetaAuthUrl,
-  openMetaOAuthPopup,
   showMetaOAuthReadyBanner,
   storeMetaOAuthDebugUrl,
 } from "@/lib/integrations/meta-oauth";
 import {
   isMetaOrganicFrontendIntegrationKey,
   isMetaFrontendIntegrationKey,
+  META_REPORT_SOURCE_KEYS,
   type IntegrationCatalogItem,
   type MetaFrontendIntegrationKey,
 } from "@/lib/integrations/catalog";
@@ -62,10 +68,65 @@ type IntegrationLibraryProps = {
   mode?: "report-flow" | "management";
 };
 
-type MetaFlowState =
-  | "not_connected"
-  | "checking"
-  | "connected";
+type MetaProviderConnectionState = {
+  status: string;
+  connected: boolean;
+  integrationId: string;
+  assetCount: number;
+  loading: boolean;
+  lastSyncedAt: string;
+  missingScopes: string[];
+};
+
+const META_PROVIDER_POPUP_STATUS_POLL_MS = 30000;
+
+function createMetaProviderConnectionState(
+  loading = false
+): MetaProviderConnectionState {
+  return {
+    status: "",
+    connected: false,
+    integrationId: "",
+    assetCount: 0,
+    loading,
+    lastSyncedAt: "",
+    missingScopes: [],
+  };
+}
+
+function createMetaProviderConnectionStateMap(loading = false) {
+  return {
+    facebook_pages: createMetaProviderConnectionState(loading),
+    instagram_business: createMetaProviderConnectionState(loading),
+    meta_ads: createMetaProviderConnectionState(loading),
+  } satisfies Record<MetaFrontendIntegrationKey, MetaProviderConnectionState>;
+}
+
+function resolveOAuthMessageProvider(message: {
+  provider?: string;
+  source?: string;
+  integration_type?: string;
+}) {
+  const candidates = [
+    message.provider,
+    message.source,
+    message.integration_type,
+  ].map((value) => (value || "").trim().toLowerCase());
+
+  if (candidates.includes("instagram_business")) {
+    return "instagram_business" as const;
+  }
+
+  if (candidates.includes("meta_ads")) {
+    return "meta_ads" as const;
+  }
+
+  return "facebook_pages" as const;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 function getMetaDescriptionSuffix(
   integrationKey: MetaFrontendIntegrationKey,
@@ -86,7 +147,7 @@ function getMetaDescriptionSuffix(
 }
 
 function getBadgeClasses(
-  status: IntegrationCatalogItem["status"] | "Checking"
+  status: IntegrationCatalogItem["status"] | MetaProviderUiStatus["badge"]
 ) {
   switch (status) {
     case "Connected":
@@ -95,6 +156,8 @@ function getBadgeClasses(
       return "bg-slate-100 text-slate-600 ring-1 ring-slate-200";
     case "Available":
       return "bg-sky-50 text-sky-700 ring-1 ring-sky-100";
+    case "Needs permission":
+      return "bg-amber-50 text-amber-800 ring-1 ring-amber-100";
     case "Coming soon":
     default:
       return "bg-slate-100 text-slate-600 ring-1 ring-slate-200";
@@ -208,11 +271,13 @@ export function IntegrationLibrary({
   const [connectingIntegrationKey, setConnectingIntegrationKey] = useState<string | null>(null);
   const [disconnectingIntegrationKey, setDisconnectingIntegrationKey] = useState<string | null>(null);
   const [connectError, setConnectError] = useState("");
-  const [metaFlowState, setMetaFlowState] = useState<MetaFlowState>(
-    embedded && mode === "report-flow" ? "checking" : "not_connected"
-  );
-  const [metaAdsFlowState, setMetaAdsFlowState] = useState<MetaFlowState>(
-    embedded && mode === "report-flow" ? "checking" : "not_connected"
+  const [providerConnections, setProviderConnections] = useState<
+    Record<MetaFrontendIntegrationKey, MetaProviderConnectionState>
+  >(
+    () =>
+      createMetaProviderConnectionStateMap(
+        embedded && mode === "report-flow"
+      )
   );
   const [metaCounts, setMetaCounts] = useState<Record<MetaFrontendIntegrationKey, number>>({
     facebook_pages: 0,
@@ -234,6 +299,7 @@ export function IntegrationLibrary({
   );
   const activeWorkspaceId = workspace?.id || null;
   const connectInFlightRef = useRef(false);
+  const popupCallbackReceivedRef = useRef(false);
   const popupPollRef = useRef<number | null>(null);
   const popupTimeoutRef = useRef<number | null>(null);
   const maxSources = 2;
@@ -250,78 +316,192 @@ export function IntegrationLibrary({
     }
   }, []);
 
-  const refreshMetaState = useCallback(async () => {
-    if (!embedded) {
-      return false;
-    }
+  const setProviderConnection = useCallback(
+    (
+      provider: MetaFrontendIntegrationKey,
+      nextConnection: Partial<MetaProviderConnectionState>
+    ) => {
+      setProviderConnections((current) => ({
+        ...current,
+        [provider]: {
+          ...current[provider],
+          ...nextConnection,
+        },
+      }));
+    },
+    []
+  );
 
-    let resolvedIntegrationId = metaIntegrationId;
+  const refreshProviderState = useCallback(
+    async (provider: MetaFrontendIntegrationKey, cacheBust?: number) => {
+      const emptyUiStatus = normalizeMetaProviderStatus({
+        provider,
+      });
 
-    if (!resolvedIntegrationId) {
-      const connectionStatus = await fetchIntegrationsConnectionStatus();
-
-      if (!connectionStatus.metaConnected || !connectionStatus.integrationId) {
-        clearMetaIntegrationSessionState();
-        setCurrentSelectedSources([]);
-        setMetaIntegrationId("");
-        setMetaCounts({
-          facebook_pages: 0,
-          instagram_business: 0,
-          meta_ads: 0,
-        });
-        setMetaFlowState("not_connected");
-        return false;
+      if (!embedded) {
+        return emptyUiStatus;
       }
 
-      resolvedIntegrationId = connectionStatus.integrationId;
-      setMetaIntegrationId(connectionStatus.integrationId);
-    }
+      setProviderConnection(provider, { loading: true });
 
-    const [pages, instagramAccounts] = await Promise.all([
-      fetchMetaPages(resolvedIntegrationId, activeWorkspaceId),
-      fetchMetaInstagramAccounts(resolvedIntegrationId, activeWorkspaceId),
-    ]);
+      try {
+        if (provider === "facebook_pages") {
+          const connectionStatus = await fetchIntegrationsConnectionStatus({
+            cacheBust,
+          });
+          const providerStatus = connectionStatus.providers.facebook_pages;
+          const integrationId =
+            providerStatus.integrationId ||
+            connectionStatus.facebookPagesIntegrationId ||
+            connectionStatus.integrationId;
+          let assetCount =
+            providerStatus.assetCount ||
+            connectionStatus.facebookPagesAssetCount ||
+            0;
+          const baseUiStatus = normalizeMetaProviderStatus({
+            provider,
+            status: providerStatus.status || connectionStatus.facebookPagesStatus,
+            connected:
+              providerStatus.connected ||
+              connectionStatus.facebookPagesConnected ||
+              connectionStatus.metaConnected,
+            assetCount,
+            lastSyncedAt: providerStatus.lastSyncedAt,
+          });
 
-    setMetaCounts({
-      facebook_pages: pages.length,
-      instagram_business: instagramAccounts.length,
-      meta_ads: metaCounts.meta_ads,
-    });
-    setMetaFlowState("connected");
+          if (baseUiStatus.connected && integrationId) {
+            try {
+              const pages = await fetchMetaPages(integrationId, activeWorkspaceId);
+              assetCount = pages.length;
+            } catch (error) {
+              console.error("facebook pages report-flow catalog load error:", error);
+            }
+          }
 
-    return true;
-  }, [activeWorkspaceId, embedded, metaCounts.meta_ads, metaIntegrationId]);
+          const uiStatus = normalizeMetaProviderStatus({
+            provider,
+            status: providerStatus.status || connectionStatus.facebookPagesStatus,
+            connected: baseUiStatus.connected,
+            assetCount,
+            lastSyncedAt: providerStatus.lastSyncedAt,
+          });
 
-  const refreshMetaAdsState = useCallback(async () => {
-    if (!embedded) {
-      return false;
-    }
+          setProviderConnection(provider, {
+            status: uiStatus.status,
+            connected: uiStatus.connected,
+            integrationId,
+            assetCount,
+            loading: false,
+            lastSyncedAt: providerStatus.lastSyncedAt,
+            missingScopes: providerStatus.missingScopes,
+          });
+          setMetaIntegrationId(integrationId);
+          setMetaCounts((current) => ({
+            ...current,
+            facebook_pages: assetCount,
+          }));
 
-    const status = await fetchMetaAdsStatus(activeWorkspaceId);
+          return uiStatus;
+        }
 
-    if (!status.connected || !status.integrationId) {
-      setMetaAdsIntegrationId("");
-      setMetaCounts((current) => ({
-        ...current,
-        meta_ads: 0,
-      }));
-      setMetaAdsFlowState("not_connected");
-      return false;
-    }
+        if (provider === "instagram_business") {
+          const status = await fetchInstagramBusinessStatus({
+            workspaceId: activeWorkspaceId,
+            cacheBust,
+          });
+          let assetCount = status.assetCount || 0;
 
-    const accounts = await fetchMetaAdsAccounts({
-      integrationId: status.integrationId,
-      workspaceId: activeWorkspaceId,
-    });
+          if (status.connected && status.integrationId) {
+            try {
+              const accounts = await fetchMetaInstagramAccounts(
+                status.integrationId,
+                activeWorkspaceId
+              );
+              assetCount = accounts.length;
+            } catch (error) {
+              console.error("instagram business report-flow catalog load error:", error);
+            }
+          }
 
-    setMetaAdsIntegrationId(status.integrationId);
-    setMetaCounts((current) => ({
-      ...current,
-      meta_ads: accounts.length,
-    }));
-    setMetaAdsFlowState("connected");
-    return true;
-  }, [activeWorkspaceId, embedded]);
+          const uiStatus = normalizeMetaProviderStatus({
+            provider,
+            status: status.status,
+            connected: status.connected,
+            assetCount,
+            lastSyncedAt: status.lastSyncedAt,
+          });
+
+          setProviderConnection(provider, {
+            status: uiStatus.status,
+            connected: uiStatus.connected,
+            integrationId: status.integrationId,
+            assetCount,
+            loading: false,
+            lastSyncedAt: status.lastSyncedAt,
+            missingScopes: status.missingScopes,
+          });
+          setMetaCounts((current) => ({
+            ...current,
+            instagram_business: assetCount,
+          }));
+
+          return uiStatus;
+        }
+
+        const status = await fetchMetaAdsStatus({
+          workspaceId: activeWorkspaceId,
+          cacheBust,
+        });
+        let assetCount = 0;
+
+        if (status.connected && status.integrationId) {
+          try {
+            const accounts = await fetchMetaAdsAccounts({
+              integrationId: status.integrationId,
+              workspaceId: activeWorkspaceId,
+            });
+            assetCount = accounts.length;
+          } catch (error) {
+            console.error("meta ads report-flow catalog load error:", error);
+          }
+        }
+
+        const uiStatus = normalizeMetaProviderStatus({
+          provider,
+          status: status.status,
+          connected: status.connected,
+          assetCount,
+          lastSyncedAt: status.lastSyncedAt,
+        });
+
+        setProviderConnection(provider, {
+          status: uiStatus.status,
+          connected: uiStatus.connected,
+          integrationId: status.integrationId,
+          assetCount,
+          loading: false,
+          lastSyncedAt: status.lastSyncedAt,
+          missingScopes: status.missingScopes,
+        });
+        setMetaAdsIntegrationId(status.integrationId);
+        setMetaCounts((current) => ({
+          ...current,
+          meta_ads: assetCount,
+        }));
+
+        return uiStatus;
+      } catch (error) {
+        setProviderConnection(provider, {
+          loading: false,
+          connected: false,
+          status: "",
+          assetCount: 0,
+        });
+        throw error;
+      }
+    },
+    [activeWorkspaceId, embedded, setProviderConnection]
+  );
 
   useEffect(() => {
     setCurrentSelectedSources(selectedIntegrationKeys.filter(isMetaFrontendIntegrationKey));
@@ -364,111 +544,91 @@ export function IntegrationLibrary({
   useEffect(() => {
     let active = true;
 
-    async function loadMetaState() {
+    async function loadProviderStates() {
       if (!embedded) {
         return;
       }
 
       try {
-        setMetaFlowState("checking");
-        let resolvedIntegrationId = metaIntegrationId;
-
-        if (!resolvedIntegrationId) {
-          const connectionStatus = await fetchIntegrationsConnectionStatus();
-
-          if (!active) {
-            return;
-          }
-
-          if (connectionStatus.metaConnected && connectionStatus.integrationId) {
-            resolvedIntegrationId = connectionStatus.integrationId;
-            setMetaIntegrationId(connectionStatus.integrationId);
-          } else {
-            clearMetaIntegrationSessionState();
-            setCurrentSelectedSources([]);
-            setMetaIntegrationId("");
-            setMetaCounts({
-              facebook_pages: 0,
-              instagram_business: 0,
-              meta_ads: 0,
-            });
-            setMetaFlowState("not_connected");
-            return;
-          }
+        await Promise.all(
+          META_REPORT_SOURCE_KEYS.map((provider) => refreshProviderState(provider))
+        );
+      } catch (error) {
+        if (!active) {
+          return;
         }
 
-        const [pages, instagramAccounts] = await Promise.all([
-          fetchMetaPages(resolvedIntegrationId, activeWorkspaceId),
-          fetchMetaInstagramAccounts(resolvedIntegrationId, activeWorkspaceId),
-        ]);
+        console.error("meta provider flow status load error:", error);
+      }
+    }
 
-        if (active) {
-          setMetaCounts({
-            facebook_pages: pages.length,
-            instagram_business: instagramAccounts.length,
-            meta_ads: metaCounts.meta_ads,
+    void loadProviderStates();
+
+    return () => {
+      active = false;
+    };
+  }, [embedded, refreshProviderState]);
+
+  const handleOAuthCompleteMessage = useCallback(
+    async (message: {
+      provider?: string;
+      source?: string;
+      integration_type?: string;
+      status?: string;
+      message?: string;
+      error?: string;
+      missingScopes?: string[];
+      missing_scopes?: string[];
+      integrationId?: string;
+    }) => {
+      const provider = resolveOAuthMessageProvider(message);
+
+      popupCallbackReceivedRef.current = true;
+      stopPopupPolling();
+      clearPendingMetaOAuth();
+      connectInFlightRef.current = false;
+      setConnectingIntegrationKey(null);
+      setConnectError("");
+
+      if (message.integrationId) {
+        if (provider === "meta_ads") {
+          setMetaAdsIntegrationId(message.integrationId);
+        } else {
+          setMetaIntegrationId(message.integrationId);
+        }
+      }
+
+      try {
+        const uiStatus = await refreshProviderState(provider, Date.now());
+
+        if (uiStatus.connected) {
+          void trackMetaEvent("MetaConnected", {
+            source: provider,
+            surface: "report_flow",
           });
-          setMetaFlowState("connected");
+          setConnectError("");
+          return;
+        }
+
+        if (uiStatus.status === "needs_permission") {
+          setConnectError(uiStatus.helperText);
+          return;
+        }
+
+        if (message.status === "error" || message.error) {
+          setConnectError(
+            message.error ||
+              message.message ||
+              "We couldn’t complete the Meta connection."
+          );
         }
       } catch (error) {
-        if (!active) {
-          return;
-        }
-
-        console.error("meta flow status load error:", error);
-        setMetaCounts({
-          facebook_pages: 0,
-          instagram_business: 0,
-          meta_ads: 0,
-        });
-        setMetaIntegrationId("");
-        setMetaFlowState("not_connected");
+        console.error("integration library popup refresh error:", error);
+        setConnectError("The connection finished, but we couldn’t refresh the status.");
       }
-    }
-
-    void loadMetaState();
-
-    return () => {
-      active = false;
-    };
-  }, [activeWorkspaceId, embedded, metaCounts.meta_ads, metaIntegrationId]);
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadMetaAdsState() {
-      if (!embedded) {
-        return;
-      }
-
-      try {
-        setMetaAdsFlowState("checking");
-        const connected = await refreshMetaAdsState();
-
-        if (!active || connected) {
-          return;
-        }
-      } catch (error) {
-        if (!active) {
-          return;
-        }
-
-        console.error("meta ads flow status load error:", error);
-        setMetaCounts((current) => ({
-          ...current,
-          meta_ads: 0,
-        }));
-        setMetaAdsIntegrationId("");
-        setMetaAdsFlowState("not_connected");
-      }
-    }
-
-    void loadMetaAdsState();
-
-    return () => {
-      active = false;
-    };
-  }, [embedded, refreshMetaAdsState]);
+    },
+    [refreshProviderState, stopPopupPolling]
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -476,92 +636,38 @@ export function IntegrationLibrary({
     }
 
     async function handleMetaWindowMessage(event: MessageEvent) {
-      if (event.origin !== window.location.origin || !isMetaOAuthWindowMessage(event.data)) {
+      if (event.origin !== window.location.origin) {
         return;
       }
 
-      if (event.data.provider === "meta_ads") {
-        stopPopupPolling();
-        clearPendingMetaOAuth();
-        connectInFlightRef.current = false;
-        setConnectingIntegrationKey(null);
-
-        if (event.data.type === "MEASURABLE_META_CONNECT_SUCCESS") {
-          setConnectError("");
-          try {
-            const connected = await refreshMetaAdsState();
-            if (connected) {
-              void trackMetaEvent("MetaConnected", {
-                source: "meta_ads",
-                surface: "report_flow",
-              });
-            } else {
-              const status = await fetchMetaAdsStatus(activeWorkspaceId);
-              const fallbackStatus =
-                status.connected && status.integrationId && status.status === "connected"
-                  ? "connected_no_assets"
-                  : status.status;
-              setConnectError(
-                getMetaAdsStatusMessage({
-                  status: fallbackStatus,
-                  missingScopes: status.missingScopes,
-                }) ||
-                  "The connection finished, but we couldn’t confirm the Meta Ads status."
-              );
-            }
-          } catch (error) {
-            console.error("integration library meta ads popup refresh error:", error);
-            setConnectError("The connection finished, but we couldn’t refresh the Meta Ads status.");
-          }
-
-          return;
-        }
-
-        setConnectError(
-          getMetaAdsStatusMessage({
-            status: event.data.status,
-            message: event.data.message,
-            missingScopes: event.data.missingScopes,
-          }) || event.data.message || "We couldn’t complete the Meta Ads connection."
-        );
-
+      if (isIntegrationOAuthCompleteMessage(event.data)) {
+        await handleOAuthCompleteMessage(event.data);
         return;
       }
 
-      stopPopupPolling();
-      clearPendingMetaOAuth();
-      connectInFlightRef.current = false;
-      setConnectingIntegrationKey(null);
-
-      if (event.data.type === "MEASURABLE_META_CONNECT_SUCCESS") {
-        setConnectError("");
-
-        if (connectingIntegrationKey === "meta_ads" && event.data.integrationId) {
-          setMetaAdsIntegrationId(event.data.integrationId);
-        } else if (event.data.integrationId) {
-          setMetaIntegrationId(event.data.integrationId);
-        }
-
-        try {
-          const connected =
-            connectingIntegrationKey === "meta_ads"
-              ? await refreshMetaAdsState()
-              : await refreshMetaState();
-          if (connected) {
-            void trackMetaEvent("MetaConnected", {
-              source: connectingIntegrationKey || "meta",
-              surface: "report_flow",
-            });
-          }
-        } catch (error) {
-          console.error("integration library popup refresh error:", error);
-          setConnectError("The connection finished, but we couldn’t refresh the status.");
-        }
-
+      if (!isMetaOAuthWindowMessage(event.data)) {
         return;
       }
 
-      setConnectError(event.data.message || "We couldn’t complete the Meta connection.");
+      await handleOAuthCompleteMessage({
+        provider: resolveOAuthMessageProvider(event.data),
+        source: event.data.source,
+        integration_type: event.data.integration_type,
+        status:
+          event.data.status ||
+          (event.data.type === "MEASURABLE_META_CONNECT_SUCCESS"
+            ? "connected"
+            : "error"),
+        integrationId:
+          "integrationId" in event.data ? event.data.integrationId : undefined,
+        message: event.data.message,
+        error:
+          event.data.type === "MEASURABLE_META_CONNECT_ERROR"
+            ? event.data.message
+            : undefined,
+        missingScopes: event.data.missingScopes,
+        missing_scopes: event.data.missing_scopes,
+      });
     }
 
     window.addEventListener("message", handleMetaWindowMessage);
@@ -570,36 +676,38 @@ export function IntegrationLibrary({
       stopPopupPolling();
       window.removeEventListener("message", handleMetaWindowMessage);
     };
-  }, [
-    activeWorkspaceId,
-    connectingIntegrationKey,
-    refreshMetaAdsState,
-    refreshMetaState,
-    stopPopupPolling,
-  ]);
+  }, [handleOAuthCompleteMessage, stopPopupPolling]);
 
-  const metaUi = useMemo(() => {
-    switch (metaFlowState) {
-      case "connected":
-        return {
-          badge: "Connected" as const,
-        };
-      case "checking":
-        return {
-          badge: "Checking" as const,
-        };
-      case "not_connected":
-      default:
-        return {
-          badge: "Available" as const,
-        };
-    }
-  }, [metaFlowState]);
+  const pollProviderStatusAfterPopup = useCallback(
+    async (provider: MetaFrontendIntegrationKey, cacheBustBase = Date.now()) => {
+      const deadline = Date.now() + META_PROVIDER_POPUP_STATUS_POLL_MS;
+      let attempt = 0;
+      let lastUiStatus = normalizeMetaProviderStatus({
+        provider,
+        ...providerConnections[provider],
+      });
+
+      while (Date.now() < deadline && !popupCallbackReceivedRef.current) {
+        lastUiStatus = await refreshProviderState(provider, cacheBustBase + attempt);
+
+        if (lastUiStatus.connected || lastUiStatus.status === "needs_permission") {
+          return lastUiStatus;
+        }
+
+        attempt += 1;
+        await delay(1000);
+      }
+
+      return lastUiStatus;
+    },
+    [providerConnections, refreshProviderState]
+  );
 
   async function handleDirectConnect(integration: IntegrationCatalogItem) {
     if (!isMetaFrontendIntegrationKey(integration.integrationKey)) {
       return;
     }
+    const provider = integration.integrationKey;
 
     if (connectInFlightRef.current) {
       console.warn("META_CONNECT_DUPLICATE_IGNORED", {
@@ -610,9 +718,11 @@ export function IntegrationLibrary({
     }
 
     let popupStarted = false;
+    let popup: Window | null = null;
 
     try {
       connectInFlightRef.current = true;
+      popupCallbackReceivedRef.current = false;
       setConnectingIntegrationKey(integration.integrationKey);
       setConnectError("");
       clearMetaOAuthDebugUrl();
@@ -657,6 +767,20 @@ export function IntegrationLibrary({
       }
 
       clearStoredMetaIntegrationState();
+
+      if (typeof window === "undefined") {
+        throw new Error("We could not open the connection window. Please try again.");
+      }
+
+      popup = window.open(
+        "about:blank",
+        `measurable_${integration.integrationKey}_oauth`,
+        META_OAUTH_POPUP_FEATURES
+      );
+
+      if (!popup) {
+        throw new Error("Popup blocked. Please allow popups and try again.");
+      }
 
       console.info("META_CONNECT_START", {
         workspace_id: contextWorkspaceId,
@@ -768,86 +892,52 @@ export function IntegrationLibrary({
       storeMetaOAuthDebugUrl(authUrl);
       await showMetaOAuthReadyBanner();
 
-      if (typeof window !== "undefined") {
-        markMetaRedirectStarted();
-        const popup = openMetaOAuthPopup(authUrl);
+      if (popup.closed) {
+        throw new Error("The connection window was closed before authorization was completed.");
+      }
 
-        if (!popup) {
-          console.info("META_ADS_CONNECT_FAILED", {
-            route: "IntegrationLibrary",
-            workspace_id: contextWorkspaceId,
-            reason: "popup_blocked",
-          });
-          throw new Error("Popup blocked. Please allow popups and try again.");
+      markMetaRedirectStarted();
+      popup.location.href = authUrl;
+      popupStarted = true;
+      stopPopupPolling();
+      popupTimeoutRef.current = window.setTimeout(() => {
+        setConnectError(
+          "This is taking longer than expected. Finish the Meta flow in the popup and we’ll update the connection automatically."
+        );
+      }, 90000);
+      popupPollRef.current = window.setInterval(() => {
+        if (!popup || !popup.closed) {
+          return;
         }
 
-        popupStarted = true;
         stopPopupPolling();
-        popupTimeoutRef.current = window.setTimeout(() => {
-          connectInFlightRef.current = false;
-          setConnectingIntegrationKey(null);
-          setConnectError(
-            "If you finished connecting, you can now close the Meta tab."
-          );
-        }, 90000);
-        popupPollRef.current = window.setInterval(async () => {
-          if (!popup.closed) {
+        window.setTimeout(async () => {
+          if (popupCallbackReceivedRef.current) {
             return;
           }
 
-          stopPopupPolling();
           clearPendingMetaOAuth();
           connectInFlightRef.current = false;
           setConnectingIntegrationKey(null);
 
           try {
-            if (integration.integrationKey === "meta_ads") {
-              const status = await fetchMetaAdsStatus(activeWorkspaceId);
+            const uiStatus = await pollProviderStatusAfterPopup(provider);
 
-              if (status.connected && status.integrationId) {
-                const accounts = await fetchMetaAdsAccounts({
-                  integrationId: status.integrationId,
-                  workspaceId: activeWorkspaceId,
-                });
-                setMetaAdsIntegrationId(status.integrationId);
-                setMetaCounts((current) => ({
-                  ...current,
-                  meta_ads: accounts.length,
-                }));
-                setMetaAdsFlowState(accounts.length > 0 ? "connected" : "not_connected");
-
-                if (accounts.length > 0) {
-                  void trackMetaEvent("MetaConnected", {
-                    source: "meta_ads",
-                    surface: "report_flow",
-                  });
-                  setConnectError("");
-                  return;
-                }
-              }
-
-              const fallbackStatus =
-                status.connected && status.integrationId && status.status === "connected"
-                  ? "connected_no_assets"
-                  : status.status;
-              const statusMessage = getMetaAdsStatusMessage({
-                status: fallbackStatus,
-                missingScopes: status.missingScopes,
+            if (uiStatus.connected) {
+              void trackMetaEvent("MetaConnected", {
+                source: provider,
+                surface: "report_flow",
               });
-
-              setConnectError(
-                statusMessage ||
-                  "The connection window was closed before authorization was completed."
-              );
+              setConnectError("");
               return;
             }
 
-            const connectedAfterClose = await refreshMetaState();
-            if (connectedAfterClose) {
-              void trackMetaEvent("MetaConnected", {
-                source: integration.integrationKey,
-                surface: "report_flow",
-              });
+            if (uiStatus.status === "needs_permission") {
+              setConnectError(uiStatus.helperText);
+              return;
+            }
+
+            if (!isMetaProviderAvailableStatus(uiStatus.status)) {
               setConnectError("");
               return;
             }
@@ -855,11 +945,20 @@ export function IntegrationLibrary({
             console.error("integration library popup closed refresh error:", error);
           }
 
-          setConnectError("The connection window was closed before authorization was completed.");
-        }, 2500);
-      }
+          setConnectError(
+            "The connection window was closed before authorization was completed."
+          );
+        }, META_OAUTH_POPUP_CLOSE_GRACE_MS);
+      }, 500);
     } catch (error) {
       console.error("direct integration connect error:", error);
+      if (!popupStarted) {
+        try {
+          popup?.close();
+        } catch {
+          // Ignore popup close failures.
+        }
+      }
       if (integration.integrationKey === "instagram_business") {
         console.info("INSTAGRAM_BUSINESS_CONNECT_FAILED", {
           route: "IntegrationLibrary",
@@ -897,6 +996,13 @@ export function IntegrationLibrary({
     }
   }
 
+  const getIntegrationIdForProvider = useCallback(
+    (provider: MetaFrontendIntegrationKey) =>
+      providerConnections[provider].integrationId ||
+      (provider === "meta_ads" ? metaAdsIntegrationId : metaIntegrationId),
+    [metaAdsIntegrationId, metaIntegrationId, providerConnections]
+  );
+
   function handleMetaSelect(integrationKey: MetaFrontendIntegrationKey) {
     const nextContext = getIntegrationReportContext();
     const existingSelectedSources = currentSelectedSources;
@@ -928,7 +1034,7 @@ export function IntegrationLibrary({
       selectedAccountsBySource[integrationKey] = {
         ...selectedAccountsBySource[integrationKey],
         integrationId:
-          (integrationKey === "meta_ads" ? metaAdsIntegrationId : metaIntegrationId) ||
+          getIntegrationIdForProvider(integrationKey) ||
           selectedAccountsBySource[integrationKey].integrationId,
       };
     } else {
@@ -943,8 +1049,7 @@ export function IntegrationLibrary({
       buildNextSelectedContext({
         currentContext: nextContext,
         workspaceId: activeWorkspaceId || nextContext?.workspaceId || "",
-        integrationId:
-          integrationKey === "meta_ads" ? metaAdsIntegrationId : metaIntegrationId,
+        integrationId: getIntegrationIdForProvider(integrationKey),
         selectedSources: nextSelectedSources,
         selectedAccountsBySource,
       })
@@ -966,10 +1071,9 @@ export function IntegrationLibrary({
       buildNextSelectedContext({
         currentContext: nextContext,
         workspaceId: activeWorkspaceId || nextContext?.workspaceId || "",
-        integrationId:
-          currentSelectedSources[0] === "meta_ads"
-            ? metaAdsIntegrationId
-            : metaIntegrationId,
+        integrationId: currentSelectedSources[0]
+          ? getIntegrationIdForProvider(currentSelectedSources[0])
+          : "",
         selectedSources: currentSelectedSources,
         selectedAccountsBySource,
       })
@@ -998,12 +1102,16 @@ export function IntegrationLibrary({
       clearMetaIntegrationSessionState();
       setCurrentSelectedSources([]);
       setMetaIntegrationId("");
-      setMetaCounts({
+      setMetaCounts((current) => ({
+        ...current,
         facebook_pages: 0,
         instagram_business: 0,
-        meta_ads: 0,
-      });
-      setMetaFlowState("not_connected");
+      }));
+      setProviderConnections((current) => ({
+        ...current,
+        facebook_pages: createMetaProviderConnectionState(false),
+        instagram_business: createMetaProviderConnectionState(false),
+      }));
       const nextParams = new URLSearchParams(searchParams.toString());
       nextParams.delete("resume");
       router.replace(`/reports/new/flow${nextParams.toString() ? `?${nextParams.toString()}` : ""}`);
@@ -1044,7 +1152,10 @@ export function IntegrationLibrary({
         ...current,
         meta_ads: 0,
       }));
-      setMetaAdsFlowState("not_connected");
+      setProviderConnections((current) => ({
+        ...current,
+        meta_ads: createMetaProviderConnectionState(false),
+      }));
     } catch (error) {
       console.error("integration library meta ads disconnect error:", error);
       setConnectError("We couldn’t disconnect Meta Ads right now. Please try again.");
@@ -1058,6 +1169,7 @@ export function IntegrationLibrary({
     isOrganicMeta: boolean;
     isMetaAds: boolean;
     isMetaConnected: boolean;
+    providerUiStatus?: MetaProviderUiStatus;
     isConnected: boolean;
     isConnecting: boolean;
     isSelected: boolean;
@@ -1068,6 +1180,7 @@ export function IntegrationLibrary({
       isOrganicMeta,
       isMetaAds,
       isMetaConnected,
+      providerUiStatus,
       isConnected,
       isConnecting,
       isSelected,
@@ -1087,7 +1200,7 @@ export function IntegrationLibrary({
         );
       }
 
-      if ((isOrganicMeta && metaFlowState === "checking") || (isMetaAds && metaAdsFlowState === "checking")) {
+      if ((isOrganicMeta || isMetaAds) && providerUiStatus?.loading) {
         return (
           <button
             type="button"
@@ -1131,7 +1244,7 @@ export function IntegrationLibrary({
           >
             {isConnecting
               ? messages.integrationsPage.connecting
-              : messages.common.connect}
+              : providerUiStatus?.actionLabel || messages.common.connect}
           </button>
         );
       }
@@ -1181,8 +1294,9 @@ export function IntegrationLibrary({
     }
 
       if (
-        (isOrganicMeta && embedded && metaFlowState === "checking") ||
-        (isMetaAds && embedded && metaAdsFlowState === "checking")
+        (isOrganicMeta || isMetaAds) &&
+        embedded &&
+        providerUiStatus?.loading
       ) {
         return (
           <button
@@ -1222,8 +1336,8 @@ export function IntegrationLibrary({
 
     if (
       embedded &&
-      ((isOrganicMeta && metaFlowState === "not_connected") ||
-        (isMetaAds && metaAdsFlowState === "not_connected"))
+      (isOrganicMeta || isMetaAds) &&
+      !isMetaConnected
     ) {
       return (
         <button
@@ -1237,7 +1351,7 @@ export function IntegrationLibrary({
         >
           {isConnecting
             ? messages.integrationsPage.connecting
-            : messages.common.connect}
+            : providerUiStatus?.actionLabel || messages.common.connect}
         </button>
       );
     }
@@ -1316,26 +1430,32 @@ export function IntegrationLibrary({
           );
           const connected = integration.integrationKey === connectedIntegrationKey;
           const isMeta = isMetaFrontendIntegrationKey(integration.integrationKey);
+          const providerKey = isMeta
+            ? (integration.integrationKey as MetaFrontendIntegrationKey)
+            : null;
+          const providerConnection = providerKey
+            ? providerConnections[providerKey]
+            : null;
+          const providerUiStatus =
+            providerKey && embedded && providerConnection
+              ? normalizeMetaProviderStatus({
+                  provider: providerKey,
+                  status: providerConnection.status,
+                  connected: providerConnection.connected,
+                  loading: providerConnection.loading,
+                  assetCount: providerConnection.assetCount,
+                  lastSyncedAt: providerConnection.lastSyncedAt,
+                })
+              : null;
           const isOrganicMeta = isMetaOrganicFrontendIntegrationKey(
             integration.integrationKey
           );
           const isMetaAds = integration.integrationKey === "meta_ads";
-          const metaConnected =
-            (isOrganicMeta && metaFlowState === "connected") ||
-            (isMetaAds && metaAdsFlowState === "connected");
+          const metaConnected = Boolean(providerUiStatus?.connected);
           const blockedComingSoon =
             !isMeta && integration.status !== "Connected";
           const isConnecting = connectingIntegrationKey === integration.integrationKey;
-          const badgeLabel =
-            isOrganicMeta && embedded
-              ? metaUi.badge
-              : isMetaAds && embedded
-                ? metaAdsFlowState === "connected"
-                  ? "Connected"
-                  : metaAdsFlowState === "checking"
-                    ? "Checking"
-                    : "Available"
-                : integration.status;
+          const badgeLabel = providerUiStatus?.badge || integration.status;
           const titleBadge =
             isMeta && embedded
               ? badgeLabel
@@ -1343,7 +1463,10 @@ export function IntegrationLibrary({
                 ? messages.common.selected
                 : badgeLabel;
           const metaDescriptionSuffix =
-            isMeta && embedded && metaConnected
+            isMeta &&
+            embedded &&
+            metaConnected &&
+            (providerConnection?.assetCount || 0) > 0
               ? getMetaDescriptionSuffix(
                   integration.integrationKey as MetaFrontendIntegrationKey,
                   metaCounts
@@ -1353,7 +1476,7 @@ export function IntegrationLibrary({
             isReportFlowMode &&
             isMeta &&
             embedded &&
-            metaConnected &&
+            providerUiStatus?.selectable &&
             !blockedComingSoon;
 
           return (
@@ -1400,6 +1523,13 @@ export function IntegrationLibrary({
                 {integration.description}
                 {metaDescriptionSuffix}
               </p>
+              {providerUiStatus?.helperText &&
+              (providerUiStatus.status === "connected_no_assets" ||
+                providerUiStatus.status === "needs_permission") ? (
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  {providerUiStatus.helperText}
+                </p>
+              ) : null}
 
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 {renderCardActions({
@@ -1407,6 +1537,7 @@ export function IntegrationLibrary({
                   isOrganicMeta,
                   isMetaAds,
                   isMetaConnected: metaConnected,
+                  providerUiStatus: providerUiStatus || undefined,
                   isConnected: connected,
                   isConnecting,
                   isSelected: selected,

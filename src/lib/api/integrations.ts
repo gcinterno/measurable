@@ -151,13 +151,49 @@ type MetaSyncAllResult = {
   sources: Record<"facebook_pages" | "instagram_business", MetaSyncAllSourceResult | null>;
 };
 
+export type MetaProviderKey = "facebook_pages" | "instagram_business" | "meta_ads";
+
+export type MetaProviderBadge = "Available" | "Connected" | "Needs permission" | "Checking";
+
+export type MetaProviderUiStatus = {
+  provider: MetaProviderKey;
+  status: string;
+  connected: boolean;
+  badge: MetaProviderBadge;
+  actionLabel: "Connect" | "Reconnect" | "Disconnect";
+  helperText: string;
+  selectable: boolean;
+  loading: boolean;
+};
+
+export type MetaProviderConnectionStatus = {
+  provider: MetaProviderKey;
+  status: string;
+  connected: boolean;
+  integrationId: string;
+  assetCount: number;
+  tokenScopes: string[];
+  missingScopes: string[];
+  lastSyncedAt: string;
+  message: string;
+};
+
 type IntegrationsStatusResult = {
   metaConnected: boolean;
   integrationId: string;
+  facebookPagesConnected: boolean;
+  facebookPagesIntegrationId: string;
+  facebookPagesStatus: string;
+  facebookPagesAssetCount: number;
   instagramBusinessConnected: boolean;
   instagramBusinessIntegrationId: string;
+  instagramBusinessStatus: string;
+  instagramBusinessAssetCount: number;
   metaAdsConnected: boolean;
   metaAdsIntegrationId: string;
+  metaAdsStatus: string;
+  metaAdsAssetCount: number;
+  providers: Record<MetaProviderKey, MetaProviderConnectionStatus>;
   tokenScopes?: string[];
 };
 
@@ -166,6 +202,12 @@ type MetaAuthUrlValidationResult = {
   startsWithExpectedDomain: boolean;
   containsExpectedOAuthPath: boolean;
 };
+
+const META_PROVIDER_KEYS = [
+  "facebook_pages",
+  "instagram_business",
+  "meta_ads",
+] as const satisfies readonly MetaProviderKey[];
 
 const CONNECTED_INTEGRATION_STATUSES = new Set([
   "connected",
@@ -180,21 +222,145 @@ const CONNECTED_INTEGRATION_STATUSES = new Set([
   "needs_business_or_creator_account",
 ]);
 
+const CANONICAL_CONNECTED_STATUSES = new Set(["connected", "connected_no_assets"]);
+const CANONICAL_AVAILABLE_STATUSES = new Set(["", "available", "no_token", "disconnected"]);
+
 export function isIntegrationConnectedStatus(status?: string | null) {
   return CONNECTED_INTEGRATION_STATUSES.has((status || "").trim().toLowerCase());
 }
 
-function resolveIntegrationConnected(
-  status: string | null | undefined,
-  explicitConnected: boolean
-) {
-  const normalizedStatus = (status || "").trim().toLowerCase();
+export function normalizeMetaProviderStatusValue(status?: string | null) {
+  const normalized = (status || "").trim().toLowerCase();
 
-  if (normalizedStatus) {
-    return isIntegrationConnectedStatus(normalizedStatus);
+  if (
+    normalized === "connected_no_assets_found" ||
+    normalized === "connected_no_assets_available" ||
+    normalized === "connected_empty" ||
+    normalized === "connected_no_ad_accounts" ||
+    normalized === "connected_no_instagram_accounts" ||
+    normalized === "no_authorized_assets"
+  ) {
+    return "connected_no_assets";
   }
 
-  return explicitConnected;
+  return normalized;
+}
+
+export function isMetaProviderConnectedStatus(status?: string | null) {
+  return CANONICAL_CONNECTED_STATUSES.has(normalizeMetaProviderStatusValue(status));
+}
+
+export function isMetaProviderAvailableStatus(status?: string | null) {
+  return CANONICAL_AVAILABLE_STATUSES.has(normalizeMetaProviderStatusValue(status));
+}
+
+function getMetaProviderAvailableHelper(provider: MetaProviderKey) {
+  if (provider === "instagram_business") {
+    return "Connect Instagram Business accounts linked to your Facebook Pages.";
+  }
+
+  if (provider === "meta_ads") {
+    return "Connect ad accounts to generate paid media performance reports.";
+  }
+
+  return "Connect Facebook Pages to generate organic visibility, engagement, page views, and audience reports.";
+}
+
+function getMetaProviderAssetLabel(provider: MetaProviderKey) {
+  if (provider === "instagram_business") {
+    return "Instagram account";
+  }
+
+  if (provider === "meta_ads") {
+    return "ad account";
+  }
+
+  return "page";
+}
+
+export function normalizeMetaProviderStatus(input: {
+  provider: MetaProviderKey;
+  status?: string | null;
+  connected?: boolean | null;
+  loading?: boolean;
+  assetCount?: number;
+  lastSyncedAt?: string | null;
+}): MetaProviderUiStatus {
+  const status = normalizeMetaProviderStatusValue(input.status);
+  const connected =
+    isMetaProviderConnectedStatus(status) ||
+    (!status && input.connected === true);
+  const loading =
+    input.loading === true &&
+    !status &&
+    input.connected !== true;
+  const assetCount =
+    typeof input.assetCount === "number" && Number.isFinite(input.assetCount)
+      ? input.assetCount
+      : 0;
+
+  if (loading) {
+    return {
+      provider: input.provider,
+      status,
+      connected: false,
+      badge: "Checking",
+      actionLabel: "Connect",
+      helperText: "",
+      selectable: false,
+      loading: true,
+    };
+  }
+
+  if (status === "needs_permission") {
+    return {
+      provider: input.provider,
+      status,
+      connected: false,
+      badge: "Needs permission",
+      actionLabel: "Reconnect",
+      helperText: "Reconnect and approve the required permissions.",
+      selectable: false,
+      loading: false,
+    };
+  }
+
+  if (connected) {
+    const helperText =
+      status === "connected_no_assets"
+        ? "Connected, but no assets were found."
+        : assetCount > 0
+          ? `${assetCount} ${getMetaProviderAssetLabel(input.provider)}${
+              assetCount === 1 ? "" : "s"
+            } ready.${
+              input.lastSyncedAt
+                ? ` Last synced ${new Date(input.lastSyncedAt).toLocaleString()}.`
+                : ""
+            }`
+          : "";
+
+    return {
+      provider: input.provider,
+      status,
+      connected: true,
+      badge: "Connected",
+      actionLabel: "Disconnect",
+      helperText,
+      selectable: true,
+      loading: false,
+    };
+  }
+
+  return {
+    provider: input.provider,
+    status,
+    connected: false,
+    badge: "Available",
+    actionLabel: "Connect",
+    helperText: getMetaProviderAvailableHelper(input.provider),
+    selectable: false,
+    loading: false,
+  };
 }
 
 function getAuthHeaders() {
@@ -498,12 +664,12 @@ function getRecordStatus(record: Record<string, unknown>) {
   return "";
 }
 
-function getRecordConnected(record: Record<string, unknown>) {
-  return resolveIntegrationConnected(getRecordStatus(record), Boolean(
+function getExplicitConnected(record: Record<string, unknown>) {
+  return Boolean(
     record.connected === true ||
       record.is_connected === true ||
       record.isConnected === true
-  ));
+  );
 }
 
 function getRecordIntegrationId(record: Record<string, unknown>) {
@@ -609,6 +775,178 @@ function getNumberFromRecord(
   return 0;
 }
 
+function createEmptyMetaProviderConnectionStatus(
+  provider: MetaProviderKey
+): MetaProviderConnectionStatus {
+  return {
+    provider,
+    status: "",
+    connected: false,
+    integrationId: "",
+    assetCount: 0,
+    tokenScopes: [],
+    missingScopes: [],
+    lastSyncedAt: "",
+    message: "",
+  };
+}
+
+function createEmptyMetaProviderConnectionStatuses() {
+  return {
+    facebook_pages: createEmptyMetaProviderConnectionStatus("facebook_pages"),
+    instagram_business: createEmptyMetaProviderConnectionStatus("instagram_business"),
+    meta_ads: createEmptyMetaProviderConnectionStatus("meta_ads"),
+  } satisfies Record<MetaProviderKey, MetaProviderConnectionStatus>;
+}
+
+function normalizeProviderKey(value: string) {
+  return value.trim().toLowerCase().replace(/[-\s]+/g, "_");
+}
+
+function getMetaProviderKeyFromValue(value: unknown): MetaProviderKey | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = normalizeProviderKey(value);
+
+  if (normalized === "facebook" || normalized === "facebook_page") {
+    return "facebook_pages";
+  }
+
+  if (normalized === "instagram" || normalized === "instagram_business_account") {
+    return "instagram_business";
+  }
+
+  if (normalized === "meta_ad" || normalized === "meta_ads_account") {
+    return "meta_ads";
+  }
+
+  return META_PROVIDER_KEYS.includes(normalized as MetaProviderKey)
+    ? (normalized as MetaProviderKey)
+    : null;
+}
+
+function getRecordProviderKey(record: Record<string, unknown>) {
+  const candidate =
+    record.provider ??
+    record.source ??
+    record.integration_type ??
+    record.integrationType ??
+    record.integration_key ??
+    record.integrationKey ??
+    record.key ??
+    record.slug;
+
+  return getMetaProviderKeyFromValue(candidate);
+}
+
+function inferRecordProviderKey(record: Record<string, unknown>) {
+  const directProvider = getRecordProviderKey(record);
+
+  if (directProvider) {
+    return directProvider;
+  }
+
+  const haystack = getRecordString(record);
+  const providerMatches = META_PROVIDER_KEYS.filter((provider) => {
+    if (provider === "facebook_pages") {
+      return (
+        haystack.includes("facebook_pages") ||
+        haystack.includes("facebook pages") ||
+        haystack.includes("facebook-pages") ||
+        haystack.includes("facebook page")
+      );
+    }
+
+    if (provider === "instagram_business") {
+      return (
+        haystack.includes("instagram_business") ||
+        haystack.includes("instagram business") ||
+        haystack.includes("instagram-business")
+      );
+    }
+
+    return (
+      haystack.includes("meta_ads") ||
+      haystack.includes("meta ads") ||
+      haystack.includes("meta-ads") ||
+      haystack.includes("ad account") ||
+      haystack.includes("ads insights") ||
+      haystack.includes("marketing api")
+    );
+  });
+
+  return providerMatches.length === 1 ? providerMatches[0] : null;
+}
+
+function getProviderAssetCount(record: Record<string, unknown>) {
+  return getNumberFromRecord(record, [
+    "asset_count",
+    "assetCount",
+    "page_count",
+    "pageCount",
+    "pages_count",
+    "pagesCount",
+    "account_count",
+    "accountCount",
+    "accounts_count",
+    "accountsCount",
+    "ad_accounts_count",
+    "adAccountsCount",
+    "instagram_accounts_count",
+    "instagramAccountsCount",
+    "authorized_accounts_count",
+    "authorizedAccountsCount",
+    "authorized_pages_count",
+    "authorizedPagesCount",
+    "pages",
+    "accounts",
+    "items",
+  ]);
+}
+
+function getRecordLastSyncedAt(record: Record<string, unknown>) {
+  return typeof record.last_synced_at === "string"
+    ? record.last_synced_at
+    : typeof record.lastSyncedAt === "string"
+      ? record.lastSyncedAt
+      : "";
+}
+
+function mergeMetaProviderConnectionStatus(
+  current: MetaProviderConnectionStatus,
+  record: Record<string, unknown>
+): MetaProviderConnectionStatus {
+  const status = normalizeMetaProviderStatusValue(getRecordStatus(record)) || current.status;
+  const tokenScopes = [
+    ...current.tokenScopes,
+    ...getScopesFromRecord(record),
+  ];
+  const missingScopes = [
+    ...current.missingScopes,
+    ...normalizeScopeList(record.missing_scopes),
+    ...normalizeScopeList(record.missingScopes),
+  ];
+  const connected = normalizeMetaProviderStatus({
+    provider: current.provider,
+    status,
+    connected: getExplicitConnected(record) || current.connected,
+  }).connected;
+
+  return {
+    ...current,
+    status,
+    connected,
+    integrationId: current.integrationId || getRecordIntegrationId(record),
+    assetCount: getProviderAssetCount(record) || current.assetCount,
+    tokenScopes: tokenScopes.length > 0 ? Array.from(new Set(tokenScopes)) : [],
+    missingScopes: missingScopes.length > 0 ? Array.from(new Set(missingScopes)) : [],
+    lastSyncedAt: current.lastSyncedAt || getRecordLastSyncedAt(record),
+    message: current.message || getRecordMessage(record),
+  };
+}
+
 function getNestedSourcePayload(
   payload: unknown,
   aliases: string[]
@@ -685,20 +1023,20 @@ function extractSyncAllSourceResult(
 }
 
 function extractMetaConnectionStatus(payload: unknown): IntegrationsStatusResult {
-  const queue: unknown[] = [payload];
-  let metaConnected = false;
-  let integrationId = "";
-  let instagramBusinessConnected = false;
-  let instagramBusinessIntegrationId = "";
-  let metaAdsConnected = false;
-  let metaAdsIntegrationId = "";
+  const queue: Array<{ value: unknown; providerHint?: MetaProviderKey }> = [
+    { value: payload },
+  ];
+  const providers = createEmptyMetaProviderConnectionStatuses();
   const tokenScopes = new Set<string>();
 
   while (queue.length > 0) {
-    const current = queue.shift();
+    const currentItem = queue.shift();
+    const current = currentItem?.value;
 
     if (Array.isArray(current)) {
-      queue.push(...current);
+      current.forEach((item) => {
+        queue.push({ value: item, providerHint: currentItem?.providerHint });
+      });
       continue;
     }
 
@@ -706,62 +1044,53 @@ function extractMetaConnectionStatus(payload: unknown): IntegrationsStatusResult
       continue;
     }
 
-    const haystack = getRecordString(current);
-    const mentionsMeta =
-      haystack.includes("meta") ||
-      haystack.includes("facebook") ||
-      haystack.includes("facebook_pages");
-    const mentionsInstagramBusiness =
-      haystack.includes("instagram_business") ||
-      haystack.includes("instagram business") ||
-      haystack.includes("instagram-business");
-    const mentionsMetaAds =
-      haystack.includes("meta ads") ||
-      haystack.includes("meta_ads") ||
-      haystack.includes("ad account") ||
-      haystack.includes("ads insights") ||
-      haystack.includes("marketing api");
+    const provider = currentItem?.providerHint || inferRecordProviderKey(current);
 
-    if (mentionsMeta && getRecordConnected(current)) {
-      metaConnected = true;
-
-      if (!integrationId) {
-        integrationId = getRecordIntegrationId(current);
-      }
-    }
-
-    if (mentionsInstagramBusiness && getRecordConnected(current)) {
-      instagramBusinessConnected = true;
-
-      if (!instagramBusinessIntegrationId) {
-        instagramBusinessIntegrationId = getRecordIntegrationId(current);
-      }
-    }
-
-    if (mentionsMetaAds && getRecordConnected(current)) {
-      metaAdsConnected = true;
-
-      if (!metaAdsIntegrationId) {
-        metaAdsIntegrationId = getRecordIntegrationId(current);
-      }
+    if (provider) {
+      providers[provider] = mergeMetaProviderConnectionStatus(
+        providers[provider],
+        current
+      );
     }
 
     getScopesFromRecord(current).forEach((scope) => tokenScopes.add(scope));
 
-    Object.values(current).forEach((value) => {
+    Object.entries(current).forEach(([key, value]) => {
+      const providerHint =
+        getMetaProviderKeyFromValue(key) || currentItem?.providerHint;
+
       if (Array.isArray(value) || isRecord(value)) {
-        queue.push(value);
+        queue.push({ value, providerHint: providerHint || undefined });
       }
     });
   }
 
+  const facebookPages = providers.facebook_pages;
+  const instagramBusiness = providers.instagram_business;
+  const metaAds = providers.meta_ads;
+  const metaConnected = facebookPages.connected;
+  const integrationId = facebookPages.integrationId;
+  const instagramBusinessConnected = instagramBusiness.connected;
+  const instagramBusinessIntegrationId = instagramBusiness.integrationId;
+  const metaAdsConnected = metaAds.connected;
+  const metaAdsIntegrationId = metaAds.integrationId;
+
   return {
     metaConnected,
     integrationId,
+    facebookPagesConnected: facebookPages.connected,
+    facebookPagesIntegrationId: facebookPages.integrationId,
+    facebookPagesStatus: facebookPages.status,
+    facebookPagesAssetCount: facebookPages.assetCount,
     instagramBusinessConnected,
     instagramBusinessIntegrationId,
+    instagramBusinessStatus: instagramBusiness.status,
+    instagramBusinessAssetCount: instagramBusiness.assetCount,
     metaAdsConnected,
     metaAdsIntegrationId,
+    metaAdsStatus: metaAds.status,
+    metaAdsAssetCount: metaAds.assetCount,
+    providers,
     tokenScopes: Array.from(tokenScopes),
   };
 }
@@ -1006,13 +1335,15 @@ export async function fetchMetaAdsStatus(
   const rawStatus =
     getRecordStatus(record) || getRecordStatus(data) || "";
   const status = rawStatus || "";
-  const connected = resolveIntegrationConnected(
+  const connected = normalizeMetaProviderStatus({
+    provider: "meta_ads",
     status,
-    Boolean(record.connected) ||
+    connected:
+      Boolean(record.connected) ||
       Boolean(record.is_connected) ||
       Boolean(data.connected) ||
-      Boolean(data.is_connected)
-  );
+      Boolean(data.is_connected),
+  }).connected;
 
   return {
     connected,
@@ -1122,13 +1453,15 @@ export async function fetchInstagramBusinessStatus(
             : "";
 
   return {
-    connected: resolveIntegrationConnected(
+    connected: normalizeMetaProviderStatus({
+      provider: "instagram_business",
       status,
-      Boolean(record.connected) ||
-      Boolean(record.is_connected) ||
-      Boolean(data.connected) ||
-      Boolean(data.is_connected)
-    ),
+      connected:
+        Boolean(record.connected) ||
+        Boolean(record.is_connected) ||
+        Boolean(data.connected) ||
+        Boolean(data.is_connected),
+    }).connected,
     integrationId: getRecordIntegrationId(record) || getRecordIntegrationId(data),
     tokenScopes: tokenScopes.length > 0 ? Array.from(new Set(tokenScopes)) : [],
     status,
