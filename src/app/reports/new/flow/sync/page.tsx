@@ -291,11 +291,14 @@ async function getPendingDiscoverySources(
     const childStatus = suiteStatus.children[sourceKey];
     const discoveryStatus =
       childStatus.discoveryStatus || suiteStatus.discoveryStatus;
+    const hasKnownAssetsWithoutList =
+      childStatus.assetCount > 0 && childStatus.entities.length === 0;
 
     if (
       childStatus.connected &&
-      childStatus.assetCount === 0 &&
-      !isMetaAssetDiscoveryComplete(discoveryStatus)
+      ((childStatus.assetCount === 0 &&
+        !isMetaAssetDiscoveryComplete(discoveryStatus)) ||
+        hasKnownAssetsWithoutList)
     ) {
       pendingSources.add(sourceKey);
     }
@@ -475,10 +478,13 @@ function NewReportFlowSyncPageContent() {
       const discoveryStatus =
         instagramStatus.discoveryStatus || suiteStatus.discoveryStatus;
       const accounts = instagramStatus.entities;
+      const hasKnownAssetsWithoutList =
+        instagramStatus.assetCount > 0 && accounts.length === 0;
       const discoveryPending =
         instagramStatus.connected &&
         accounts.length === 0 &&
-        !isMetaAssetDiscoveryComplete(discoveryStatus);
+        (!isMetaAssetDiscoveryComplete(discoveryStatus) ||
+          hasKnownAssetsWithoutList);
 
       if (accounts.length > 0 || !discoveryPending) {
         return {

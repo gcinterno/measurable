@@ -618,68 +618,149 @@ export function validateMetaAuthUrl(
   }
 }
 
-function normalizePages(response: unknown) {
+const META_ENTITY_ARRAY_KEYS = [
+  "pages",
+  "accounts",
+  "instagram_accounts",
+  "instagramAccounts",
+  "instagram_business_accounts",
+  "instagramBusinessAccounts",
+  "items",
+  "entities",
+  "assets",
+  "records",
+  "results",
+  "connected_instagram_accounts",
+  "connectedInstagramAccounts",
+  "linked_instagram_accounts",
+  "linkedInstagramAccounts",
+  "authorized_accounts",
+  "authorizedAccounts",
+] as const;
+
+function getMetaEntityArray(response: unknown) {
   const payload = isRecord(response) ? response : {};
   const data = isRecord(payload.data) ? payload.data : {};
-  const pages = Array.isArray(response)
-    ? response
-    : Array.isArray(payload.pages)
-      ? payload.pages
-      : Array.isArray(payload.accounts)
-        ? payload.accounts
-        : Array.isArray(payload.instagram_accounts)
-          ? payload.instagram_accounts
-          : Array.isArray(payload.instagramAccounts)
-            ? payload.instagramAccounts
-            : Array.isArray(payload.instagram_business_accounts)
-              ? payload.instagram_business_accounts
-              : Array.isArray(payload.instagramBusinessAccounts)
-                ? payload.instagramBusinessAccounts
-                : Array.isArray(payload.items)
-                  ? payload.items
-                  : Array.isArray(payload.data)
-                    ? payload.data
-                    : Array.isArray(data.pages)
-                      ? data.pages
-                      : Array.isArray(data.accounts)
-                        ? data.accounts
-                        : Array.isArray(data.instagram_accounts)
-                          ? data.instagram_accounts
-                          : Array.isArray(data.instagramAccounts)
-                            ? data.instagramAccounts
-                            : Array.isArray(data.instagram_business_accounts)
-                              ? data.instagram_business_accounts
-                              : Array.isArray(data.instagramBusinessAccounts)
-                                ? data.instagramBusinessAccounts
-                                : Array.isArray(data.items)
-                                  ? data.items
-                                  : [];
 
-  return pages.map((page, index) => {
-    const record = isRecord(page) ? page : {};
-    const username = typeof record.username === "string" ? record.username : "";
-    const id =
-      record.id ??
-      record.page_id ??
-      record.pageId ??
-      record.account_id ??
-      record.accountId ??
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  const containers = [payload, data];
+
+  for (const container of containers) {
+    for (const key of META_ENTITY_ARRAY_KEYS) {
+      if (Array.isArray(container[key])) {
+        return container[key];
+      }
+    }
+  }
+
+  if (Array.isArray(payload.data)) {
+    return payload.data;
+  }
+
+  return [];
+}
+
+function getMetaEntityId(record: Record<string, unknown>, provider?: MetaProviderKey) {
+  if (provider === "instagram_business") {
+    return (
       record.instagram_account_id ??
       record.instagramAccountId ??
-      `entity-${index}`;
+      record.instagram_business_account_id ??
+      record.instagramBusinessAccountId ??
+      record.connected_instagram_account_id ??
+      record.connectedInstagramAccountId ??
+      record.account_id ??
+      record.accountId ??
+      record.id ??
+      record.page_id ??
+      record.pageId
+    );
+  }
 
-    return {
-      id: String(id),
-      name:
-        (typeof record.display_label === "string" && record.display_label) ||
-        (typeof record.displayLabel === "string" && record.displayLabel) ||
-        (username ? `@${username.replace(/^@/, "")}` : "") ||
-        (typeof record.name === "string" && record.name) ||
-        (typeof record.account_name === "string" && record.account_name) ||
-        (typeof record.accountName === "string" && record.accountName) ||
-        `Account ${index + 1}`,
-    };
-  }) satisfies MetaEntity[];
+  return (
+    record.id ??
+    record.page_id ??
+    record.pageId ??
+    record.account_id ??
+    record.accountId ??
+    record.instagram_account_id ??
+    record.instagramAccountId ??
+    record.instagram_business_account_id ??
+    record.instagramBusinessAccountId ??
+    record.connected_instagram_account_id ??
+    record.connectedInstagramAccountId
+  );
+}
+
+function getMetaEntityName(
+  record: Record<string, unknown>,
+  index: number,
+  provider?: MetaProviderKey
+) {
+  const username =
+    (typeof record.username === "string" && record.username) ||
+    (typeof record.instagram_username === "string" && record.instagram_username) ||
+    (typeof record.instagramUsername === "string" && record.instagramUsername) ||
+    (typeof record.connected_instagram_account_username === "string" &&
+      record.connected_instagram_account_username) ||
+    (typeof record.connectedInstagramAccountUsername === "string" &&
+      record.connectedInstagramAccountUsername) ||
+    "";
+  const parentPageName =
+    (typeof record.parent_page_name === "string" && record.parent_page_name) ||
+    (typeof record.parentPageName === "string" && record.parentPageName) ||
+    (typeof record.page_name === "string" && record.page_name) ||
+    (typeof record.pageName === "string" && record.pageName) ||
+    "";
+  const displayName =
+    (typeof record.display_label === "string" && record.display_label) ||
+    (typeof record.displayLabel === "string" && record.displayLabel) ||
+    (typeof record.name === "string" && record.name) ||
+    (typeof record.account_name === "string" && record.account_name) ||
+    (typeof record.accountName === "string" && record.accountName);
+
+  if (displayName) {
+    return displayName;
+  }
+
+  if (username) {
+    const formattedUsername = `@${username.replace(/^@/, "")}`;
+
+    return provider === "instagram_business" && parentPageName
+      ? `${formattedUsername} (${parentPageName})`
+      : formattedUsername;
+  }
+
+  return provider === "instagram_business"
+    ? `Instagram account ${index + 1}`
+    : `Account ${index + 1}`;
+}
+
+function normalizePages(response: unknown, provider?: MetaProviderKey) {
+  const pages = getMetaEntityArray(response);
+
+  return pages
+    .filter((page) => {
+      if (!isRecord(page)) {
+        return true;
+      }
+
+      const recordProvider = getRecordProviderKey(page);
+
+      return !provider || !recordProvider || recordProvider === provider;
+    })
+    .map((page, index) => {
+      const record = isRecord(page) ? page : {};
+      const id = getMetaEntityId(record, provider) ?? `entity-${index}`;
+
+      return {
+        id: String(id),
+        name: getMetaEntityName(record, index, provider),
+      };
+    }) satisfies MetaEntity[];
 }
 
 function normalizeMetaAdsAccounts(response: unknown) {
@@ -1096,18 +1177,113 @@ function mergeMetaProviderConnectionStatus(
   };
 }
 
+const META_PROVIDER_ENTITY_ALIASES = {
+  facebook_pages: [
+    "facebook_pages",
+    "facebookPages",
+    "facebook_page",
+    "facebookPage",
+    "pages",
+  ],
+  instagram_business: [
+    "instagram_business",
+    "instagramBusiness",
+    "instagram_business_account",
+    "instagramBusinessAccount",
+    "instagram_accounts",
+    "instagramAccounts",
+    "instagram_business_accounts",
+    "instagramBusinessAccounts",
+    "accounts",
+  ],
+  meta_ads: [
+    "meta_ads",
+    "metaAds",
+    "meta_ad_accounts",
+    "metaAdAccounts",
+    "ad_accounts",
+    "adAccounts",
+    "accounts",
+  ],
+} as const satisfies Record<MetaProviderKey, readonly string[]>;
+
+const META_PROVIDER_ENTITY_CONTAINER_KEYS = [
+  "assets",
+  "asset_list",
+  "assetList",
+  "child_assets",
+  "childAssets",
+  "children_assets",
+  "childrenAssets",
+  "provider_assets",
+  "providerAssets",
+  "source_assets",
+  "sourceAssets",
+  "entities",
+  "sources",
+] as const;
+
+function getProviderEntityPayloadCandidates(
+  provider: MetaProviderKey,
+  containers: Array<Record<string, unknown>>
+) {
+  const aliases = META_PROVIDER_ENTITY_ALIASES[provider];
+  const candidates: unknown[] = [];
+
+  containers.forEach((container) => {
+    candidates.push(container);
+
+    aliases.forEach((alias) => {
+      if (alias in container) {
+        candidates.push(container[alias]);
+      }
+    });
+
+    META_PROVIDER_ENTITY_CONTAINER_KEYS.forEach((containerKey) => {
+      const nestedContainer = container[containerKey];
+
+      if (!isRecord(nestedContainer)) {
+        return;
+      }
+
+      aliases.forEach((alias) => {
+        if (alias in nestedContainer) {
+          candidates.push(nestedContainer[alias]);
+        }
+      });
+    });
+  });
+
+  return candidates;
+}
+
 function extractMetaProviderEntities(
   provider: MetaProviderKey,
-  payload: unknown
+  payload: unknown,
+  ...containers: Array<Record<string, unknown>>
 ): MetaEntity[] {
-  if (provider === "meta_ads") {
-    return normalizeMetaAdsAccounts(payload).map((account) => ({
-      id: account.id,
-      name: account.name,
-    }));
-  }
+  const candidates = getProviderEntityPayloadCandidates(provider, [
+    ...(isRecord(payload) ? [payload] : []),
+    ...containers,
+  ]);
+  const seenEntityIds = new Set<string>();
+  const entities = candidates.flatMap((candidate) =>
+    provider === "meta_ads"
+      ? normalizeMetaAdsAccounts(candidate).map((account) => ({
+          id: account.id,
+          name: account.name,
+        }))
+      : normalizePages(candidate, provider)
+  );
 
-  return normalizePages(payload);
+  return entities.filter((entity) => {
+    if (seenEntityIds.has(entity.id)) {
+      return false;
+    }
+
+    seenEntityIds.add(entity.id);
+    return true;
+  });
 }
 
 function getNestedSourcePayload(
@@ -1298,7 +1474,7 @@ function extractMetaBusinessSuiteStatus(payload: unknown): MetaBusinessSuiteConn
           ...childRecord,
         }
       ),
-      entities: extractMetaProviderEntities(provider, childRecord),
+      entities: extractMetaProviderEntities(provider, childRecord, data, record),
     };
   });
 
@@ -1949,46 +2125,8 @@ export async function fetchMetaPages(
   return normalizePages(payload);
 }
 
-export async function fetchMetaInstagramAccounts(
-  integrationId: string,
-  workspaceId?: string | null
-) {
-  const resolvedWorkspaceId = await getRequiredWorkspaceId(workspaceId);
-  const endpoint = `/integrations/instagram-business/accounts?workspace_id=${encodeURIComponent(
-    resolvedWorkspaceId
-  )}&integration_id=${encodeURIComponent(integrationId)}`;
-  const res = await fetch(apiUrl(endpoint), {
-    method: "GET",
-    headers: getAuthHeaders(),
-    cache: "no-store",
-    credentials: "include",
-  });
-
-  const text = await readApiResponseText(endpoint, res);
-  console.log("instagram business accounts response:", text);
-
-  const payload = text ? parseJsonText(text) : null;
-  return normalizePages(payload);
-}
-
 export async function fetchMetaPagesCatalog(integrationId: string) {
   const endpoint = `/integrations/meta/pages/catalog?integration_id=${encodeURIComponent(
-    integrationId
-  )}`;
-  const res = await fetch(apiUrl(endpoint), {
-    method: "GET",
-    headers: getAuthHeaders(),
-    cache: "no-store",
-  });
-
-  const text = await readApiResponseText(endpoint, res);
-  const payload = JSON.parse(text) as MetaPagesResponse;
-
-  return normalizePages(payload);
-}
-
-export async function fetchMetaInstagramAccountsCatalog(integrationId: string) {
-  const endpoint = `/integrations/instagram-business/accounts/catalog?integration_id=${encodeURIComponent(
     integrationId
   )}`;
   const res = await fetch(apiUrl(endpoint), {
