@@ -16,6 +16,7 @@ import {
   fetchMetaBusinessSuiteStatus,
   fetchMetaInstagramAccounts,
   fetchMetaPages,
+  isMetaAssetDiscoveryComplete,
   refreshMetaPages,
   selectMetaAdsAccount,
   selectMetaPage,
@@ -101,6 +102,23 @@ function getSourceConfig(sourceKey: SourceKey) {
       emptyMessage:
         "No Meta Ads ad accounts found. Check permissions and account access, then reconnect if needed.",
       displayName: "Meta Ads",
+      assetPlural: "ad accounts",
+      loadingSlowMessage:
+        "We’re loading your Meta Ads ad accounts. This may take longer if you have many connected accounts.",
+      readyWithCacheLabel: "Your saved Meta Ads ad accounts are ready.",
+      readyLabel: "Your Meta Ads ad accounts are ready.",
+      refreshLabel: "Refresh ad accounts",
+      refreshingLabel: "Refreshing...",
+      multipleHint:
+        "You have multiple connected ad accounts. Use search to find the right one.",
+      emptySavedMessage:
+        "We couldn’t find any saved ad accounts. Load your ad accounts from Meta to continue.",
+      loadFromMetaLabel: "Load ad accounts from Meta",
+      loadError: "We could not load the available ad accounts. Try again.",
+      refreshError:
+        "We’ll use the saved ad accounts. You can try refreshing again.",
+      selectBeforeSyncMessage: "Select an ad account before syncing.",
+      searchPlaceholder: "Search ad account...",
       logoUrl: integration?.logoUrl || "",
       logoAlt: integration?.logoAlt || "Meta Ads logo",
     };
@@ -119,6 +137,25 @@ function getSourceConfig(sourceKey: SourceKey) {
         emptyMessage:
           "No Instagram Business accounts found. Make sure your Instagram account is Business/Creator and linked to a Facebook Page.",
         displayName: "Instagram Business",
+        assetPlural: "Instagram Business accounts",
+        loadingSlowMessage:
+          "We’re loading your Instagram Business accounts. This may take longer if Meta is still preparing connected assets.",
+        readyWithCacheLabel: "Your saved Instagram Business accounts are ready.",
+        readyLabel: "Your Instagram Business accounts are ready.",
+        refreshLabel: "Refresh accounts",
+        refreshingLabel: "Refreshing...",
+        multipleHint:
+          "You have multiple connected Instagram Business accounts. Use search to find the right one.",
+        emptySavedMessage:
+          "We couldn’t find any saved Instagram Business accounts. Load your accounts from Meta to continue.",
+        loadFromMetaLabel: "Load Instagram Business accounts from Meta",
+        loadError:
+          "We could not load the Instagram Business accounts. Try again.",
+        refreshError:
+          "We’ll use the saved Instagram Business accounts. You can try refreshing again.",
+        selectBeforeSyncMessage:
+          "Select an Instagram Business account before syncing.",
+        searchPlaceholder: "Search Instagram account...",
         logoUrl: integration?.logoUrl || "",
         logoAlt: integration?.logoAlt || "Instagram logo",
       }
@@ -134,6 +171,23 @@ function getSourceConfig(sourceKey: SourceKey) {
         emptyMessage:
           "No Facebook Pages found. Reconnect Facebook and select at least one Page.",
         displayName: "Facebook Pages",
+        assetPlural: "pages",
+        loadingSlowMessage:
+          "We’re loading your pages. This may take longer if you have many connected accounts.",
+        readyWithCacheLabel: "Your saved pages are ready.",
+        readyLabel: "Your pages are ready.",
+        refreshLabel: "Refresh pages",
+        refreshingLabel: "Refreshing...",
+        multipleHint:
+          "You have multiple connected pages. Use search to find the right one.",
+        emptySavedMessage:
+          "We couldn’t find any saved pages. Load your pages from Meta to continue.",
+        loadFromMetaLabel: "Load pages from Meta",
+        loadError: "We could not load the available pages. Try again.",
+        refreshError:
+          "We’ll use the saved pages. You can try refreshing again.",
+        selectBeforeSyncMessage: "Select a Facebook Page before syncing.",
+        searchPlaceholder: "Search page...",
         logoUrl: integration?.logoUrl || "",
         logoAlt: integration?.logoAlt || "Facebook logo",
       };
@@ -223,6 +277,34 @@ function formatRelativeLastUpdated(timestamp?: number) {
   return `${elapsedHours}h ago`;
 }
 
+async function getPendingDiscoverySources(
+  sourceKeys: SourceKey[],
+  workspaceId?: string
+) {
+  const suiteStatus = await fetchMetaBusinessSuiteStatus({
+    workspaceId: workspaceId || undefined,
+    refresh: false,
+    cacheBust: Date.now(),
+  });
+  const pendingSources = new Set<SourceKey>();
+
+  sourceKeys.forEach((sourceKey) => {
+    const childStatus = suiteStatus.children[sourceKey];
+    const discoveryStatus =
+      childStatus.discoveryStatus || suiteStatus.discoveryStatus;
+
+    if (
+      childStatus.connected &&
+      childStatus.assetCount === 0 &&
+      !isMetaAssetDiscoveryComplete(discoveryStatus)
+    ) {
+      pendingSources.add(sourceKey);
+    }
+  });
+
+  return pendingSources;
+}
+
 function NewReportFlowSyncPageContent() {
   const { messages } = useI18n();
   const router = useRouter();
@@ -253,6 +335,9 @@ function NewReportFlowSyncPageContent() {
   const workspaceId = storedIntegrationContext?.workspaceId || "";
   const currentStep = 2;
   const previousStepHref = "/reports/new/flow?resume=1";
+  const primarySourceConfig = hasSelectedSources
+    ? getSourceConfig(selectedSources[0])
+    : null;
 
   const [selectedAccountsBySource, setSelectedAccountsBySource] = useState(
     storedIntegrationContext?.selectedAccountsBySource || createEmptySelectedAccountsBySource()
@@ -632,26 +717,57 @@ function NewReportFlowSyncPageContent() {
                   workspaceId: workspaceId || undefined,
                 })
               : selectedSource === "instagram_business"
-              ? await fetchMetaInstagramAccounts(sourceIntegrationId)
+              ? await fetchMetaInstagramAccounts(
+                  sourceIntegrationId,
+                  workspaceId || undefined
+                )
               : await fetchMetaPages(sourceIntegrationId);
 
           return [selectedSource, accountData] as const;
         })
       );
+      const zeroResultSources = responses
+        .filter(([, accountData]) => accountData.length === 0)
+        .map(([selectedSource]) => selectedSource);
+      const pendingDiscoverySources =
+        zeroResultSources.length > 0
+          ? await getPendingDiscoverySources(zeroResultSources, workspaceId)
+          : new Set<SourceKey>();
 
       setSourceState((current) => {
         const nextState = { ...current };
 
         responses.forEach(([selectedSource, accountData]) => {
-          writeSelectorCache(selectedSource, accountData);
+          const config = getSourceConfig(selectedSource);
+          const cached = selectorCache[selectedSource];
+          const discoveryPending = pendingDiscoverySources.has(selectedSource);
+          const displayAccounts =
+            discoveryPending && cached?.accounts.length
+              ? cached.accounts
+              : accountData;
+
+          if (!discoveryPending || accountData.length > 0) {
+            writeSelectorCache(selectedSource, accountData);
+          }
           nextState[selectedSource] = {
-            accounts: accountData,
-            loading: false,
+            accounts: displayAccounts,
+            loading: discoveryPending && displayAccounts.length === 0,
             error: "",
-            lastUpdatedAt: Date.now(),
-            loadingSlow: false,
+            lastUpdatedAt:
+              displayAccounts === cached?.accounts
+                ? cached.lastUpdatedAt
+                : Date.now(),
+            loadingSlow: discoveryPending && displayAccounts.length === 0,
             refreshing: false,
           };
+
+          if (discoveryPending) {
+            nextState[selectedSource].error = "";
+            console.info("[SyncFlow][load.discovery_pending]", {
+              sourceKey: selectedSource,
+              assetPlural: config.assetPlural,
+            });
+          }
         });
 
         return nextState;
@@ -674,17 +790,31 @@ function NewReportFlowSyncPageContent() {
         selectedSources: sourceKeys,
         error: err instanceof Error ? err.message : String(err),
       });
-      console.error("flow sync pages load error:", err);
+      console.error("flow sync asset load error:", err);
+      let pendingDiscoverySources = new Set<SourceKey>();
+
+      try {
+        pendingDiscoverySources = await getPendingDiscoverySources(
+          sourceKeys,
+          workspaceId
+        );
+      } catch (statusError) {
+        console.error("flow sync discovery status check error:", statusError);
+      }
+
       setSourceState((current) => {
         const nextState = { ...current };
         sourceKeys.forEach((selectedSource) => {
           const cached = selectorCache[selectedSource];
+          const config = getSourceConfig(selectedSource);
+          const discoveryPending = pendingDiscoverySources.has(selectedSource);
+
           nextState[selectedSource] = {
             accounts: cached?.accounts || [],
-            loading: false,
-            error: messages.reports.loadPagesError,
+            loading: discoveryPending,
+            error: discoveryPending ? "" : config.loadError,
             lastUpdatedAt: cached?.lastUpdatedAt || nextState[selectedSource].lastUpdatedAt,
-            loadingSlow: false,
+            loadingSlow: discoveryPending,
             refreshing: false,
           };
         });
@@ -699,7 +829,6 @@ function NewReportFlowSyncPageContent() {
   }, [
     hasSelectedSources,
     metaDisconnected,
-    messages.reports.loadPagesError,
     messages.reports.missingIntegration,
     resolvedIntegrationId,
     selectedAccountsBySource,
@@ -721,6 +850,7 @@ function NewReportFlowSyncPageContent() {
 
   function handleSelectAccount(sourceKey: SourceKey, accountId: string) {
     const selectedAccount = sourceState[sourceKey].accounts.find((account) => account.id === accountId);
+    const config = getSourceConfig(sourceKey);
     const nextAccountsBySource = {
       ...selectedAccountsBySource,
       [sourceKey]: {
@@ -731,7 +861,7 @@ function NewReportFlowSyncPageContent() {
         integrationAccountId: accountId || undefined,
         datasetId: undefined,
         syncStatus: accountId ? "idle" : "error",
-        error: accountId ? undefined : messages.reports.selectPageBeforeSync,
+        error: accountId ? undefined : config.selectBeforeSyncMessage,
       },
     };
 
@@ -755,10 +885,16 @@ function NewReportFlowSyncPageContent() {
         },
       }));
 
-      if (sourceKey !== "meta_ads") {
+      if (sourceKey === "facebook_pages") {
         await refreshMetaPages({
           integrationId: resolvedIntegrationId,
           workspaceId: workspaceId || undefined,
+        });
+      } else if (sourceKey === "instagram_business") {
+        await fetchMetaBusinessSuiteStatus({
+          workspaceId: workspaceId || undefined,
+          refresh: true,
+          cacheBust: Date.now(),
         });
       }
 
@@ -766,8 +902,10 @@ function NewReportFlowSyncPageContent() {
       await loadPages(sourceKey, true);
       setError("");
     } catch (refreshError) {
-      console.error("meta pages refresh error:", refreshError);
-      setError("We’ll use the saved pages. You can try refreshing again.");
+      const config = getSourceConfig(sourceKey);
+
+      console.error("meta asset refresh error:", refreshError);
+      setError(config.refreshError);
       setSourceState((current) => ({
         ...current,
         [sourceKey]: {
@@ -789,7 +927,9 @@ function NewReportFlowSyncPageContent() {
     const selectedAccount = selectedAccountsBySource[sourceKey];
 
     if (!selectedAccount.accountId) {
-      setError(messages.reports.selectPageBeforeSync);
+      const config = getSourceConfig(sourceKey);
+
+      setError(config.selectBeforeSyncMessage);
       return;
     }
 
@@ -1009,10 +1149,12 @@ function NewReportFlowSyncPageContent() {
                       Meta disconnected
                     </p>
                     <h3 className="mt-3 text-2xl font-semibold text-slate-950">
-                      Connect Meta to load your pages and create reports.
+                      {`Connect Meta to load your ${
+                        primarySourceConfig?.assetPlural || "assets"
+                      } and create reports.`}
                     </h3>
                     <p className="mt-2 text-sm leading-6 text-slate-500">
-                      Facebook Pages and Instagram Business must be reconnected before continuing.
+                      Meta Business Suite must be reconnected before continuing.
                     </p>
                     <div className="mt-5 flex flex-wrap items-center gap-3">
                       <Link
@@ -1137,7 +1279,7 @@ function NewReportFlowSyncPageContent() {
                             {sourceSelectorState.loadingSlow ? (
                               <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-600">
                                 <p>
-                                  We’re loading your pages. This may take longer if you have many connected accounts.
+                                  {config.loadingSlowMessage}
                                 </p>
                                 <button
                                   type="button"
@@ -1184,8 +1326,8 @@ function NewReportFlowSyncPageContent() {
                                   <div>
                                     <p className="font-medium text-slate-900">
                                       {sourceSelectorState.lastUpdatedAt
-                                        ? "Your saved pages are ready."
-                                        : "Your pages are ready."}
+                                        ? config.readyWithCacheLabel
+                                        : config.readyLabel}
                                     </p>
                                     <p className="mt-1 text-xs text-slate-500">
                                       {sourceSelectorState.lastUpdatedAt
@@ -1199,12 +1341,14 @@ function NewReportFlowSyncPageContent() {
                                     disabled={Boolean(sourceSelectorState.refreshing)}
                                     className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
-                                    {sourceSelectorState.refreshing ? "Refreshing..." : "Refresh pages"}
+                                    {sourceSelectorState.refreshing
+                                      ? config.refreshingLabel
+                                      : config.refreshLabel}
                                   </button>
                                 </div>
                                 {sourceSelectorState.accounts.length > 10 ? (
                                   <p className="mt-2 text-xs text-slate-500">
-                                    You have multiple connected pages. Use search to find the right one.
+                                    {config.multipleHint}
                                   </p>
                                 ) : null}
                               </div>
@@ -1219,7 +1363,7 @@ function NewReportFlowSyncPageContent() {
                                   {config.selectorTitle}
                                 </h3>
                                 <p className="mt-2 text-sm leading-6 text-slate-500">
-                                  We couldn’t find any saved pages. Load your pages from Meta to continue.
+                                  {config.emptySavedMessage}
                                 </p>
                                 <button
                                   type="button"
@@ -1227,7 +1371,9 @@ function NewReportFlowSyncPageContent() {
                                   disabled={Boolean(sourceSelectorState.refreshing)}
                                   className="mt-5 inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
-                                  {sourceSelectorState.refreshing ? "Loading..." : "Load pages from Meta"}
+                                  {sourceSelectorState.refreshing
+                                    ? "Loading..."
+                                    : config.loadFromMetaLabel}
                                 </button>
                               </div>
                             ) : (
@@ -1241,6 +1387,7 @@ function NewReportFlowSyncPageContent() {
                                 description={config.selectorDescription}
                                 selectedLabel={config.selectedLabel}
                                 emptyMessage={config.emptyMessage}
+                                searchPlaceholder={config.searchPlaceholder}
                                 logoUrl={config.logoUrl}
                                 logoAlt={config.logoAlt}
                                 footer={
@@ -1267,7 +1414,9 @@ function NewReportFlowSyncPageContent() {
                                         disabled={Boolean(sourceSelectorState.refreshing)}
                                         className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                                       >
-                                        {sourceSelectorState.refreshing ? "Refreshing..." : "Refresh pages"}
+                                        {sourceSelectorState.refreshing
+                                          ? config.refreshingLabel
+                                          : config.refreshLabel}
                                       </button>
                                       {selectedAccount.syncStatus === "synced" ? <SuccessBadge /> : null}
                                       {selectedAccount.syncStatus === "error" ? <FailedBadge /> : null}

@@ -20,6 +20,7 @@ type AdAccountSelectorProps = {
   title?: string;
   description?: string;
   selectedLabel?: string;
+  searchPlaceholder?: string;
   logoUrl?: string;
   logoAlt?: string;
   footer?: ReactNode;
@@ -35,6 +36,7 @@ export function AdAccountSelector({
   title,
   description,
   selectedLabel,
+  searchPlaceholder,
   logoUrl,
   logoAlt,
   footer,
@@ -228,7 +230,7 @@ export function AdAccountSelector({
                 type="text"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search page..."
+                placeholder={searchPlaceholder || "Search page..."}
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
               />
             </div>
@@ -347,7 +349,7 @@ export function AdAccountSelector({
                     type="text"
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search page..."
+                    placeholder={searchPlaceholder || "Search page..."}
                     className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-950 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
                   />
                 ) : null}

@@ -617,25 +617,68 @@ export function validateMetaAuthUrl(
   }
 }
 
-function normalizePages(response: MetaPagesResponse) {
+function normalizePages(response: unknown) {
+  const payload = isRecord(response) ? response : {};
+  const data = isRecord(payload.data) ? payload.data : {};
   const pages = Array.isArray(response)
     ? response
-    : response.pages || response.items || response.data || [];
+    : Array.isArray(payload.pages)
+      ? payload.pages
+      : Array.isArray(payload.accounts)
+        ? payload.accounts
+        : Array.isArray(payload.instagram_accounts)
+          ? payload.instagram_accounts
+          : Array.isArray(payload.instagramAccounts)
+            ? payload.instagramAccounts
+            : Array.isArray(payload.instagram_business_accounts)
+              ? payload.instagram_business_accounts
+              : Array.isArray(payload.instagramBusinessAccounts)
+                ? payload.instagramBusinessAccounts
+                : Array.isArray(payload.items)
+                  ? payload.items
+                  : Array.isArray(payload.data)
+                    ? payload.data
+                    : Array.isArray(data.pages)
+                      ? data.pages
+                      : Array.isArray(data.accounts)
+                        ? data.accounts
+                        : Array.isArray(data.instagram_accounts)
+                          ? data.instagram_accounts
+                          : Array.isArray(data.instagramAccounts)
+                            ? data.instagramAccounts
+                            : Array.isArray(data.instagram_business_accounts)
+                              ? data.instagram_business_accounts
+                              : Array.isArray(data.instagramBusinessAccounts)
+                                ? data.instagramBusinessAccounts
+                                : Array.isArray(data.items)
+                                  ? data.items
+                                  : [];
 
-  return pages.map((page, index) => ({
-    id: String(
-      page.id ??
-        page.page_id ??
-        page.account_id ??
-        page.instagram_account_id ??
-        `entity-${index}`
-    ),
-    name:
-      page.display_label ||
-      (page.username ? `@${page.username.replace(/^@/, "")}` : "") ||
-      page.name ||
-      `Account ${index + 1}`,
-  })) satisfies MetaEntity[];
+  return pages.map((page, index) => {
+    const record = isRecord(page) ? page : {};
+    const username = typeof record.username === "string" ? record.username : "";
+    const id =
+      record.id ??
+      record.page_id ??
+      record.pageId ??
+      record.account_id ??
+      record.accountId ??
+      record.instagram_account_id ??
+      record.instagramAccountId ??
+      `entity-${index}`;
+
+    return {
+      id: String(id),
+      name:
+        (typeof record.display_label === "string" && record.display_label) ||
+        (typeof record.displayLabel === "string" && record.displayLabel) ||
+        (username ? `@${username.replace(/^@/, "")}` : "") ||
+        (typeof record.name === "string" && record.name) ||
+        (typeof record.account_name === "string" && record.account_name) ||
+        (typeof record.accountName === "string" && record.accountName) ||
+        `Account ${index + 1}`,
+    };
+  }) satisfies MetaEntity[];
 }
 
 function normalizeMetaAdsAccounts(response: unknown) {
@@ -1882,7 +1925,7 @@ export async function fetchMetaPages(
   const text = await readApiResponseText(endpoint, res);
   console.log("meta pages response:", text);
 
-  const payload = JSON.parse(text) as MetaPagesResponse;
+  const payload = text ? parseJsonText(text) : null;
   return normalizePages(payload);
 }
 
@@ -1891,18 +1934,20 @@ export async function fetchMetaInstagramAccounts(
   workspaceId?: string | null
 ) {
   const resolvedWorkspaceId = await getRequiredWorkspaceId(workspaceId);
-  const endpoint = `/integrations/meta/instagram-accounts?workspace_id=${encodeURIComponent(
+  const endpoint = `/integrations/instagram-business/accounts?workspace_id=${encodeURIComponent(
     resolvedWorkspaceId
   )}&integration_id=${encodeURIComponent(integrationId)}`;
   const res = await fetch(apiUrl(endpoint), {
     method: "GET",
     headers: getAuthHeaders(),
+    cache: "no-store",
+    credentials: "include",
   });
 
   const text = await readApiResponseText(endpoint, res);
-  console.log("meta instagram accounts response:", text);
+  console.log("instagram business accounts response:", text);
 
-  const payload = JSON.parse(text) as MetaPagesResponse;
+  const payload = text ? parseJsonText(text) : null;
   return normalizePages(payload);
 }
 
@@ -1923,7 +1968,7 @@ export async function fetchMetaPagesCatalog(integrationId: string) {
 }
 
 export async function fetchMetaInstagramAccountsCatalog(integrationId: string) {
-  const endpoint = `/integrations/meta/instagram-accounts/catalog?integration_id=${encodeURIComponent(
+  const endpoint = `/integrations/instagram-business/accounts/catalog?integration_id=${encodeURIComponent(
     integrationId
   )}`;
   const res = await fetch(apiUrl(endpoint), {
