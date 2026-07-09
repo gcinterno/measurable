@@ -13,6 +13,7 @@ import { MobileFlowHeader } from "@/components/reports/flow/MobileFlowHeader";
 import { ApiError, isLimitError } from "@/lib/api";
 import {
   fetchMetaAdsAccounts,
+  fetchMetaBusinessSuiteInstagramAccounts,
   fetchMetaBusinessSuiteStatus,
   fetchMetaPages,
   isMetaAssetDiscoveryComplete,
@@ -56,6 +57,8 @@ type SourceSelectorState = {
   lastUpdatedAt?: number;
   loadingSlow?: boolean;
   refreshing?: boolean;
+  manualRefreshRequired?: boolean;
+  manualRefreshMessage?: string;
 };
 
 const EMPTY_SOURCE_SELECTOR_STATE: Record<SourceKey, SourceSelectorState> = {
@@ -82,6 +85,13 @@ type SourceCacheRecord = {
 };
 
 type SelectorCache = Partial<Record<SourceKey, SourceCacheRecord>>;
+
+type SourceAccountLoadResult = {
+  accounts: MetaOption[];
+  discoveryPending?: boolean;
+  manualRefreshRequired?: boolean;
+  manualRefreshMessage?: string;
+};
 
 function getSourceConfig(sourceKey: SourceKey) {
   const integration = integrationCatalog.find(
@@ -147,7 +157,7 @@ function getSourceConfig(sourceKey: SourceKey) {
           "You have multiple connected Instagram Business accounts. Use search to find the right one.",
         emptySavedMessage:
           "We couldn’t find any saved Instagram Business accounts. Load your accounts from Meta to continue.",
-        loadFromMetaLabel: "Load Instagram Business accounts from Meta",
+        loadFromMetaLabel: "Refresh Instagram accounts",
         loadError:
           "We could not load the Instagram Business accounts. Try again.",
         refreshError:
@@ -471,37 +481,73 @@ function NewReportFlowSyncPageContent() {
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const suiteStatus = await fetchMetaBusinessSuiteStatus({
         workspaceId: workspaceId || undefined,
-        refresh: attempt > 0,
+        refresh: false,
         cacheBust: Date.now() + attempt,
       });
       const instagramStatus = suiteStatus.children.instagram_business;
       const discoveryStatus =
         instagramStatus.discoveryStatus || suiteStatus.discoveryStatus;
-      const accounts = instagramStatus.entities;
+      const statusAccounts = instagramStatus.entities;
+
+      if (statusAccounts.length > 0) {
+        return {
+          accounts: statusAccounts,
+          discoveryPending: false,
+        } satisfies SourceAccountLoadResult;
+      }
+
+      let endpointAccounts: MetaOption[] = [];
+
+      try {
+        endpointAccounts = await fetchMetaBusinessSuiteInstagramAccounts({
+          workspaceId: workspaceId || undefined,
+          refresh: false,
+          cacheBust: Date.now() + attempt,
+        });
+      } catch (accountError) {
+        if (process.env.NODE_ENV !== "production" && attempt === 0) {
+          console.debug("[MetaSuite][instagram_accounts.request_failed]", {
+            message:
+              accountError instanceof Error
+                ? accountError.message
+                : String(accountError),
+          });
+        }
+      }
+
+      if (endpointAccounts.length > 0) {
+        return {
+          accounts: endpointAccounts,
+          discoveryPending: false,
+        } satisfies SourceAccountLoadResult;
+      }
+
       const hasKnownAssetsWithoutList =
-        instagramStatus.assetCount > 0 && accounts.length === 0;
+        instagramStatus.assetCount > 0;
       const discoveryPending =
         instagramStatus.connected &&
-        accounts.length === 0 &&
         (!isMetaAssetDiscoveryComplete(discoveryStatus) ||
           hasKnownAssetsWithoutList);
 
-      if (accounts.length > 0 || !discoveryPending) {
+      if (!discoveryPending) {
         return {
-          accounts,
-          discoveryPending,
-        };
+          accounts: [],
+          discoveryPending: false,
+        } satisfies SourceAccountLoadResult;
       }
 
       if (attempt < maxAttempts - 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
       }
     }
 
     return {
       accounts: [] as MetaOption[],
-      discoveryPending: true,
-    };
+      discoveryPending: false,
+      manualRefreshRequired: true,
+      manualRefreshMessage:
+        "Instagram accounts were discovered, but the selectable list is still being prepared.",
+    } satisfies SourceAccountLoadResult;
   }, [workspaceId]);
 
   function invalidateSyncedSources() {
@@ -755,6 +801,8 @@ function NewReportFlowSyncPageContent() {
             lastUpdatedAt: cached?.lastUpdatedAt || nextState[selectedSource].lastUpdatedAt,
             loadingSlow: false,
             refreshing: nextState[selectedSource].refreshing || false,
+            manualRefreshRequired: false,
+            manualRefreshMessage: "",
           };
         });
         return nextState;
@@ -783,39 +831,57 @@ function NewReportFlowSyncPageContent() {
             throw new Error(messages.reports.missingIntegration);
           }
 
-          const accountData =
+          const loadResult: SourceAccountLoadResult =
             selectedSource === "meta_ads"
-              ? await fetchMetaAdsAccounts({
-                  integrationId: sourceIntegrationId,
-                  workspaceId: workspaceId || undefined,
-                })
+              ? {
+                  accounts: await fetchMetaAdsAccounts({
+                    integrationId: sourceIntegrationId,
+                    workspaceId: workspaceId || undefined,
+                  }),
+                }
               : selectedSource === "instagram_business"
-              ? (await loadInstagramBusinessAccountsFromSuite()).accounts
-              : await fetchMetaPages(sourceIntegrationId);
+              ? await loadInstagramBusinessAccountsFromSuite()
+              : {
+                  accounts: await fetchMetaPages(sourceIntegrationId),
+                };
 
-          return [selectedSource, accountData] as const;
+          return [selectedSource, loadResult] as const;
         })
       );
       const zeroResultSources = responses
-        .filter(([, accountData]) => accountData.length === 0)
+        .filter(
+          ([, loadResult]) =>
+            loadResult.accounts.length === 0 &&
+            !loadResult.discoveryPending &&
+            !loadResult.manualRefreshRequired
+        )
         .map(([selectedSource]) => selectedSource);
       const pendingDiscoverySources =
         zeroResultSources.length > 0
           ? await getPendingDiscoverySources(zeroResultSources, workspaceId)
           : new Set<SourceKey>();
+      responses.forEach(([selectedSource, loadResult]) => {
+        if (loadResult.discoveryPending) {
+          pendingDiscoverySources.add(selectedSource);
+        }
+      });
 
       setSourceState((current) => {
         const nextState = { ...current };
 
-        responses.forEach(([selectedSource, accountData]) => {
+        responses.forEach(([selectedSource, loadResult]) => {
           const cached = selectorCache[selectedSource];
           const discoveryPending = pendingDiscoverySources.has(selectedSource);
+          const accountData = loadResult.accounts;
           const displayAccounts =
             discoveryPending && cached?.accounts.length
               ? cached.accounts
               : accountData;
 
-          if (!discoveryPending || accountData.length > 0) {
+          if (
+            accountData.length > 0 ||
+            (!discoveryPending && !loadResult.manualRefreshRequired)
+          ) {
             writeSelectorCache(selectedSource, accountData);
           }
 
@@ -825,20 +891,32 @@ function NewReportFlowSyncPageContent() {
           );
 
           if (!discoveryPending) {
-            loadedRequestKeysRef.current.add(requestKey);
-            failedRequestKeysRef.current.delete(requestKey);
+            if (loadResult.manualRefreshRequired) {
+              failedRequestKeysRef.current.add(requestKey);
+            } else {
+              loadedRequestKeysRef.current.add(requestKey);
+              failedRequestKeysRef.current.delete(requestKey);
+            }
           }
 
           nextState[selectedSource] = {
             accounts: displayAccounts,
-            loading: discoveryPending && displayAccounts.length === 0,
+            loading:
+              discoveryPending &&
+              displayAccounts.length === 0 &&
+              !loadResult.manualRefreshRequired,
             error: "",
             lastUpdatedAt:
               displayAccounts === cached?.accounts
                 ? cached.lastUpdatedAt
                 : Date.now(),
-            loadingSlow: discoveryPending && displayAccounts.length === 0,
+            loadingSlow:
+              discoveryPending &&
+              displayAccounts.length === 0 &&
+              !loadResult.manualRefreshRequired,
             refreshing: false,
+            manualRefreshRequired: loadResult.manualRefreshRequired,
+            manualRefreshMessage: loadResult.manualRefreshMessage,
           };
         });
 
@@ -879,6 +957,8 @@ function NewReportFlowSyncPageContent() {
             lastUpdatedAt: cached?.lastUpdatedAt || nextState[selectedSource].lastUpdatedAt,
             loadingSlow: discoveryPending,
             refreshing: false,
+            manualRefreshRequired: false,
+            manualRefreshMessage: "",
           };
         });
         return nextState;
@@ -1346,6 +1426,8 @@ function NewReportFlowSyncPageContent() {
                     const isSourceSyncing = syncingSource === sourceKey;
                     const hasCachedAccounts = sourceSelectorState.accounts.length > 0;
                     const showUsableCachedSelector = hasCachedAccounts;
+                    const manualRefreshRequired =
+                      sourceSelectorState.manualRefreshRequired === true;
 
                     return (
                       <div key={sourceKey}>
@@ -1450,7 +1532,10 @@ function NewReportFlowSyncPageContent() {
                                   {config.selectorTitle}
                                 </h3>
                                 <p className="mt-2 text-sm leading-6 text-slate-500">
-                                  {config.emptySavedMessage}
+                                  {manualRefreshRequired
+                                    ? sourceSelectorState.manualRefreshMessage ||
+                                      "Refresh Instagram accounts to load the selectable list."
+                                    : config.emptySavedMessage}
                                 </p>
                                 <button
                                   type="button"
@@ -1460,7 +1545,9 @@ function NewReportFlowSyncPageContent() {
                                 >
                                   {sourceSelectorState.refreshing
                                     ? "Loading..."
-                                    : config.loadFromMetaLabel}
+                                    : manualRefreshRequired
+                                      ? "Refresh Instagram accounts"
+                                      : config.loadFromMetaLabel}
                                 </button>
                               </div>
                             ) : (

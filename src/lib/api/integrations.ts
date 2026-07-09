@@ -30,7 +30,7 @@ type MetaConnectResponse = {
   };
 };
 
-type MetaEntity = {
+export type MetaEntity = {
   id: string;
   name: string;
 };
@@ -1211,6 +1211,9 @@ const META_PROVIDER_ENTITY_CONTAINER_KEYS = [
   "assets",
   "asset_list",
   "assetList",
+  "children",
+  "child_statuses",
+  "childStatuses",
   "child_assets",
   "childAssets",
   "children_assets",
@@ -1283,6 +1286,27 @@ function extractMetaProviderEntities(
 
     seenEntityIds.add(entity.id);
     return true;
+  });
+}
+
+let hasLoggedInstagramAccountsShape = false;
+
+function logInstagramAccountsShapeIfNeeded(payload: unknown) {
+  if (
+    process.env.NODE_ENV === "production" ||
+    hasLoggedInstagramAccountsShape ||
+    !isRecord(payload)
+  ) {
+    return;
+  }
+
+  hasLoggedInstagramAccountsShape = true;
+  console.debug("[MetaSuite][instagram_accounts.empty]", {
+    topLevelKeys: Object.keys(payload).slice(0, 12),
+    dataKeys: isRecord(payload.data) ? Object.keys(payload.data).slice(0, 12) : [],
+    childKeys: isRecord(payload.children)
+      ? Object.keys(payload.children).slice(0, 12)
+      : [],
   });
 }
 
@@ -1440,9 +1464,17 @@ function extractMetaBusinessSuiteStatus(payload: unknown): MetaBusinessSuiteConn
   const providers = createEmptyMetaProviderConnectionStatuses();
   const children = isRecord(data.children)
     ? data.children
+    : isRecord(data.child_statuses)
+      ? data.child_statuses
+      : isRecord(data.childStatuses)
+        ? data.childStatuses
     : isRecord(record.children)
       ? record.children
-      : {};
+      : isRecord(record.child_statuses)
+        ? record.child_statuses
+        : isRecord(record.childStatuses)
+          ? record.childStatuses
+          : {};
   const tokenScopes = [
     ...getScopesFromRecord(record),
     ...getScopesFromRecord(data),
@@ -1711,6 +1743,39 @@ export async function fetchMetaBusinessSuiteStatus(input?: {
   const payload = text ? parseJsonText(text) : null;
 
   return extractMetaBusinessSuiteStatus(payload);
+}
+
+export async function fetchMetaBusinessSuiteInstagramAccounts(input?: {
+  workspaceId?: string | null;
+  refresh?: boolean;
+  cacheBust?: number | string | null;
+}) {
+  const activeWorkspaceId = await getRequiredWorkspaceId(input?.workspaceId);
+  const searchParams = new URLSearchParams({
+    workspace_id: activeWorkspaceId,
+    refresh: input?.refresh === true ? "true" : "false",
+  });
+
+  if (input?.cacheBust) {
+    searchParams.set("_", String(input.cacheBust));
+  }
+
+  const endpoint = `/integrations/meta-business-suite/instagram-accounts?${searchParams.toString()}`;
+  const res = await fetch(apiUrl(endpoint), {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+    credentials: "include",
+  });
+  const text = await readApiResponseText(endpoint, res);
+  const payload = text ? parseJsonText(text) : null;
+  const accounts = extractMetaProviderEntities("instagram_business", payload);
+
+  if (accounts.length === 0) {
+    logInstagramAccountsShapeIfNeeded(payload);
+  }
+
+  return accounts;
 }
 
 export async function connectMetaBusinessSuiteIntegration(input?: {
