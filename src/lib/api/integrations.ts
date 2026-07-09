@@ -176,6 +176,7 @@ export type MetaProviderConnectionStatus = {
   connected: boolean;
   integrationId: string;
   assetCount: number;
+  discoveryStatus: string;
   tokenScopes: string[];
   missingScopes: string[];
   lastSyncedAt: string;
@@ -188,6 +189,7 @@ export type MetaBusinessSuiteConnectionStatus = {
   connected: boolean;
   integrationId: string;
   assetCount: number;
+  discoveryStatus: string;
   tokenScopes: string[];
   missingScopes: string[];
   lastSyncedAt: string;
@@ -241,6 +243,29 @@ const CONNECTED_INTEGRATION_STATUSES = new Set([
 
 const CANONICAL_CONNECTED_STATUSES = new Set(["connected", "connected_no_assets"]);
 const CANONICAL_AVAILABLE_STATUSES = new Set(["", "available", "no_token", "disconnected"]);
+const META_ASSET_DISCOVERY_COMPLETE_STATUSES = new Set([
+  "complete",
+  "completed",
+  "done",
+  "idle",
+  "ready",
+  "success",
+  "succeeded",
+]);
+const META_ASSET_DISCOVERY_ACTIVE_STATUSES = new Set([
+  "discovering",
+  "in_progress",
+  "loading",
+  "pending",
+  "processing",
+  "queued",
+  "refreshing",
+  "running",
+  "setting_up",
+  "started",
+  "starting",
+  "syncing",
+]);
 
 export function isIntegrationConnectedStatus(status?: string | null) {
   return CONNECTED_INTEGRATION_STATUSES.has((status || "").trim().toLowerCase());
@@ -269,6 +294,22 @@ export function isMetaProviderConnectedStatus(status?: string | null) {
 
 export function isMetaProviderAvailableStatus(status?: string | null) {
   return CANONICAL_AVAILABLE_STATUSES.has(normalizeMetaProviderStatusValue(status));
+}
+
+export function normalizeMetaAssetDiscoveryStatusValue(status?: string | null) {
+  return (status || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+export function isMetaAssetDiscoveryComplete(status?: string | null) {
+  return META_ASSET_DISCOVERY_COMPLETE_STATUSES.has(
+    normalizeMetaAssetDiscoveryStatusValue(status)
+  );
+}
+
+export function isMetaAssetDiscoveryActive(status?: string | null) {
+  const normalized = normalizeMetaAssetDiscoveryStatusValue(status);
+
+  return normalized === "" || META_ASSET_DISCOVERY_ACTIVE_STATUSES.has(normalized);
 }
 
 function getMetaProviderAvailableHelper(provider: MetaProviderKey) {
@@ -828,6 +869,7 @@ function createEmptyMetaProviderConnectionStatus(
     connected: false,
     integrationId: "",
     assetCount: 0,
+    discoveryStatus: "",
     tokenScopes: [],
     missingScopes: [],
     lastSyncedAt: "",
@@ -958,6 +1000,22 @@ function getRecordLastSyncedAt(record: Record<string, unknown>) {
       : "";
 }
 
+function getRecordDiscoveryStatus(record: Record<string, unknown>) {
+  const discoveryStatus =
+    record.discovery_status ??
+    record.discoveryStatus ??
+    record.asset_discovery_status ??
+    record.assetDiscoveryStatus ??
+    record.assets_discovery_status ??
+    record.assetsDiscoveryStatus ??
+    record.discovery_state ??
+    record.discoveryState;
+
+  return typeof discoveryStatus === "string"
+    ? normalizeMetaAssetDiscoveryStatusValue(discoveryStatus)
+    : "";
+}
+
 function mergeMetaProviderConnectionStatus(
   current: MetaProviderConnectionStatus,
   record: Record<string, unknown>
@@ -984,6 +1042,7 @@ function mergeMetaProviderConnectionStatus(
     connected,
     integrationId: current.integrationId || getRecordIntegrationId(record),
     assetCount: getProviderAssetCount(record) || current.assetCount,
+    discoveryStatus: getRecordDiscoveryStatus(record) || current.discoveryStatus,
     tokenScopes: tokenScopes.length > 0 ? Array.from(new Set(tokenScopes)) : [],
     missingScopes: missingScopes.length > 0 ? Array.from(new Set(missingScopes)) : [],
     lastSyncedAt: current.lastSyncedAt || getRecordLastSyncedAt(record),
@@ -1201,6 +1260,8 @@ function extractMetaBusinessSuiteStatus(payload: unknown): MetaBusinessSuiteConn
         (total, providerStatus) => total + providerStatus.assetCount,
         0
       ),
+    discoveryStatus:
+      getRecordDiscoveryStatus(data) || getRecordDiscoveryStatus(record),
     tokenScopes: tokenScopes.length > 0 ? Array.from(new Set(tokenScopes)) : [],
     missingScopes: missingScopes.length > 0 ? Array.from(new Set(missingScopes)) : [],
     lastSyncedAt: getRecordLastSyncedAt(data) || getRecordLastSyncedAt(record),

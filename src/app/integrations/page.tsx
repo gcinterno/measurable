@@ -10,9 +10,11 @@ import {
   connectMetaBusinessSuiteIntegration,
   disconnectMetaBusinessSuiteIntegration,
   fetchMetaBusinessSuiteStatus,
+  isMetaAssetDiscoveryComplete,
   isMetaProviderConnectedStatus,
   normalizeMetaBusinessSuiteStatus,
   type MetaBusinessSuiteConnectionStatus,
+  type MetaProviderKey,
 } from "@/lib/api/integrations";
 import {
   clearMetaOAuthDebugUrl,
@@ -43,6 +45,12 @@ type SuiteRuntimeState = {
   error: string;
 };
 
+type AssetRefreshState = {
+  inFlight: boolean;
+  lastStartedAt: number;
+  lastCompletedAt: number;
+};
+
 const POPUP_STATUS_POLL_MS = 30000;
 const DISCONNECT_STATUS_PROTECTION_MS = 10000;
 
@@ -70,7 +78,24 @@ function getChildSummary(input: {
   count: number;
   singular: string;
   plural: string;
+  connected: boolean;
+  discoveryStatus: string;
+  refreshInFlight: boolean;
 }) {
+  if (!input.connected) {
+    return {
+      label: input.label,
+      text: "Connect to discover assets",
+    };
+  }
+
+  if (input.count === 0 && (input.refreshInFlight || !isMetaAssetDiscoveryComplete(input.discoveryStatus))) {
+    return {
+      label: input.label,
+      text: "Refreshing connected assets...",
+    };
+  }
+
   return {
     label: input.label,
     text:
@@ -80,6 +105,64 @@ function getChildSummary(input: {
   };
 }
 
+function getChildDiscoveryStatus(
+  suiteStatus: MetaBusinessSuiteConnectionStatus,
+  provider: MetaProviderKey
+) {
+  return suiteStatus.children[provider].discoveryStatus || suiteStatus.discoveryStatus;
+}
+
+function isSuiteAssetDiscoverySettled(status: MetaBusinessSuiteConnectionStatus) {
+  return Object.values(status.children).every((childStatus) => {
+    const discoveryStatus =
+      childStatus.discoveryStatus || status.discoveryStatus;
+
+    return (
+      childStatus.assetCount > 0 ||
+      isMetaAssetDiscoveryComplete(discoveryStatus)
+    );
+  });
+}
+
+function mergeSuiteStatusForDisplay(
+  current: MetaBusinessSuiteConnectionStatus,
+  next: MetaBusinessSuiteConnectionStatus
+) {
+  const mergedStatus: MetaBusinessSuiteConnectionStatus = {
+    ...next,
+    children: {
+      facebook_pages: { ...next.children.facebook_pages },
+      instagram_business: { ...next.children.instagram_business },
+      meta_ads: { ...next.children.meta_ads },
+    },
+  };
+
+  (Object.keys(mergedStatus.children) as MetaProviderKey[]).forEach((provider) => {
+    const currentChild = current.children[provider];
+    const nextChild = mergedStatus.children[provider];
+    const discoveryStatus =
+      nextChild.discoveryStatus || mergedStatus.discoveryStatus;
+
+    if (
+      currentChild.assetCount > 0 &&
+      nextChild.assetCount === 0 &&
+      !isMetaAssetDiscoveryComplete(discoveryStatus)
+    ) {
+      mergedStatus.children[provider] = {
+        ...nextChild,
+        assetCount: currentChild.assetCount,
+      };
+    }
+  });
+
+  mergedStatus.assetCount = Object.values(mergedStatus.children).reduce(
+    (total, childStatus) => total + childStatus.assetCount,
+    0
+  );
+
+  return mergedStatus;
+}
+
 function createEmptySuiteStatus(): MetaBusinessSuiteConnectionStatus {
   return {
     provider: "meta_business_suite",
@@ -87,6 +170,7 @@ function createEmptySuiteStatus(): MetaBusinessSuiteConnectionStatus {
     connected: false,
     integrationId: "",
     assetCount: 0,
+    discoveryStatus: "",
     tokenScopes: [],
     missingScopes: [],
     lastSyncedAt: "",
@@ -98,6 +182,7 @@ function createEmptySuiteStatus(): MetaBusinessSuiteConnectionStatus {
         connected: false,
         integrationId: "",
         assetCount: 0,
+        discoveryStatus: "",
         tokenScopes: [],
         missingScopes: [],
         lastSyncedAt: "",
@@ -109,6 +194,7 @@ function createEmptySuiteStatus(): MetaBusinessSuiteConnectionStatus {
         connected: false,
         integrationId: "",
         assetCount: 0,
+        discoveryStatus: "",
         tokenScopes: [],
         missingScopes: [],
         lastSyncedAt: "",
@@ -120,6 +206,7 @@ function createEmptySuiteStatus(): MetaBusinessSuiteConnectionStatus {
         connected: false,
         integrationId: "",
         assetCount: 0,
+        discoveryStatus: "",
         tokenScopes: [],
         missingScopes: [],
         lastSyncedAt: "",
@@ -144,7 +231,14 @@ function IntegrationsPageContent() {
     lastActionAt: 0,
     error: "",
   });
+  const [assetRefreshState, setAssetRefreshState] = useState<AssetRefreshState>({
+    inFlight: false,
+    lastStartedAt: 0,
+    lastCompletedAt: 0,
+  });
   const runtimeStateRef = useRef(runtimeState);
+  const suiteStatusRef = useRef(suiteStatus);
+  const lastSuiteStatusAppliedAtRef = useRef(0);
   const popupWindowRef = useRef<Window | null>(null);
   const popupCallbackReceivedRef = useRef(false);
   const popupPollRef = useRef<number | null>(null);
@@ -226,6 +320,10 @@ function IntegrationsPageContent() {
       return true;
     }
 
+    if (requestStartedAt < lastSuiteStatusAppliedAtRef.current) {
+      return true;
+    }
+
     return (
       currentRuntime.lastUserAction === "disconnect" &&
       Date.now() - currentRuntime.lastActionAt < DISCONNECT_STATUS_PROTECTION_MS &&
@@ -239,9 +337,16 @@ function IntegrationsPageContent() {
         return false;
       }
 
-      setSuiteStatus(nextStatus);
+      const displayStatus = mergeSuiteStatusForDisplay(
+        suiteStatusRef.current,
+        nextStatus
+      );
 
-      if (isMetaProviderConnectedStatus(nextStatus.status) || nextStatus.connected) {
+      suiteStatusRef.current = displayStatus;
+      lastSuiteStatusAppliedAtRef.current = Date.now();
+      setSuiteStatus(displayStatus);
+
+      if (isMetaProviderConnectedStatus(displayStatus.status) || displayStatus.connected) {
         completeAction({ error: "" });
       }
 
@@ -251,12 +356,12 @@ function IntegrationsPageContent() {
   );
 
   const refreshSuiteStatus = useCallback(
-    async (cacheBust?: number) => {
+    async (input?: { cacheBust?: number; refresh?: boolean }) => {
       const requestStartedAt = Date.now();
       const status = await fetchMetaBusinessSuiteStatus({
         workspaceId: activeWorkspaceId,
-        refresh: false,
-        cacheBust,
+        refresh: input?.refresh === true,
+        cacheBust: input?.cacheBust,
       });
 
       applySuiteStatus(status, requestStartedAt);
@@ -269,7 +374,14 @@ function IntegrationsPageContent() {
     const nextStatus = createEmptySuiteStatus();
     nextStatus.status = "disconnected";
 
+    suiteStatusRef.current = nextStatus;
+    lastSuiteStatusAppliedAtRef.current = Date.now();
     setSuiteStatus(nextStatus);
+    setAssetRefreshState({
+      inFlight: false,
+      lastStartedAt: 0,
+      lastCompletedAt: Date.now(),
+    });
     clearMetaIntegrationSessionState();
     clearPendingMetaOAuth();
     clearMetaOAuthDebugUrl();
@@ -287,7 +399,7 @@ function IntegrationsPageContent() {
     let lastStatus = suiteStatus;
 
     while (Date.now() < deadline && !popupCallbackReceivedRef.current) {
-      lastStatus = await refreshSuiteStatus(Date.now() + attempt);
+      lastStatus = await refreshSuiteStatus({ cacheBust: Date.now() + attempt });
 
       if (isMetaProviderConnectedStatus(lastStatus.status) || lastStatus.connected) {
         return lastStatus;
@@ -299,6 +411,48 @@ function IntegrationsPageContent() {
 
     return lastStatus;
   }, [refreshSuiteStatus, suiteStatus]);
+
+  const refreshSuiteAssetsAfterOAuth = useCallback(async () => {
+    const startedAt = Date.now();
+    const deadline = startedAt + POPUP_STATUS_POLL_MS;
+    let attempt = 0;
+
+    setAssetRefreshState({
+      inFlight: true,
+      lastStartedAt: startedAt,
+      lastCompletedAt: 0,
+    });
+
+    try {
+      while (Date.now() < deadline) {
+        await refreshSuiteStatus({
+          cacheBust: Date.now() + attempt,
+          refresh: true,
+        });
+
+        const latestStatus = suiteStatusRef.current;
+
+        if (!latestStatus.connected) {
+          break;
+        }
+
+        if (isSuiteAssetDiscoverySettled(latestStatus)) {
+          break;
+        }
+
+        attempt += 1;
+        await delay(1500);
+      }
+    } catch (error) {
+      console.error("meta business suite asset refresh error:", error);
+    } finally {
+      setAssetRefreshState({
+        inFlight: false,
+        lastStartedAt: startedAt,
+        lastCompletedAt: Date.now(),
+      });
+    }
+  }, [refreshSuiteStatus]);
 
   useEffect(() => {
     let active = true;
@@ -355,17 +509,33 @@ function IntegrationsPageContent() {
       clearPendingMetaOAuth();
 
       try {
-        const status = await refreshSuiteStatus(Date.now());
+        setAssetRefreshState({
+          inFlight: true,
+          lastStartedAt: Date.now(),
+          lastCompletedAt: 0,
+        });
+        const status = await refreshSuiteStatus({ cacheBust: Date.now() });
 
         if (isMetaProviderConnectedStatus(status.status) || status.connected) {
           setSuiteMessage("Meta Business Suite connected successfully.");
           completeAction({ error: "" });
+          void refreshSuiteAssetsAfterOAuth();
         } else {
+          setAssetRefreshState({
+            inFlight: false,
+            lastStartedAt: 0,
+            lastCompletedAt: Date.now(),
+          });
           setSuiteMessage("Authorization is still being processed. Refresh this page in a few seconds.");
           completeAction();
         }
       } catch (error) {
         console.error("meta business suite callback refresh error:", error);
+        setAssetRefreshState({
+          inFlight: false,
+          lastStartedAt: 0,
+          lastCompletedAt: Date.now(),
+        });
         completeAction({
           error: "The connection finished, but we couldn’t refresh the Meta Business Suite status.",
         });
@@ -378,7 +548,13 @@ function IntegrationsPageContent() {
       stopPopupPolling();
       window.removeEventListener("message", handleOAuthMessage);
     };
-  }, [closePopup, completeAction, refreshSuiteStatus, stopPopupPolling]);
+  }, [
+    closePopup,
+    completeAction,
+    refreshSuiteAssetsAfterOAuth,
+    refreshSuiteStatus,
+    stopPopupPolling,
+  ]);
 
   async function handleConnect(reconnect = false) {
     if (runtimeStateRef.current.isActionInFlight) {
@@ -473,6 +649,7 @@ function IntegrationsPageContent() {
             if (isMetaProviderConnectedStatus(status.status) || status.connected) {
               setSuiteMessage("Meta Business Suite connected successfully.");
               completeAction({ error: "" });
+              void refreshSuiteAssetsAfterOAuth();
               return;
             }
           } catch (error) {
@@ -532,7 +709,7 @@ function IntegrationsPageContent() {
       setSuiteMessage("Meta Business Suite disconnected successfully.");
 
       try {
-        await refreshSuiteStatus(Date.now());
+        await refreshSuiteStatus({ cacheBust: Date.now() });
       } catch (error) {
         console.error("meta business suite post-disconnect refresh error:", error);
       }
@@ -544,8 +721,10 @@ function IntegrationsPageContent() {
     }
   }
 
+  const awaitingAssetDiscovery =
+    suiteStatus.connected && !isSuiteAssetDiscoverySettled(suiteStatus);
   const suiteUiStatus = normalizeMetaBusinessSuiteStatus({
-    status: suiteStatus.status,
+    status: awaitingAssetDiscovery ? "connected" : suiteStatus.status,
     connected: suiteStatus.connected,
     loading: suiteLoading && !suiteStatus.status,
     assetCount: suiteStatus.assetCount,
@@ -560,6 +739,9 @@ function IntegrationsPageContent() {
         : 0,
       singular: "page",
       plural: "pages",
+      connected: suiteUiStatus.connected,
+      discoveryStatus: getChildDiscoveryStatus(suiteStatus, "facebook_pages"),
+      refreshInFlight: assetRefreshState.inFlight,
     }),
     getChildSummary({
       label: "Instagram Business",
@@ -569,6 +751,9 @@ function IntegrationsPageContent() {
         : 0,
       singular: "Instagram account",
       plural: "Instagram accounts",
+      connected: suiteUiStatus.connected,
+      discoveryStatus: getChildDiscoveryStatus(suiteStatus, "instagram_business"),
+      refreshInFlight: assetRefreshState.inFlight,
     }),
     getChildSummary({
       label: "Meta Ads",
@@ -576,6 +761,9 @@ function IntegrationsPageContent() {
       count: suiteUiStatus.connected ? suiteStatus.children.meta_ads.assetCount : 0,
       singular: "ad account",
       plural: "ad accounts",
+      connected: suiteUiStatus.connected,
+      discoveryStatus: getChildDiscoveryStatus(suiteStatus, "meta_ads"),
+      refreshInFlight: assetRefreshState.inFlight,
     }),
   ];
   const loading = runtimeState.isActionInFlight || suiteUiStatus.loading;

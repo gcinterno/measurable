@@ -10,6 +10,7 @@ import {
   connectMetaBusinessSuiteIntegration,
   disconnectMetaBusinessSuiteIntegration,
   fetchMetaBusinessSuiteStatus,
+  isMetaAssetDiscoveryComplete,
   normalizeMetaProviderStatus,
   type MetaBusinessSuiteConnectionStatus,
   type MetaProviderUiStatus,
@@ -61,10 +62,13 @@ type MetaProviderConnectionState = {
   connected: boolean;
   integrationId: string;
   assetCount: number;
+  discoveryStatus: string;
+  assetDiscoveryInFlight: boolean;
   loading: boolean;
   isActionInFlight: boolean;
   lastUserAction: "connect" | "disconnect" | null;
   lastActionAt: number;
+  lastUpdatedAt: number;
   error: string;
   lastSyncedAt: string;
   missingScopes: string[];
@@ -81,10 +85,13 @@ function createMetaProviderConnectionState(
     connected: false,
     integrationId: "",
     assetCount: 0,
+    discoveryStatus: "",
+    assetDiscoveryInFlight: false,
     loading,
     isActionInFlight: false,
     lastUserAction: null,
     lastActionAt: 0,
+    lastUpdatedAt: 0,
     error: "",
     lastSyncedAt: "",
     missingScopes: [],
@@ -106,6 +113,7 @@ function createEmptyMetaBusinessSuiteStatus(): MetaBusinessSuiteConnectionStatus
     connected: false,
     integrationId: "",
     assetCount: 0,
+    discoveryStatus: "",
     tokenScopes: [],
     missingScopes: [],
     lastSyncedAt: "",
@@ -117,6 +125,7 @@ function createEmptyMetaBusinessSuiteStatus(): MetaBusinessSuiteConnectionStatus
         connected: false,
         integrationId: "",
         assetCount: 0,
+        discoveryStatus: "",
         tokenScopes: [],
         missingScopes: [],
         lastSyncedAt: "",
@@ -128,6 +137,7 @@ function createEmptyMetaBusinessSuiteStatus(): MetaBusinessSuiteConnectionStatus
         connected: false,
         integrationId: "",
         assetCount: 0,
+        discoveryStatus: "",
         tokenScopes: [],
         missingScopes: [],
         lastSyncedAt: "",
@@ -139,6 +149,7 @@ function createEmptyMetaBusinessSuiteStatus(): MetaBusinessSuiteConnectionStatus
         connected: false,
         integrationId: "",
         assetCount: 0,
+        discoveryStatus: "",
         tokenScopes: [],
         missingScopes: [],
         lastSyncedAt: "",
@@ -146,6 +157,70 @@ function createEmptyMetaBusinessSuiteStatus(): MetaBusinessSuiteConnectionStatus
       },
     },
   };
+}
+
+function getSuiteChildDiscoveryStatus(
+  suiteStatus: MetaBusinessSuiteConnectionStatus,
+  provider: MetaFrontendIntegrationKey
+) {
+  return suiteStatus.children[provider].discoveryStatus || suiteStatus.discoveryStatus;
+}
+
+function isSuiteChildAssetDiscoverySettled(
+  suiteStatus: MetaBusinessSuiteConnectionStatus,
+  provider: MetaFrontendIntegrationKey
+) {
+  const childStatus = suiteStatus.children[provider];
+
+  return (
+    childStatus.assetCount > 0 ||
+    isMetaAssetDiscoveryComplete(getSuiteChildDiscoveryStatus(suiteStatus, provider))
+  );
+}
+
+function isSuiteAssetDiscoverySettled(status: MetaBusinessSuiteConnectionStatus) {
+  return META_REPORT_SOURCE_KEYS.every((provider) =>
+    isSuiteChildAssetDiscoverySettled(status, provider)
+  );
+}
+
+function mergeMetaSuiteStatusForDisplay(
+  current: MetaBusinessSuiteConnectionStatus,
+  next: MetaBusinessSuiteConnectionStatus
+) {
+  const mergedStatus: MetaBusinessSuiteConnectionStatus = {
+    ...next,
+    children: {
+      facebook_pages: { ...next.children.facebook_pages },
+      instagram_business: { ...next.children.instagram_business },
+      meta_ads: { ...next.children.meta_ads },
+    },
+  };
+
+  META_REPORT_SOURCE_KEYS.forEach((provider) => {
+    const currentChild = current.children[provider];
+    const nextChild = mergedStatus.children[provider];
+    const discoveryStatus =
+      nextChild.discoveryStatus || mergedStatus.discoveryStatus;
+
+    if (
+      currentChild.assetCount > 0 &&
+      nextChild.assetCount === 0 &&
+      !isMetaAssetDiscoveryComplete(discoveryStatus)
+    ) {
+      mergedStatus.children[provider] = {
+        ...nextChild,
+        assetCount: currentChild.assetCount,
+      };
+    }
+  });
+
+  mergedStatus.assetCount = Object.values(mergedStatus.children).reduce(
+    (total, childStatus) => total + childStatus.assetCount,
+    0
+  );
+
+  return mergedStatus;
 }
 
 function normalizeSuiteChildStatus(input: {
@@ -168,8 +243,12 @@ function normalizeSuiteChildStatus(input: {
   });
   const suiteConnected = suiteUiStatus.connected;
   const connected = suiteConnected && childUiStatus.connected;
+  const discoverySettled = isSuiteChildAssetDiscoverySettled(
+    input.suiteStatus,
+    input.provider
+  );
   const status =
-    connected && childStatus.assetCount === 0
+    connected && childStatus.assetCount === 0 && discoverySettled
       ? "connected_no_assets"
       : suiteConnected
         ? childUiStatus.status
@@ -395,6 +474,10 @@ export function IntegrationLibrary({
   const activeWorkspaceId = workspace?.id || null;
   const connectInFlightRef = useRef(false);
   const providerConnectionsRef = useRef(providerConnections);
+  const metaSuiteStatusRef = useRef<MetaBusinessSuiteConnectionStatus>(
+    createEmptyMetaBusinessSuiteStatus()
+  );
+  const lastMetaSuiteStatusAppliedAtRef = useRef(0);
   const popupCallbackReceivedRef = useRef(false);
   const popupPollRef = useRef<number | null>(null);
   const popupTimeoutRef = useRef<number | null>(null);
@@ -472,6 +555,10 @@ export function IntegrationLibrary({
         return true;
       }
 
+      if (requestStartedAt < lastMetaSuiteStatusAppliedAtRef.current) {
+        return true;
+      }
+
       if (
         current.lastUserAction === "disconnect" &&
         Date.now() - current.lastActionAt < DISCONNECT_STATUS_PROTECTION_MS &&
@@ -490,10 +577,32 @@ export function IntegrationLibrary({
       suiteStatus: MetaBusinessSuiteConnectionStatus,
       requestStartedAt: number
     ) => {
+      if (requestStartedAt < lastMetaSuiteStatusAppliedAtRef.current) {
+        const currentConnections = providerConnectionsRef.current;
+
+        return META_REPORT_SOURCE_KEYS.reduce((accumulator, provider) => {
+          const current = currentConnections[provider];
+
+          accumulator[provider] = normalizeMetaProviderStatus({
+            provider,
+            status: current.status,
+            connected: current.connected,
+            assetCount: current.assetCount,
+            lastSyncedAt: current.lastSyncedAt,
+          });
+
+          return accumulator;
+        }, {} as Record<MetaFrontendIntegrationKey, MetaProviderUiStatus>);
+      }
+
+      const displaySuiteStatus = mergeMetaSuiteStatusForDisplay(
+        metaSuiteStatusRef.current,
+        suiteStatus
+      );
       const nextCounts = {
-        facebook_pages: suiteStatus.children.facebook_pages.assetCount,
-        instagram_business: suiteStatus.children.instagram_business.assetCount,
-        meta_ads: suiteStatus.children.meta_ads.assetCount,
+        facebook_pages: displaySuiteStatus.children.facebook_pages.assetCount,
+        instagram_business: displaySuiteStatus.children.instagram_business.assetCount,
+        meta_ads: displaySuiteStatus.children.meta_ads.assetCount,
       };
       const nextUiStatuses = {} as Record<
         MetaFrontendIntegrationKey,
@@ -504,10 +613,10 @@ export function IntegrationLibrary({
       };
 
       META_REPORT_SOURCE_KEYS.forEach((provider) => {
-        const childStatus = suiteStatus.children[provider];
+        const childStatus = displaySuiteStatus.children[provider];
         const uiStatus = normalizeSuiteChildStatus({
           provider,
-          suiteStatus,
+          suiteStatus: displaySuiteStatus,
         });
 
         if (shouldIgnoreProviderStatus(provider, requestStartedAt, uiStatus)) {
@@ -524,33 +633,45 @@ export function IntegrationLibrary({
         }
 
         nextUiStatuses[provider] = uiStatus;
+        const discoverySettled = isSuiteChildAssetDiscoverySettled(
+          displaySuiteStatus,
+          provider
+        );
         nextProviderConnections[provider] = {
           ...nextProviderConnections[provider],
           status: uiStatus.status,
           connected: uiStatus.connected,
-          integrationId: childStatus.integrationId || suiteStatus.integrationId,
+          integrationId: childStatus.integrationId || displaySuiteStatus.integrationId,
           assetCount: childStatus.assetCount,
+          discoveryStatus:
+            childStatus.discoveryStatus || displaySuiteStatus.discoveryStatus,
           loading: false,
           isActionInFlight: false,
+          assetDiscoveryInFlight: discoverySettled
+            ? false
+            : nextProviderConnections[provider].assetDiscoveryInFlight,
+          lastUpdatedAt: Date.now(),
           error: uiStatus.connected ? "" : nextProviderConnections[provider].error,
-          lastSyncedAt: childStatus.lastSyncedAt || suiteStatus.lastSyncedAt,
+          lastSyncedAt: childStatus.lastSyncedAt || displaySuiteStatus.lastSyncedAt,
           missingScopes: childStatus.missingScopes.length
             ? childStatus.missingScopes
-            : suiteStatus.missingScopes,
+            : displaySuiteStatus.missingScopes,
         };
       });
 
+      metaSuiteStatusRef.current = displaySuiteStatus;
+      lastMetaSuiteStatusAppliedAtRef.current = Date.now();
       providerConnectionsRef.current = nextProviderConnections;
       setProviderConnections(nextProviderConnections);
-      setMetaSuiteStatus(suiteStatus);
+      setMetaSuiteStatus(displaySuiteStatus);
       setMetaCounts(nextCounts);
       setMetaIntegrationId(
-        suiteStatus.children.facebook_pages.integrationId ||
-          suiteStatus.children.instagram_business.integrationId ||
-          suiteStatus.integrationId
+        displaySuiteStatus.children.facebook_pages.integrationId ||
+          displaySuiteStatus.children.instagram_business.integrationId ||
+          displaySuiteStatus.integrationId
       );
       setMetaAdsIntegrationId(
-        suiteStatus.children.meta_ads.integrationId || suiteStatus.integrationId
+        displaySuiteStatus.children.meta_ads.integrationId || displaySuiteStatus.integrationId
       );
 
       return nextUiStatuses;
@@ -561,7 +682,9 @@ export function IntegrationLibrary({
   const refreshMetaSuiteProviderStates = useCallback(
     async (
       cacheBust?: number,
-      loadingProviders: readonly MetaFrontendIntegrationKey[] = META_REPORT_SOURCE_KEYS
+      loadingProviders: readonly MetaFrontendIntegrationKey[] = META_REPORT_SOURCE_KEYS,
+      refresh = false,
+      assetDiscoveryProviders: readonly MetaFrontendIntegrationKey[] = []
     ) => {
       const requestStartedAt = Date.now();
 
@@ -580,6 +703,12 @@ export function IntegrationLibrary({
             loading: true,
           };
         });
+        assetDiscoveryProviders.forEach((provider) => {
+          nextState[provider] = {
+            ...nextState[provider],
+            assetDiscoveryInFlight: true,
+          };
+        });
 
         providerConnectionsRef.current = nextState;
         return nextState;
@@ -588,7 +717,7 @@ export function IntegrationLibrary({
       try {
         const suiteStatus = await fetchMetaBusinessSuiteStatus({
           workspaceId: activeWorkspaceId,
-          refresh: false,
+          refresh,
           cacheBust,
         });
 
@@ -601,6 +730,7 @@ export function IntegrationLibrary({
             nextState[provider] = {
               ...nextState[provider],
               loading: false,
+              assetDiscoveryInFlight: false,
               connected: false,
               status: "",
               assetCount: 0,
@@ -624,6 +754,49 @@ export function IntegrationLibrary({
     },
     [refreshMetaSuiteProviderStates]
   );
+
+  const clearAssetDiscoveryInFlight = useCallback(() => {
+    setProviderConnections((current) => {
+      const nextState = { ...current };
+
+      META_REPORT_SOURCE_KEYS.forEach((provider) => {
+        nextState[provider] = {
+          ...nextState[provider],
+          assetDiscoveryInFlight: false,
+        };
+      });
+
+      providerConnectionsRef.current = nextState;
+      return nextState;
+    });
+  }, []);
+
+  const pollMetaSuiteAssetsAfterOAuth = useCallback(async () => {
+    const deadline = Date.now() + META_PROVIDER_POPUP_STATUS_POLL_MS;
+    let attempt = 0;
+
+    try {
+      while (Date.now() < deadline) {
+        await refreshMetaSuiteProviderStates(
+          Date.now() + attempt,
+          [],
+          true,
+          META_REPORT_SOURCE_KEYS
+        );
+
+        if (isSuiteAssetDiscoverySettled(metaSuiteStatusRef.current)) {
+          break;
+        }
+
+        attempt += 1;
+        await delay(1500);
+      }
+    } catch (error) {
+      console.error("meta suite report-flow asset refresh error:", error);
+    } finally {
+      clearAssetDiscoveryInFlight();
+    }
+  }, [clearAssetDiscoveryInFlight, refreshMetaSuiteProviderStates]);
 
   useEffect(() => {
     setCurrentSelectedSources(selectedIntegrationKeys.filter(isMetaFrontendIntegrationKey));
@@ -723,7 +896,13 @@ export function IntegrationLibrary({
       }
 
       try {
-        const uiStatus = await refreshProviderState(provider, Date.now());
+        const uiStatuses = await refreshMetaSuiteProviderStates(
+          Date.now(),
+          [],
+          true,
+          META_REPORT_SOURCE_KEYS
+        );
+        const uiStatus = uiStatuses[provider];
 
         if (uiStatus.connected) {
           void trackMetaEvent("MetaConnected", {
@@ -732,6 +911,7 @@ export function IntegrationLibrary({
           });
           setConnectError("");
           completeProviderAction(provider, { status: uiStatus.status });
+          void pollMetaSuiteAssetsAfterOAuth();
           return;
         }
 
@@ -763,7 +943,8 @@ export function IntegrationLibrary({
     [
       completeProviderAction,
       connectingIntegrationKey,
-      refreshProviderState,
+      pollMetaSuiteAssetsAfterOAuth,
+      refreshMetaSuiteProviderStates,
       stopPopupPolling,
     ]
   );
@@ -1034,6 +1215,7 @@ export function IntegrationLibrary({
               });
               setConnectError("");
               completeProviderAction(provider, { status: uiStatus.status });
+              void pollMetaSuiteAssetsAfterOAuth();
               return;
             }
 
@@ -1188,6 +1370,10 @@ export function IntegrationLibrary({
     try {
       const currentContext = getIntegrationReportContext();
       const disconnectedAt = Date.now();
+      const disconnectedSuiteStatus = {
+        ...createEmptyMetaBusinessSuiteStatus(),
+        status: "disconnected",
+      };
 
       setDisconnectingIntegrationKey("meta_business_suite");
       setConnectError("");
@@ -1201,10 +1387,9 @@ export function IntegrationLibrary({
       setCurrentSelectedSources([]);
       setMetaIntegrationId("");
       setMetaAdsIntegrationId("");
-      setMetaSuiteStatus({
-        ...createEmptyMetaBusinessSuiteStatus(),
-        status: "disconnected",
-      });
+      metaSuiteStatusRef.current = disconnectedSuiteStatus;
+      lastMetaSuiteStatusAppliedAtRef.current = disconnectedAt;
+      setMetaSuiteStatus(disconnectedSuiteStatus);
       setMetaCounts({
         facebook_pages: 0,
         instagram_business: 0,
@@ -1216,10 +1401,13 @@ export function IntegrationLibrary({
           connected: false,
           integrationId: "",
           assetCount: 0,
+          discoveryStatus: "",
           loading: false,
           isActionInFlight: false,
+          assetDiscoveryInFlight: false,
           lastUserAction: "disconnect",
           lastActionAt: disconnectedAt,
+          lastUpdatedAt: disconnectedAt,
           error: "",
         });
       });
@@ -1255,6 +1443,7 @@ export function IntegrationLibrary({
     isMetaAds: boolean;
     isMetaConnected: boolean;
     canSelectMeta: boolean;
+    isAssetPreparing: boolean;
     providerUiStatus?: MetaProviderUiStatus;
     isConnected: boolean;
     isConnecting: boolean;
@@ -1267,6 +1456,7 @@ export function IntegrationLibrary({
       isMetaAds,
       isMetaConnected,
       canSelectMeta,
+      isAssetPreparing,
       providerUiStatus,
       isConnected,
       isConnecting,
@@ -1325,7 +1515,7 @@ export function IntegrationLibrary({
             disabled
             className="inline-flex cursor-not-allowed items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-400"
           >
-            No assets found
+            {isAssetPreparing ? "Preparing assets..." : "No assets found"}
           </button>
         );
       }
@@ -1378,7 +1568,11 @@ export function IntegrationLibrary({
               Boolean(disconnectingIntegrationKey)
             }
           >
-            {canSelectMeta ? (isSelected ? "Selected" : "Select") : "No assets"}
+            {canSelectMeta
+              ? (isSelected ? "Selected" : "Select")
+              : isAssetPreparing
+                ? "Preparing assets..."
+                : "No assets"}
           </button>
           <button
             type="button"
@@ -1559,6 +1753,12 @@ export function IntegrationLibrary({
           const canSelectMeta = Boolean(
             metaConnected && (providerConnection?.assetCount || 0) > 0
           );
+          const isAssetPreparing = Boolean(
+            metaConnected &&
+              (providerConnection?.assetCount || 0) === 0 &&
+              (providerConnection?.assetDiscoveryInFlight ||
+                !isMetaAssetDiscoveryComplete(providerConnection?.discoveryStatus))
+          );
           const blockedComingSoon =
             !isMeta && integration.status !== "Connected";
           const isConnecting = connectingIntegrationKey === integration.integrationKey;
@@ -1630,7 +1830,11 @@ export function IntegrationLibrary({
                 {integration.description}
                 {metaDescriptionSuffix}
               </p>
-              {providerUiStatus?.helperText &&
+              {isAssetPreparing ? (
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  Preparing assets...
+                </p>
+              ) : providerUiStatus?.helperText &&
               (providerUiStatus.status === "connected_no_assets" ||
                 providerUiStatus.status === "needs_permission") ? (
                 <p className="mt-2 text-sm leading-6 text-slate-500">
@@ -1645,6 +1849,7 @@ export function IntegrationLibrary({
                   isMetaAds,
                   isMetaConnected: metaConnected,
                   canSelectMeta,
+                  isAssetPreparing,
                   providerUiStatus: providerUiStatus || undefined,
                   isConnected: connected,
                   isConnecting,
