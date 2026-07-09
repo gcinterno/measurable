@@ -2385,37 +2385,31 @@ export async function syncMetaInstagramAccount(input: {
   workspaceId?: string | null;
 }) {
   const workspaceId = await getRequiredWorkspaceId(input.workspaceId);
+  const integrationId = input.integrationId ? Number(input.integrationId) : undefined;
+  const workspaceIdNumber = Number(workspaceId);
   const payload = {
-    integration_id: Number(input.integrationId),
+    workspace_id: Number.isFinite(workspaceIdNumber) ? workspaceIdNumber : workspaceId,
+    integration_id:
+      typeof integrationId === "number" && Number.isFinite(integrationId)
+        ? integrationId
+        : input.integrationId || undefined,
+    source: "instagram_business",
+    integration_type: "instagram_business",
     instagram_account_id: input.accountId,
-    workspace_id: Number(workspaceId),
+    instagram_business_account_id: input.accountId,
+    account_id: input.accountId,
+    page_id: input.accountId,
     timeframe: input.timeframe,
     start_date: input.timeframe === "custom" ? input.startDate ?? null : null,
     end_date: input.timeframe === "custom" ? input.endDate ?? null : null,
   };
-  const endpoint = "/integrations/meta/sync-instagram-business";
+  const endpoint = "/integrations/meta-business-suite/sync-instagram-business";
   const finalUrl = apiUrl(endpoint);
   const headers = {
     "Content-Type": "application/json",
     ...(getAuthHeaders() || {}),
   };
   const body = JSON.stringify(payload);
-
-  console.info("[MetaTimeframe][api.syncInstagram.request]", {
-    finalUrl,
-    method: "POST",
-    body,
-    headers: {
-      contentType: headers["Content-Type"],
-      hasAuthorization: Boolean(headers.Authorization),
-    },
-    integrationId: input.integrationId,
-    instagramAccountId: input.accountId,
-    selectedTimeframe: input.timeframe,
-    startDate: input.startDate,
-    endDate: input.endDate,
-    payload,
-  });
 
   const res = await fetch(finalUrl, {
     method: "POST",
@@ -2424,8 +2418,6 @@ export async function syncMetaInstagramAccount(input: {
   });
 
   const text = await readApiResponseText(endpoint, res);
-  console.log("meta sync instagram account response:", text);
-
   const parsedPayload = text
     ? (JSON.parse(text) as MetaSelectOrSyncResponse)
     : {};
