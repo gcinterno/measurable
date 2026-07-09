@@ -35,10 +35,10 @@
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-surface: var(--surface);
-  --font-sans: var(--font-roboto);
-  --font-heading: var(--font-poppins);
-  --font-report-sans: "Inter", "SF Pro Text", "Segoe UI", sans-serif;
-  --font-mono: "SFMono-Regular", "SF Mono", Consolas, monospace;
+  --font-sans: var(--font-poppins), sans-serif;
+  --font-heading: var(--font-poppins), sans-serif;
+  --font-report-sans: var(--font-poppins), sans-serif;
+  --font-mono: var(--font-poppins), sans-serif;
 }
 
 * {
@@ -85,7 +85,7 @@ a {
 [data-report-slide],
 [data-report-export-surface] {
   --font-sans: var(--font-report-sans);
-  font-family: var(--font-report-sans);
+  font-family: var(--font-sans);
 }
 
 .report-font-scope h1,

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { GoogleTagManager } from "@next/third-parties/google";
-import { Poppins, Roboto } from "next/font/google";
+import { Poppins } from "next/font/google";
 import Script from "next/script";
 import { Suspense } from "react";
 import { AttributionTracker } from "@/components/providers/AttributionTracker";
@@ -10,14 +10,9 @@ import "./globals.css";
 
 const poppins = Poppins({
   subsets: ["latin"],
-  weight: ["500", "600", "700", "800"],
+  weight: ["300", "400", "500", "600", "700", "800"],
   variable: "--font-poppins",
-});
-
-const roboto = Roboto({
-  subsets: ["latin"],
-  weight: ["400", "500", "700"],
-  variable: "--font-roboto",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -36,8 +31,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${poppins.variable} ${roboto.variable}`}>
-      <body className="antialiased">
+    <html lang="en" className={poppins.variable}>
+      <body className="font-sans antialiased">
         {gtmId ? <GoogleTagManager gtmId={gtmId} /> : null}
         {metaPixelEnabled ? (
           <Script
