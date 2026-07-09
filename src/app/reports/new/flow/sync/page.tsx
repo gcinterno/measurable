@@ -14,7 +14,6 @@ import { ApiError, isLimitError } from "@/lib/api";
 import {
   fetchMetaAdsAccounts,
   fetchMetaBusinessSuiteStatus,
-  fetchMetaInstagramAccounts,
   fetchMetaPages,
   isMetaAssetDiscoveryComplete,
   refreshMetaPages,
@@ -139,7 +138,7 @@ function getSourceConfig(sourceKey: SourceKey) {
         displayName: "Instagram Business",
         assetPlural: "Instagram Business accounts",
         loadingSlowMessage:
-          "We’re loading your Instagram Business accounts. This may take longer if Meta is still preparing connected assets.",
+          "Still preparing Instagram Business accounts...",
         readyWithCacheLabel: "Your saved Instagram Business accounts are ready.",
         readyLabel: "Your Instagram Business accounts are ready.",
         refreshLabel: "Refresh accounts",
@@ -310,20 +309,26 @@ function NewReportFlowSyncPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const storedIntegrationContext = getIntegrationReportContext();
-  const integrationSource =
-    searchParams.get("integration") || storedIntegrationContext?.source || "";
-  const preferredSelectedSources = storedIntegrationContext?.selectedSources;
-  const selectedSources = useMemo(
-    () =>
-      (
-        preferredSelectedSources?.length
-          ? preferredSelectedSources
-          : integrationSource
-            ? [integrationSource]
-            : []
-      ).filter((source): source is SourceKey => isMetaFrontendIntegrationKey(source)),
-    [integrationSource, preferredSelectedSources]
-  );
+  const [selectedSources] = useState<SourceKey[]>(() => {
+    const routeIntegration = searchParams.get("integration");
+
+    if (isMetaFrontendIntegrationKey(routeIntegration)) {
+      return [routeIntegration];
+    }
+
+    const preferredSources =
+      storedIntegrationContext?.selectedSources?.filter((source): source is SourceKey =>
+        isMetaFrontendIntegrationKey(source)
+      ) || [];
+
+    if (preferredSources.length > 0) {
+      return preferredSources;
+    }
+
+    return isMetaFrontendIntegrationKey(storedIntegrationContext?.source)
+      ? [storedIntegrationContext.source]
+      : [];
+  });
   const hasSelectedSources = selectedSources.length > 0;
   const selectedIntegration = useMemo(
     () =>
@@ -363,7 +368,9 @@ function NewReportFlowSyncPageContent() {
   const [syncingSource, setSyncingSource] = useState<SourceKey | null>(null);
   const [metaDisconnected, setMetaDisconnected] = useState(false);
   const [error, setError] = useState("");
-  const hasLoadedRef = useRef(false);
+  const inFlightRequestKeysRef = useRef(new Set<string>());
+  const loadedRequestKeysRef = useRef(new Set<string>());
+  const failedRequestKeysRef = useRef(new Set<string>());
   const flowSteps = [
     {
       id: 1,
@@ -386,14 +393,6 @@ function NewReportFlowSyncPageContent() {
       description: messages.reports.reviewResultDescription,
     },
   ] as const;
-
-  useEffect(() => {
-    console.info("[SyncFlow][mount]", {
-      integrationSource,
-      selectedSources,
-      integrationId: resolvedIntegrationId,
-    });
-  }, [integrationSource, resolvedIntegrationId, selectedSources]);
 
   const normalizeCurrentTimeframe = useCallback(() => {
     return normalizeMetaTimeframeSelection({
@@ -456,6 +455,48 @@ function NewReportFlowSyncPageContent() {
     storedIntegrationContext?.templateId,
     workspaceId,
   ]);
+
+  const buildSourceRequestKey = useCallback(
+    (sourceKey: SourceKey, integrationId: string) =>
+      `${sourceKey}:${workspaceId || "no-workspace"}:${integrationId || "no-integration"}`,
+    [workspaceId]
+  );
+
+  const loadInstagramBusinessAccountsFromSuite = useCallback(async () => {
+    const maxAttempts = 4;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const suiteStatus = await fetchMetaBusinessSuiteStatus({
+        workspaceId: workspaceId || undefined,
+        refresh: attempt > 0,
+        cacheBust: Date.now() + attempt,
+      });
+      const instagramStatus = suiteStatus.children.instagram_business;
+      const discoveryStatus =
+        instagramStatus.discoveryStatus || suiteStatus.discoveryStatus;
+      const accounts = instagramStatus.entities;
+      const discoveryPending =
+        instagramStatus.connected &&
+        accounts.length === 0 &&
+        !isMetaAssetDiscoveryComplete(discoveryStatus);
+
+      if (accounts.length > 0 || !discoveryPending) {
+        return {
+          accounts,
+          discoveryPending,
+        };
+      }
+
+      if (attempt < maxAttempts - 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+      }
+    }
+
+    return {
+      accounts: [] as MetaOption[],
+      discoveryPending: true,
+    };
+  }, [workspaceId]);
 
   function invalidateSyncedSources() {
     const nextAccountsBySource = { ...selectedAccountsBySource };
@@ -562,14 +603,12 @@ function NewReportFlowSyncPageContent() {
               error: "",
             },
           });
-          hasLoadedRef.current = true;
           setLoading(false);
           setError("");
           return;
         }
 
         setMetaDisconnected(false);
-        hasLoadedRef.current = false;
         setLoading(true);
         setError("");
         const firstSource = selectedSources[0];
@@ -627,30 +666,50 @@ function NewReportFlowSyncPageContent() {
       return;
     }
 
-    if (!force && hasLoadedRef.current) {
-      console.info("[SyncFlow][load.skip.already_loaded]", {
-        sourceKey: sourceKey || null,
-        selectedSources,
-      });
-      return;
-    }
-
     if (!hasSelectedSources) {
       setLoading(false);
       return;
     }
 
-    const sourceKeys = sourceKey ? [sourceKey] : selectedSources;
+    const requestedSourceKeys = sourceKey ? [sourceKey] : selectedSources;
+    const sourceKeys = requestedSourceKeys.filter((selectedSource) => {
+      const sourceIntegrationId =
+        selectedAccountsBySource[selectedSource]?.integrationId ||
+        resolvedIntegrationId;
+      const requestKey = buildSourceRequestKey(
+        selectedSource,
+        sourceIntegrationId
+      );
+
+      if (force) {
+        failedRequestKeysRef.current.delete(requestKey);
+        loadedRequestKeysRef.current.delete(requestKey);
+        inFlightRequestKeysRef.current.delete(requestKey);
+        return true;
+      }
+
+      if (inFlightRequestKeysRef.current.has(requestKey)) {
+        return false;
+      }
+
+      if (failedRequestKeysRef.current.has(requestKey)) {
+        return false;
+      }
+
+      if (loadedRequestKeysRef.current.has(requestKey)) {
+        return false;
+      }
+
+      return true;
+    });
     const selectorCache = readSelectorCache();
 
-    console.info("[SyncFlow][load.start]", {
-      sourceKey: sourceKey || null,
-      selectedSources: sourceKeys,
-      integrationId: resolvedIntegrationId,
-    });
+    if (sourceKeys.length === 0) {
+      setLoading(false);
+      return;
+    }
 
     if (!resolvedIntegrationId) {
-      hasLoadedRef.current = true;
       setLoading(false);
       setSourceState((current) => {
         const nextState = { ...current };
@@ -667,9 +726,17 @@ function NewReportFlowSyncPageContent() {
     }
 
     let slowLoadTimer: number | null = null;
+    const requestKeys = sourceKeys.map((selectedSource) =>
+      buildSourceRequestKey(
+        selectedSource,
+        selectedAccountsBySource[selectedSource]?.integrationId || resolvedIntegrationId
+      )
+    );
 
     try {
-      hasLoadedRef.current = true;
+      requestKeys.forEach((requestKey) => {
+        inFlightRequestKeysRef.current.add(requestKey);
+      });
       setLoading(true);
       setSourceState((current) => {
         const nextState = { ...current };
@@ -717,10 +784,7 @@ function NewReportFlowSyncPageContent() {
                   workspaceId: workspaceId || undefined,
                 })
               : selectedSource === "instagram_business"
-              ? await fetchMetaInstagramAccounts(
-                  sourceIntegrationId,
-                  workspaceId || undefined
-                )
+              ? (await loadInstagramBusinessAccountsFromSuite()).accounts
               : await fetchMetaPages(sourceIntegrationId);
 
           return [selectedSource, accountData] as const;
@@ -738,7 +802,6 @@ function NewReportFlowSyncPageContent() {
         const nextState = { ...current };
 
         responses.forEach(([selectedSource, accountData]) => {
-          const config = getSourceConfig(selectedSource);
           const cached = selectorCache[selectedSource];
           const discoveryPending = pendingDiscoverySources.has(selectedSource);
           const displayAccounts =
@@ -749,6 +812,17 @@ function NewReportFlowSyncPageContent() {
           if (!discoveryPending || accountData.length > 0) {
             writeSelectorCache(selectedSource, accountData);
           }
+
+          const requestKey = buildSourceRequestKey(
+            selectedSource,
+            selectedAccountsBySource[selectedSource]?.integrationId || resolvedIntegrationId
+          );
+
+          if (!discoveryPending) {
+            loadedRequestKeysRef.current.add(requestKey);
+            failedRequestKeysRef.current.delete(requestKey);
+          }
+
           nextState[selectedSource] = {
             accounts: displayAccounts,
             loading: discoveryPending && displayAccounts.length === 0,
@@ -760,37 +834,20 @@ function NewReportFlowSyncPageContent() {
             loadingSlow: discoveryPending && displayAccounts.length === 0,
             refreshing: false,
           };
-
-          if (discoveryPending) {
-            nextState[selectedSource].error = "";
-            console.info("[SyncFlow][load.discovery_pending]", {
-              sourceKey: selectedSource,
-              assetPlural: config.assetPlural,
-            });
-          }
         });
 
         return nextState;
       });
-
-      console.info("[SyncFlow][load.success]", {
-        sourceKey: sourceKey || null,
-        selectedSources: sourceKeys,
-        counts: Object.fromEntries(
-          responses.map(([selectedSource, accountData]) => [
-            selectedSource,
-            accountData.length,
-          ])
-        ),
-      });
     } catch (err: unknown) {
-      hasLoadedRef.current = true;
-      console.info("[SyncFlow][load.error]", {
-        sourceKey: sourceKey || null,
-        selectedSources: sourceKeys,
-        error: err instanceof Error ? err.message : String(err),
-      });
       console.error("flow sync asset load error:", err);
+      sourceKeys.forEach((selectedSource) => {
+        const sourceIntegrationId =
+          selectedAccountsBySource[selectedSource]?.integrationId ||
+          resolvedIntegrationId;
+        failedRequestKeysRef.current.add(
+          buildSourceRequestKey(selectedSource, sourceIntegrationId)
+        );
+      });
       let pendingDiscoverySources = new Set<SourceKey>();
 
       try {
@@ -821,13 +878,18 @@ function NewReportFlowSyncPageContent() {
         return nextState;
       });
     } finally {
+      requestKeys.forEach((requestKey) => {
+        inFlightRequestKeysRef.current.delete(requestKey);
+      });
       if (slowLoadTimer !== null) {
         window.clearTimeout(slowLoadTimer);
       }
       setLoading(false);
     }
   }, [
+    buildSourceRequestKey,
     hasSelectedSources,
+    loadInstagramBusinessAccountsFromSuite,
     metaDisconnected,
     messages.reports.missingIntegration,
     resolvedIntegrationId,
@@ -837,8 +899,30 @@ function NewReportFlowSyncPageContent() {
   ]);
 
   useEffect(() => {
-    void loadPages();
-  }, [loadPages]);
+    const sourceKey = selectedSources[0];
+
+    if (!sourceKey || !resolvedIntegrationId || metaDisconnected) {
+      return;
+    }
+
+    const requestKey = buildSourceRequestKey(sourceKey, resolvedIntegrationId);
+
+    if (
+      inFlightRequestKeysRef.current.has(requestKey) ||
+      loadedRequestKeysRef.current.has(requestKey) ||
+      failedRequestKeysRef.current.has(requestKey)
+    ) {
+      return;
+    }
+
+    void loadPages(sourceKey, false);
+  }, [
+    buildSourceRequestKey,
+    loadPages,
+    metaDisconnected,
+    resolvedIntegrationId,
+    selectedSources,
+  ]);
 
   useEffect(() => {
     if (selectedSources.length === 0) {
@@ -898,7 +982,6 @@ function NewReportFlowSyncPageContent() {
         });
       }
 
-      hasLoadedRef.current = false;
       await loadPages(sourceKey, true);
       setError("");
     } catch (refreshError) {
@@ -1284,7 +1367,6 @@ function NewReportFlowSyncPageContent() {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    hasLoadedRef.current = false;
                                     void loadPages(sourceKey, true);
                                   }}
                                   className="mt-4 inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
@@ -1309,7 +1391,6 @@ function NewReportFlowSyncPageContent() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  hasLoadedRef.current = false;
                                   void loadPages(sourceKey, true);
                                 }}
                                 className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"

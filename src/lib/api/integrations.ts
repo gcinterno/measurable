@@ -176,6 +176,7 @@ export type MetaProviderConnectionStatus = {
   connected: boolean;
   integrationId: string;
   assetCount: number;
+  entities: MetaEntity[];
   discoveryStatus: string;
   tokenScopes: string[];
   missingScopes: string[];
@@ -912,6 +913,7 @@ function createEmptyMetaProviderConnectionStatus(
     connected: false,
     integrationId: "",
     assetCount: 0,
+    entities: [],
     discoveryStatus: "",
     tokenScopes: [],
     missingScopes: [],
@@ -1085,12 +1087,27 @@ function mergeMetaProviderConnectionStatus(
     connected,
     integrationId: current.integrationId || getRecordIntegrationId(record),
     assetCount: getProviderAssetCount(record) || current.assetCount,
+    entities: current.entities,
     discoveryStatus: getRecordDiscoveryStatus(record) || current.discoveryStatus,
     tokenScopes: tokenScopes.length > 0 ? Array.from(new Set(tokenScopes)) : [],
     missingScopes: missingScopes.length > 0 ? Array.from(new Set(missingScopes)) : [],
     lastSyncedAt: current.lastSyncedAt || getRecordLastSyncedAt(record),
     message: current.message || getRecordMessage(record),
   };
+}
+
+function extractMetaProviderEntities(
+  provider: MetaProviderKey,
+  payload: unknown
+): MetaEntity[] {
+  if (provider === "meta_ads") {
+    return normalizeMetaAdsAccounts(payload).map((account) => ({
+      id: account.id,
+      name: account.name,
+    }));
+  }
+
+  return normalizePages(payload);
 }
 
 function getNestedSourcePayload(
@@ -1273,13 +1290,16 @@ function extractMetaBusinessSuiteStatus(payload: unknown): MetaBusinessSuiteConn
           ? record[provider]
           : {};
 
-    providers[provider] = mergeMetaProviderConnectionStatus(
-      providers[provider],
-      {
-        provider,
-        ...childRecord,
-      }
-    );
+    providers[provider] = {
+      ...mergeMetaProviderConnectionStatus(
+        providers[provider],
+        {
+          provider,
+          ...childRecord,
+        }
+      ),
+      entities: extractMetaProviderEntities(provider, childRecord),
+    };
   });
 
   const connected = normalizeMetaProviderStatus({
