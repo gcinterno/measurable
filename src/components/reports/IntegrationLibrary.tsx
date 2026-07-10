@@ -242,17 +242,23 @@ function normalizeSuiteChildStatus(input: {
     lastSyncedAt: childStatus.lastSyncedAt || input.suiteStatus.lastSyncedAt,
   });
   const suiteConnected = suiteUiStatus.connected;
-  const connected = suiteConnected && childUiStatus.connected;
+  const childNeedsPermission = childUiStatus.status === "needs_permission";
   const discoverySettled = isSuiteChildAssetDiscoverySettled(
     input.suiteStatus,
     input.provider
   );
-  const status =
-    connected && childStatus.assetCount === 0 && discoverySettled
-      ? "connected_no_assets"
-      : suiteConnected
-        ? childUiStatus.status
-        : suiteUiStatus.status || childUiStatus.status;
+  const connected = suiteConnected && !childNeedsPermission;
+  let status = suiteUiStatus.status || childUiStatus.status;
+
+  if (childNeedsPermission) {
+    status = "needs_permission";
+  } else if (connected && childStatus.assetCount === 0 && discoverySettled) {
+    status = "connected_no_assets";
+  } else if (connected) {
+    status = "connected";
+  } else if (suiteConnected) {
+    status = childUiStatus.status || "connected";
+  }
 
   return normalizeMetaProviderStatus({
     provider: input.provider,
