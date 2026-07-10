@@ -763,6 +763,41 @@ function normalizePages(response: unknown, provider?: MetaProviderKey) {
     }) satisfies MetaEntity[];
 }
 
+function normalizeMetaAdsAccountIdValue(value: unknown) {
+  if (typeof value !== "string" && typeof value !== "number") {
+    return "";
+  }
+
+  return String(value).trim();
+}
+
+function isLikelyMetaAdsAccountId(value: string) {
+  const normalized = value.trim();
+
+  if (/^act_\d{6,}$/.test(normalized)) {
+    return true;
+  }
+
+  return /^\d{6,}$/.test(normalized);
+}
+
+function getMetaAdsAccountIdentifier(record: Record<string, unknown>) {
+  const explicitId =
+    normalizeMetaAdsAccountIdValue(record.ad_account_id) ||
+    normalizeMetaAdsAccountIdValue(record.account_id) ||
+    normalizeMetaAdsAccountIdValue(record.meta_ad_account_id) ||
+    normalizeMetaAdsAccountIdValue(record.adAccountId) ||
+    normalizeMetaAdsAccountIdValue(record.accountId);
+
+  if (explicitId) {
+    return explicitId;
+  }
+
+  const genericId = normalizeMetaAdsAccountIdValue(record.id);
+
+  return genericId && isLikelyMetaAdsAccountId(genericId) ? genericId : "";
+}
+
 function normalizeMetaAdsAccounts(response: unknown) {
   const payload = isRecord(response) ? response : {};
   const accounts = Array.isArray(response)
@@ -775,17 +810,17 @@ function normalizeMetaAdsAccounts(response: unknown) {
           ? payload.data
           : [];
 
-  return accounts.map((account, index) => {
+  return accounts.flatMap((account, index) => {
     const record = isRecord(account) ? account : {};
     const business = isRecord(record.business) ? record.business : null;
-    const id =
-      record.id ??
-      record.account_id ??
-      record.ad_account_id ??
-      `meta-ads-account-${index}`;
+    const id = getMetaAdsAccountIdentifier(record);
+
+    if (!id) {
+      return [];
+    }
 
     return {
-      id: String(id),
+      id,
       name:
         (typeof record.display_label === "string" && record.display_label) ||
         (typeof record.name === "string" && record.name) ||

@@ -1102,6 +1102,17 @@ function NewReportFlowSyncPageContent() {
       return;
     }
 
+    if (
+      sourceKey === "meta_ads" &&
+      (sourceState.meta_ads.loading ||
+        !sourceState.meta_ads.accounts.some(
+          (account) => account.id === selectedAccount.accountId
+        ))
+    ) {
+      setError("Select an ad account before syncing.");
+      return;
+    }
+
     const timeframeError = validateMetaTimeframe({
       timeframe: selectedTimeframe,
       startDate,
