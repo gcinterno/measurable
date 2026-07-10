@@ -2078,7 +2078,7 @@ export async function selectMetaAdsAccount(input: {
     body: JSON.stringify({
       workspace_id: resolvedWorkspaceId,
       integration_id: input.integrationId,
-      account_id: input.accountId,
+      ad_account_id: input.accountId,
     }),
   });
 
