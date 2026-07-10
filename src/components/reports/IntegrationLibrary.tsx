@@ -1483,19 +1483,7 @@ export function IntegrationLibrary({
         );
       }
 
-      if ((isOrganicMeta || isMetaAds) && providerUiStatus?.loading) {
-        return (
-          <button
-            type="button"
-            disabled
-            className="inline-flex cursor-wait items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-500"
-          >
-            Checking connection...
-          </button>
-        );
-      }
-
-      if ((isOrganicMeta || isMetaAds) && canSelectMeta) {
+      if ((isOrganicMeta || isMetaAds) && (canSelectMeta || isSelected)) {
         return (
           <button
             type="button"
@@ -1510,6 +1498,18 @@ export function IntegrationLibrary({
             }`}
           >
             {isSelected ? "Selected" : "Select"}
+          </button>
+        );
+      }
+
+      if ((isOrganicMeta || isMetaAds) && providerUiStatus?.loading) {
+        return (
+          <button
+            type="button"
+            disabled
+            className="inline-flex cursor-wait items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-500"
+          >
+            Checking connection...
           </button>
         );
       }
@@ -1789,7 +1789,7 @@ export function IntegrationLibrary({
             isReportFlowMode &&
             isMeta &&
             embedded &&
-            canSelectMeta &&
+            (selected || canSelectMeta) &&
             !blockedComingSoon;
 
           return (
