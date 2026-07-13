@@ -26,6 +26,7 @@ import {
   resolveReportCoverIntegrationLabel,
   resolveReportCoverSourceName,
 } from "@/lib/reports/templates/default-view-models";
+import { resolveReportVisualVariant } from "@/lib/reports/visual-variant";
 import {
   REPORT_SLIDE_THEME,
   type ReportRenderMode,
@@ -59,8 +60,40 @@ type SlideRendererProps = {
   templateOverride?: string;
   watermarkText?: string;
   report?:
-    | Pick<Report, "integrationMetadata" | "reportSources" | "sourceSummary" | "title" | "rawIntegrationHints" | "branding">
-    | Pick<ReportDetail, "integrationMetadata" | "reportSources" | "sourceSummary" | "title" | "workspaceId" | "rawIntegrationHints" | "branding">
+    | Pick<
+        Report,
+        | "integrationMetadata"
+        | "reportSources"
+        | "sourceSummary"
+        | "title"
+        | "rawIntegrationHints"
+        | "branding"
+        | "workspaceId"
+        | "integrationType"
+        | "integrationLabel"
+        | "sourceName"
+        | "channel"
+        | "brandName"
+        | "logoUrl"
+        | "template"
+      >
+    | Pick<
+        ReportDetail,
+        | "integrationMetadata"
+        | "reportSources"
+        | "sourceSummary"
+        | "title"
+        | "workspaceId"
+        | "rawIntegrationHints"
+        | "branding"
+        | "integrationType"
+        | "integrationLabel"
+        | "sourceName"
+        | "channel"
+        | "brandName"
+        | "logoUrl"
+        | "template"
+      >
     | null;
 };
 
@@ -3059,6 +3092,10 @@ function getExecutiveSummaryPayloadCards(block: ReportVersionBlock) {
     block.data.metricCards ||
     block.data.summary_cards ||
     block.data.summaryCards ||
+    block.data.metrics_summary ||
+    block.data.metricsSummary ||
+    block.data.summary_metrics ||
+    block.data.summaryMetrics ||
     block.data.cards ||
     block.data.kpis ||
     block.data.metrics;
@@ -3113,6 +3150,24 @@ function getExecutiveSummaryPayloadCards(block: ReportVersionBlock) {
       };
     })
     .filter(Boolean) as InsightSummaryCard[];
+}
+
+function isOrganicPageSummaryCard(card: InsightSummaryCard) {
+  const haystack = `${card.title} ${card.value} ${card.insight}`.toLowerCase();
+
+  return [
+    "organic visibility",
+    "organic impressions",
+    "page views",
+    "page visits",
+    "page likes",
+    "followers",
+    "follower",
+    "fans",
+    "reactions",
+    "meta did not return organic",
+    "facebook page",
+  ].some((token) => haystack.includes(token));
 }
 
 const EXECUTIVE_SUMMARY_METRIC_DEFINITIONS: ExecutiveSummaryMetricDefinition[] = [
@@ -3170,13 +3225,126 @@ const EXECUTIVE_SUMMARY_METRIC_DEFINITIONS: ExecutiveSummaryMetricDefinition[] =
   },
 ];
 
-function getExecutiveSummaryMetricCards(block: ReportVersionBlock) {
-  return EXECUTIVE_SUMMARY_METRIC_DEFINITIONS
+const EXECUTIVE_SUMMARY_META_ADS_METRIC_DEFINITIONS: ExecutiveSummaryMetricDefinition[] = [
+  {
+    key: "spend",
+    title: "Spend",
+    aliases: [
+      "spend",
+      "amount_spent",
+      "amountSpent",
+      "ad_spend",
+      "adSpend",
+      "total_spend",
+      "totalSpend",
+    ],
+  },
+  {
+    key: "impressions",
+    title: "Impressions",
+    aliases: ["impressions", "impressions_total", "impressionsTotal", "total_impressions", "totalImpressions"],
+  },
+  {
+    key: "reach",
+    title: "Reach",
+    aliases: ["reach", "reach_total", "reachTotal", "total_reach", "totalReach"],
+  },
+  {
+    key: "frequency",
+    title: "Frequency",
+    aliases: ["frequency"],
+  },
+  {
+    key: "results",
+    title: "Results",
+    aliases: ["results", "results_total", "resultsTotal", "conversions", "leads"],
+  },
+  {
+    key: "cost_per_result",
+    title: "Cost per Result",
+    aliases: [
+      "cost_per_result",
+      "costPerResult",
+      "cost_per_conversion",
+      "costPerConversion",
+      "cpr",
+    ],
+  },
+  {
+    key: "cost_per_lead",
+    title: "Cost per Lead / CPA",
+    aliases: [
+      "cost_per_lead",
+      "costPerLead",
+      "cpa",
+      "cost_per_acquisition",
+      "costPerAcquisition",
+    ],
+  },
+  {
+    key: "roas",
+    title: "ROAS",
+    aliases: ["roas", "return_on_ad_spend", "returnOnAdSpend"],
+  },
+  {
+    key: "clicks",
+    title: "Clicks",
+    aliases: ["clicks", "total_clicks", "totalClicks"],
+  },
+  {
+    key: "link_clicks",
+    title: "Link Clicks",
+    aliases: [
+      "link_clicks",
+      "linkClicks",
+      "inline_link_clicks",
+      "inlineLinkClicks",
+      "outbound_clicks",
+      "outboundClicks",
+    ],
+  },
+  {
+    key: "cpm",
+    title: "CPM",
+    aliases: ["cpm", "cost_per_mille", "costPerMille"],
+  },
+  {
+    key: "ctr",
+    title: "CTR",
+    aliases: ["ctr", "click_through_rate", "clickThroughRate"],
+  },
+  {
+    key: "cpc",
+    title: "CPC",
+    aliases: ["cpc", "cost_per_click", "costPerClick"],
+  },
+  {
+    key: "landing_page_views",
+    title: "Landing Page Views",
+    aliases: [
+      "landing_page_views",
+      "landingPageViews",
+      "landing_page_view",
+      "landingPageView",
+      "lpv",
+    ],
+  },
+];
+
+function getExecutiveSummaryMetricCards(
+  block: ReportVersionBlock,
+  options?: { includeMissing?: boolean; metaAdsReport?: boolean }
+) {
+  const definitions = options?.metaAdsReport
+    ? EXECUTIVE_SUMMARY_META_ADS_METRIC_DEFINITIONS
+    : EXECUTIVE_SUMMARY_METRIC_DEFINITIONS;
+
+  return definitions
     .map((definition) => {
       const value = getBlockMetricCandidateValue(block, definition.aliases);
       const formattedValue = formatDisplayNumber(value);
 
-      if (formattedValue === "N/A") {
+      if (formattedValue === "N/A" && !options?.includeMissing) {
         return null;
       }
 
@@ -3242,7 +3410,7 @@ function getInsightSummaryCards(blocks: ReportVersionBlock[]) {
 function getExecutiveAiAnalysis(
   block: ReportVersionBlock,
   cards: InsightSummaryCard[],
-  options?: { allowLegacyFallback?: boolean }
+  options?: { allowLegacyFallback?: boolean; metaAdsReport?: boolean }
 ) {
   const explicitAnalysis =
     getStringValue(block.data.ai_analysis) ||
@@ -3269,10 +3437,14 @@ function getExecutiveAiAnalysis(
     .join(", ");
 
   if (!leadingSignals) {
-    return "The current Meta dataset does not include enough insight detail to connect the sections yet.";
+    return options?.metaAdsReport
+      ? "The current Meta Ads dataset does not include enough insight detail to connect spend, traffic, and results yet."
+      : "The current Meta dataset does not include enough insight detail to connect the sections yet.";
   }
 
-  return `The strongest readout comes from ${leadingSignals}. Reviewed together, these signals help connect audience size, content response and performance momentum into one executive view.`;
+  return options?.metaAdsReport
+    ? `The strongest readout comes from ${leadingSignals}. Reviewed together, these paid-media signals help connect spend efficiency, traffic quality, and results into one executive view.`
+    : `The strongest readout comes from ${leadingSignals}. Reviewed together, these signals help connect audience size, content response and performance momentum into one executive view.`;
 }
 
 /*
@@ -3287,6 +3459,7 @@ function ExecutiveSummarySlide({
   totalSlides,
   renderMode,
   templateId,
+  reportVisualVariant,
   watermarkText,
   watermarkLogoLightUrl,
   watermarkLogoDarkUrl,
@@ -3298,6 +3471,7 @@ function ExecutiveSummarySlide({
   totalSlides: number;
   renderMode: ReportRenderMode;
   templateId: ReportTemplateId;
+  reportVisualVariant?: "meta_ads" | null;
   watermarkText?: string;
   watermarkLogoLightUrl?: string | null;
   watermarkLogoDarkUrl?: string | null;
@@ -3305,30 +3479,44 @@ function ExecutiveSummarySlide({
 }) {
   const tone = getTemplateTone(templateId);
   const slideId = String(index + 1).padStart(2, "0");
+  const isMetaAdsReport = reportVisualVariant === "meta_ads";
   const isOfficialExecutiveSummary =
     getNormalizedBlockSemanticName(block) === "executive_summary";
   const title =
-    isOfficialExecutiveSummary
+    isMetaAdsReport
+      ? "Executive Summary"
+      : isOfficialExecutiveSummary
       ? "Executive Summary"
       : getStringValue(block.data.title) ||
         getStringValue(block.data.heading) ||
         "Insights Summary";
   const payloadCards = getExecutiveSummaryPayloadCards(block);
-  const metricCards = isOfficialExecutiveSummary
-    ? getExecutiveSummaryMetricCards(block)
+  const visiblePayloadCards = isMetaAdsReport
+    ? payloadCards.filter((card) => !isOrganicPageSummaryCard(card))
+    : payloadCards;
+  const metricCards = isMetaAdsReport
+    ? getExecutiveSummaryMetricCards(block, {
+        includeMissing: true,
+        metaAdsReport: true,
+      })
+    : isOfficialExecutiveSummary
+      ? getExecutiveSummaryMetricCards(block)
     : [];
-  const cards = payloadCards.length > 0
-    ? payloadCards
+  const cards = visiblePayloadCards.length > 0
+    ? visiblePayloadCards
     : metricCards.length > 0
       ? metricCards
-    : isOfficialExecutiveSummary
+    : isOfficialExecutiveSummary || isMetaAdsReport
       ? []
       : getInsightSummaryCards(blocks);
   const visibleCards = cards.slice(0, 8);
   const aiAnalysis = getExecutiveAiAnalysis(block, cards, {
-    allowLegacyFallback: !isOfficialExecutiveSummary && payloadCards.length === 0,
+    allowLegacyFallback: !isOfficialExecutiveSummary && !isMetaAdsReport && visiblePayloadCards.length === 0,
+    metaAdsReport: isMetaAdsReport,
   });
-  const fallbackText = getTextContent(block);
+  const fallbackText = isMetaAdsReport
+    ? "This executive summary closes the Meta Ads readout with a paid-media view of delivery, traffic, and results."
+    : getTextContent(block);
 
   return (
     <SlideCanvas
@@ -4724,6 +4912,7 @@ function StandardizedSemanticMetricSlide({
   growthAliases = [],
   totalOnlyWhenMissingChart = false,
   unavailableFallback,
+  showMissingSecondaryStats = false,
   watermarkText,
   watermarkLogoLightUrl,
   watermarkLogoDarkUrl,
@@ -4744,6 +4933,7 @@ function StandardizedSemanticMetricSlide({
   growthAliases?: string[];
   totalOnlyWhenMissingChart?: boolean;
   unavailableFallback?: string;
+  showMissingSecondaryStats?: boolean;
   watermarkText?: string;
   watermarkLogoLightUrl?: string | null;
   watermarkLogoDarkUrl?: string | null;
@@ -4770,8 +4960,15 @@ function StandardizedSemanticMetricSlide({
     isUnavailable ? "N/A" : "—"
   );
   const visibleStats = secondaryStats
-    .map((stat) => getSemanticMetricStat(block, stat.label, stat.aliases))
-    .filter((stat) => stat.value !== "—");
+    .map((stat) =>
+      getSemanticMetricStat(
+        block,
+        stat.label,
+        stat.aliases,
+        showMissingSecondaryStats ? "N/A" : "—"
+      )
+    )
+    .filter((stat) => showMissingSecondaryStats || stat.value !== "—");
 
   return (
     <SlideCanvas
@@ -4815,8 +5012,8 @@ function StandardizedSemanticMetricSlide({
           </div>
 
           {visibleStats.length > 0 ? (
-            <KPIGrid columns={visibleStats.length >= 3 ? 3 : 2}>
-              {visibleStats.slice(0, 3).map((stat) => (
+            <KPIGrid columns={visibleStats.length >= 4 ? 4 : visibleStats.length >= 3 ? 3 : 2}>
+              {visibleStats.slice(0, 4).map((stat) => (
                 <KPICard
                   key={stat.label}
                   label={stat.label}
@@ -4876,6 +5073,1150 @@ function StandardizedSemanticMetricSlide({
       </div>
     </SlideCanvas>
   );
+}
+
+type MetaAdsMetricKey =
+  | "spend"
+  | "impressions"
+  | "reach"
+  | "frequency"
+  | "cpm"
+  | "clicks"
+  | "link_clicks"
+  | "outbound_clicks"
+  | "ctr"
+  | "cpc"
+  | "results"
+  | "cost_per_result";
+
+type MetaAdsMetricFormat = "currency" | "integer" | "percent" | "decimal";
+
+type MetaAdsMetricDefinition = {
+  key: MetaAdsMetricKey;
+  label: string;
+  aliases: string[];
+  format: MetaAdsMetricFormat;
+};
+
+type MetaAdsMetricValue = {
+  key: MetaAdsMetricKey;
+  label: string;
+  value: string;
+  numericValue: number | null;
+  available: boolean;
+};
+
+type MetaAdsMetrics = Record<MetaAdsMetricKey, MetaAdsMetricValue>;
+
+type MetaAdsSlideKind = "delivery" | "traffic" | "results";
+
+const META_ADS_SLIDE_SEMANTIC_NAMES = [
+  "cover",
+  "spend_delivery",
+  "traffic_performance",
+  "results_cost_efficiency",
+  "executive_summary",
+] as const;
+
+const LEGACY_ORGANIC_SEMANTICS_FOR_META_ADS = new Set([
+  "organic_impressions_overview",
+  "engagement_overview",
+  "page_views_overview",
+]);
+
+const META_ADS_METRIC_DEFINITIONS = {
+  spend: {
+    key: "spend",
+    label: "Spend",
+    aliases: [
+      "spend",
+      "amount_spent",
+      "amountSpent",
+      "ad_spend",
+      "adSpend",
+      "total_spend",
+      "totalSpend",
+      "spend_total",
+      "spendTotal",
+      "amount_spent_total",
+      "amountSpentTotal",
+    ],
+    format: "currency",
+  },
+  impressions: {
+    key: "impressions",
+    label: "Impressions",
+    aliases: [
+      "impressions",
+      "impressions_total",
+      "impressionsTotal",
+      "total_impressions",
+      "totalImpressions",
+      "impressions_count",
+      "impressionsCount",
+    ],
+    format: "integer",
+  },
+  reach: {
+    key: "reach",
+    label: "Reach",
+    aliases: ["reach", "reach_total", "reachTotal", "total_reach", "totalReach"],
+    format: "integer",
+  },
+  frequency: {
+    key: "frequency",
+    label: "Frequency",
+    aliases: ["frequency", "avg_frequency", "avgFrequency"],
+    format: "decimal",
+  },
+  cpm: {
+    key: "cpm",
+    label: "CPM",
+    aliases: [
+      "cpm",
+      "cost_per_mille",
+      "costPerMille",
+      "cost_per_1000_impressions",
+      "costPer1000Impressions",
+    ],
+    format: "currency",
+  },
+  clicks: {
+    key: "clicks",
+    label: "Clicks",
+    aliases: ["clicks", "clicks_total", "clicksTotal", "total_clicks", "totalClicks"],
+    format: "integer",
+  },
+  link_clicks: {
+    key: "link_clicks",
+    label: "Link Clicks",
+    aliases: [
+      "link_clicks",
+      "linkClicks",
+      "inline_link_clicks",
+      "inlineLinkClicks",
+      "link_clicks_total",
+      "linkClicksTotal",
+    ],
+    format: "integer",
+  },
+  outbound_clicks: {
+    key: "outbound_clicks",
+    label: "Outbound Clicks",
+    aliases: ["outbound_clicks", "outboundClicks", "outbound_clicks_total", "outboundClicksTotal"],
+    format: "integer",
+  },
+  ctr: {
+    key: "ctr",
+    label: "CTR",
+    aliases: ["ctr", "click_through_rate", "clickThroughRate", "ctr_total", "ctrTotal"],
+    format: "percent",
+  },
+  cpc: {
+    key: "cpc",
+    label: "CPC",
+    aliases: ["cpc", "cost_per_click", "costPerClick"],
+    format: "currency",
+  },
+  results: {
+    key: "results",
+    label: "Results",
+    aliases: [
+      "results",
+      "result",
+      "results_total",
+      "resultsTotal",
+      "total_results",
+      "totalResults",
+      "conversions",
+      "conversions_total",
+      "conversionsTotal",
+      "leads",
+      "leads_total",
+      "leadsTotal",
+    ],
+    format: "integer",
+  },
+  cost_per_result: {
+    key: "cost_per_result",
+    label: "Cost per Result",
+    aliases: [
+      "cost_per_result",
+      "costPerResult",
+      "cost_per_conversion",
+      "costPerConversion",
+      "cost_per_lead",
+      "costPerLead",
+      "cpa",
+      "cpr",
+    ],
+    format: "currency",
+  },
+} satisfies Record<MetaAdsMetricKey, MetaAdsMetricDefinition>;
+
+function formatMetaAdsCurrency(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatMetaAdsInteger(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 0,
+  }).format(Math.round(value));
+}
+
+function formatMetaAdsDecimal(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function formatMetaAdsPercent(value: number) {
+  return `${formatMetaAdsDecimal(value)}%`;
+}
+
+function isCurrencyLikeValue(value: unknown): boolean {
+  if (typeof value === "string") {
+    return /[$€£]|usd|mxn|eur|cad|aud/i.test(value);
+  }
+
+  const record = getObjectRecord(value);
+
+  if (!record) {
+    return false;
+  }
+
+  return [
+    record.formatted_value,
+    record.formattedValue,
+    record.display_value,
+    record.displayValue,
+    record.value,
+    record.total,
+  ].some(isCurrencyLikeValue);
+}
+
+function isPercentLikeValue(value: unknown): boolean {
+  if (typeof value === "string") {
+    return value.includes("%");
+  }
+
+  const record = getObjectRecord(value);
+
+  if (!record) {
+    return false;
+  }
+
+  return [
+    record.formatted_value,
+    record.formattedValue,
+    record.display_value,
+    record.displayValue,
+    record.value,
+    record.total,
+  ].some(isPercentLikeValue);
+}
+
+function getMetaAdsPrimitiveMetricValue(value: unknown): unknown {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    value === null ||
+    value === undefined
+  ) {
+    return value;
+  }
+
+  const record = getObjectRecord(value);
+
+  if (!record) {
+    return value;
+  }
+
+  return [
+    record.formatted_value,
+    record.formattedValue,
+    record.display_value,
+    record.displayValue,
+    record.value,
+    record.total,
+    record.count,
+    record.raw_value,
+    record.rawValue,
+    record.metric_value,
+    record.metricValue,
+    record.current_value,
+    record.currentValue,
+  ].find((candidate) => candidate !== null && candidate !== undefined && candidate !== "");
+}
+
+function normalizeMetaAdsAlias(value: string) {
+  return normalizeSemanticName(value).replace(/[^a-z0-9_]/g, "");
+}
+
+function matchesMetaAdsAlias(value: unknown, aliases: string[]) {
+  const normalized = getStringValue(value);
+
+  if (!normalized) {
+    return false;
+  }
+
+  const normalizedValue = normalizeMetaAdsAlias(normalized);
+
+  return aliases.some((alias) => normalizedValue === normalizeMetaAdsAlias(alias));
+}
+
+function getMetaAdsCollectionMetricValue(block: ReportVersionBlock, aliases: string[]) {
+  const dataRecord = block.data as Record<string, unknown>;
+  const collections = [
+    dataRecord.metrics,
+    dataRecord.stats,
+    dataRecord.kpis,
+    dataRecord.metric_cards,
+    dataRecord.metricCards,
+    dataRecord.summary_metrics,
+    dataRecord.summaryMetrics,
+    dataRecord.metrics_summary,
+    dataRecord.metricsSummary,
+  ];
+
+  for (const collection of collections) {
+    if (Array.isArray(collection)) {
+      for (const item of collection) {
+        const record = getObjectRecord(item);
+
+        if (!record) {
+          continue;
+        }
+
+        const labelCandidates = [
+          record.key,
+          record.name,
+          record.metric,
+          record.metric_key,
+          record.metricKey,
+          record.label,
+          record.title,
+        ];
+
+        if (labelCandidates.some((candidate) => matchesMetaAdsAlias(candidate, aliases))) {
+          return getMetaAdsPrimitiveMetricValue(record);
+        }
+      }
+    }
+
+    const record = getObjectRecord(collection);
+
+    if (record) {
+      for (const [key, value] of Object.entries(record)) {
+        if (matchesMetaAdsAlias(key, aliases)) {
+          return getMetaAdsPrimitiveMetricValue(value);
+        }
+
+        const nestedRecord = getObjectRecord(value);
+
+        if (
+          nestedRecord &&
+          [nestedRecord.key, nestedRecord.name, nestedRecord.metric, nestedRecord.label, nestedRecord.title].some(
+            (candidate) => matchesMetaAdsAlias(candidate, aliases)
+          )
+        ) {
+          return getMetaAdsPrimitiveMetricValue(nestedRecord);
+        }
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function isValidMetaAdsRawValue(key: MetaAdsMetricKey, rawValue: unknown) {
+  const definition = META_ADS_METRIC_DEFINITIONS[key];
+  const primitive = getMetaAdsPrimitiveMetricValue(rawValue);
+  const numericValue = getNumberValue(primitive);
+
+  if (numericValue === null) {
+    return false;
+  }
+
+  if (definition.format !== "currency" && isCurrencyLikeValue(rawValue)) {
+    return false;
+  }
+
+  if (definition.format === "integer" && isPercentLikeValue(rawValue)) {
+    return false;
+  }
+
+  return true;
+}
+
+function getLegacyMetaAdsBlock(blocks: ReportVersionBlock[], semanticName: string, fallbackIndex: number) {
+  const sortedBlocks = sortBlocksByOrder(blocks);
+
+  return (
+    sortedBlocks.find((block) => getNormalizedBlockSemanticName(block) === semanticName) ||
+    sortedBlocks[fallbackIndex] ||
+    null
+  );
+}
+
+function getLegacyMetaAdsSpendValue(blocks: ReportVersionBlock[]) {
+  const block = getLegacyMetaAdsBlock(blocks, "organic_impressions_overview", 1);
+
+  if (!block) {
+    return undefined;
+  }
+
+  const value = getBlockMetricCandidateValue(block, [
+    "formatted_total",
+    "formattedTotal",
+    "raw_value",
+    "rawValue",
+    "total",
+    "value",
+  ]);
+
+  if (isCurrencyLikeValue(value) && isValidMetaAdsRawValue("spend", value)) {
+    return value;
+  }
+
+  const primaryMetric = getPrimaryMetric(block);
+
+  return isCurrencyLikeValue(primaryMetric.value) && isValidMetaAdsRawValue("spend", primaryMetric.value)
+    ? primaryMetric.value
+    : undefined;
+}
+
+function getLegacyMetaAdsResultsValue(blocks: ReportVersionBlock[]) {
+  const block = getLegacyMetaAdsBlock(blocks, "engagement_overview", 2);
+
+  if (!block) {
+    return undefined;
+  }
+
+  const value = getBlockMetricCandidateValue(block, [
+    "formatted_total",
+    "formattedTotal",
+    "raw_value",
+    "rawValue",
+    "total",
+    "value",
+    "summary",
+    "engagement",
+  ]);
+
+  if (!isCurrencyLikeValue(value) && isValidMetaAdsRawValue("results", value)) {
+    return value;
+  }
+
+  const primaryMetric = getPrimaryMetric(block);
+
+  return !isCurrencyLikeValue(primaryMetric.value) && isValidMetaAdsRawValue("results", primaryMetric.value)
+    ? primaryMetric.value
+    : undefined;
+}
+
+function getMetaAdsMetricRawValue(blocks: ReportVersionBlock[], key: MetaAdsMetricKey) {
+  const definition = META_ADS_METRIC_DEFINITIONS[key];
+
+  for (const block of sortBlocksByOrder(blocks)) {
+    const directValue = getBlockMetricCandidateValue(block, definition.aliases);
+
+    if (isValidMetaAdsRawValue(key, directValue)) {
+      return directValue;
+    }
+
+    const collectionValue = getMetaAdsCollectionMetricValue(block, definition.aliases);
+
+    if (isValidMetaAdsRawValue(key, collectionValue)) {
+      return collectionValue;
+    }
+  }
+
+  if (key === "spend") {
+    return getLegacyMetaAdsSpendValue(blocks);
+  }
+
+  if (key === "results") {
+    return getLegacyMetaAdsResultsValue(blocks);
+  }
+
+  return undefined;
+}
+
+function getMetaAdsNumericValue(key: MetaAdsMetricKey, rawValue: unknown) {
+  const primitive = getMetaAdsPrimitiveMetricValue(rawValue);
+  const numericValue = getNumberValue(primitive);
+
+  return numericValue;
+}
+
+function formatMetaAdsMetricValue(key: MetaAdsMetricKey, value: number) {
+  const definition = META_ADS_METRIC_DEFINITIONS[key];
+
+  if (definition.format === "currency") {
+    return formatMetaAdsCurrency(value);
+  }
+
+  if (definition.format === "integer") {
+    return formatMetaAdsInteger(value);
+  }
+
+  if (definition.format === "percent") {
+    return formatMetaAdsPercent(value);
+  }
+
+  return formatMetaAdsDecimal(value);
+}
+
+function createMetaAdsMetricValue(
+  key: MetaAdsMetricKey,
+  rawValue: unknown,
+  options?: { numericValue?: number; percentAlreadyScaled?: boolean; label?: string }
+): MetaAdsMetricValue {
+  const definition = META_ADS_METRIC_DEFINITIONS[key];
+  let numericValue =
+    typeof options?.numericValue === "number" && Number.isFinite(options.numericValue)
+      ? options.numericValue
+      : getMetaAdsNumericValue(key, rawValue);
+
+  if (
+    key === "ctr" &&
+    numericValue !== null &&
+    options?.percentAlreadyScaled !== true &&
+    !isPercentLikeValue(rawValue) &&
+    Math.abs(numericValue) <= 1
+  ) {
+    numericValue *= 100;
+  }
+
+  return {
+    key,
+    label: options?.label || definition.label,
+    value: numericValue === null ? "N/A" : formatMetaAdsMetricValue(key, numericValue),
+    numericValue,
+    available: numericValue !== null,
+  };
+}
+
+function buildMetaAdsMetrics(blocks: ReportVersionBlock[]): MetaAdsMetrics {
+  const rawValues = Object.keys(META_ADS_METRIC_DEFINITIONS).reduce((acc, key) => {
+    const metricKey = key as MetaAdsMetricKey;
+    acc[metricKey] = getMetaAdsMetricRawValue(blocks, metricKey);
+    return acc;
+  }, {} as Partial<Record<MetaAdsMetricKey, unknown>>);
+
+  const spend = createMetaAdsMetricValue("spend", rawValues.spend);
+  const impressions = createMetaAdsMetricValue("impressions", rawValues.impressions);
+  const reach = createMetaAdsMetricValue("reach", rawValues.reach);
+  const clicks = createMetaAdsMetricValue("clicks", rawValues.clicks);
+  const results = createMetaAdsMetricValue("results", rawValues.results);
+
+  const frequencyValue =
+    rawValues.frequency !== undefined
+      ? undefined
+      : impressions.numericValue !== null && reach.numericValue !== null && reach.numericValue > 0
+        ? impressions.numericValue / reach.numericValue
+        : undefined;
+  const cpmValue =
+    rawValues.cpm !== undefined
+      ? undefined
+      : spend.numericValue !== null &&
+          impressions.numericValue !== null &&
+          impressions.numericValue > 0
+        ? (spend.numericValue / impressions.numericValue) * 1000
+        : undefined;
+  const cpcValue =
+    rawValues.cpc !== undefined
+      ? undefined
+      : spend.numericValue !== null && clicks.numericValue !== null && clicks.numericValue > 0
+        ? spend.numericValue / clicks.numericValue
+        : undefined;
+  const ctrValue =
+    rawValues.ctr !== undefined
+      ? undefined
+      : clicks.numericValue !== null &&
+          impressions.numericValue !== null &&
+          impressions.numericValue > 0
+        ? (clicks.numericValue / impressions.numericValue) * 100
+        : undefined;
+  const costPerResultValue =
+    rawValues.cost_per_result !== undefined
+      ? undefined
+      : spend.numericValue !== null &&
+          results.numericValue !== null &&
+          results.numericValue > 0
+        ? spend.numericValue / results.numericValue
+        : undefined;
+
+  return {
+    spend,
+    impressions,
+    reach,
+    clicks,
+    results,
+    frequency: createMetaAdsMetricValue("frequency", rawValues.frequency, {
+      numericValue: frequencyValue,
+    }),
+    cpm: createMetaAdsMetricValue("cpm", rawValues.cpm, {
+      numericValue: cpmValue,
+    }),
+    cpc: createMetaAdsMetricValue("cpc", rawValues.cpc, {
+      numericValue: cpcValue,
+    }),
+    ctr: createMetaAdsMetricValue("ctr", rawValues.ctr, {
+      numericValue: ctrValue,
+      percentAlreadyScaled: rawValues.ctr === undefined && ctrValue !== undefined,
+    }),
+    link_clicks: createMetaAdsMetricValue("link_clicks", rawValues.link_clicks),
+    outbound_clicks: createMetaAdsMetricValue("outbound_clicks", rawValues.outbound_clicks),
+    cost_per_result: createMetaAdsMetricValue("cost_per_result", rawValues.cost_per_result, {
+      numericValue: costPerResultValue,
+    }),
+  };
+}
+
+function metaAdsHaystackForBlock(block: ReportVersionBlock) {
+  return [
+    getNormalizedBlockSemanticName(block),
+    getStringValue(block.data.title),
+    getStringValue(block.data.heading),
+    getStringValue(block.data.label),
+    getStringValue(block.data.metric_key),
+    getStringValue(block.data.metricKey),
+    getStringValue(block.data.slide_type),
+    getStringValue(block.data.slideType),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function getMetaAdsChartBlock(
+  blocks: ReportVersionBlock[],
+  kind: MetaAdsSlideKind
+) {
+  const sortedBlocks = sortBlocksByOrder(blocks);
+  const tokensByKind: Record<MetaAdsSlideKind, string[]> = {
+    delivery: ["spend", "delivery", "amount spent", "impressions", "reach"],
+    traffic: ["traffic", "click", "ctr", "cpc"],
+    results: ["results", "cost efficiency", "conversion", "lead"],
+  };
+  const fallbackIndexByKind: Record<MetaAdsSlideKind, number> = {
+    delivery: 1,
+    traffic: 2,
+    results: 3,
+  };
+
+  return (
+    sortedBlocks.find((block) => {
+      const haystack = metaAdsHaystackForBlock(block);
+      return tokensByKind[kind].some((token) => haystack.includes(token));
+    }) ||
+    sortedBlocks[fallbackIndexByKind[kind]] ||
+    null
+  );
+}
+
+function getMetaAdsChartPoints(blocks: ReportVersionBlock[], kind: MetaAdsSlideKind) {
+  const preferredBlock = getMetaAdsChartBlock(blocks, kind);
+  const preferredPoints = preferredBlock ? getBlockChartPoints(preferredBlock) : [];
+
+  if (preferredPoints.length > 0) {
+    return preferredPoints;
+  }
+
+  return sortBlocksByOrder(blocks)
+    .map(getBlockChartPoints)
+    .find((points) => points.length > 0) || [];
+}
+
+function hasOrganicPageLanguage(value: string) {
+  const haystack = value.toLowerCase();
+
+  return [
+    "organic visibility",
+    "organic impressions",
+    "organic",
+    "page views",
+    "page visits",
+    "page likes",
+    "followers",
+    "follower",
+    "fans",
+    "reactions",
+    "facebook page",
+    "meta did not return organic",
+  ].some((token) => haystack.includes(token));
+}
+
+function getMetaAdsInsightText(block: ReportVersionBlock, fallback: string) {
+  const semanticName = getNormalizedBlockSemanticName(block);
+  const insight = getBlockInsightText(block);
+
+  if (
+    insight &&
+    !LEGACY_ORGANIC_SEMANTICS_FOR_META_ADS.has(semanticName) &&
+    !hasOrganicPageLanguage(insight)
+  ) {
+    return insight;
+  }
+
+  return fallback;
+}
+
+function getMetaAdsTimeframeLabel(blocks: ReportVersionBlock[], locale?: string) {
+  for (const block of sortBlocksByOrder(blocks)) {
+    const timeframe = getBlockTimeframeLabel(block, locale);
+
+    if (timeframe) {
+      return timeframe;
+    }
+  }
+
+  return "";
+}
+
+function getMetaAdsAccountName(
+  blocks: ReportVersionBlock[],
+  fallbackSourceName: string,
+  fallbackBrandName: string
+) {
+  const candidateKeys = [
+    "ad_account_name",
+    "adAccountName",
+    "account_name",
+    "accountName",
+    "advertising_account_name",
+    "advertisingAccountName",
+    "source_name",
+    "sourceName",
+    "name",
+  ];
+
+  for (const block of sortBlocksByOrder(blocks)) {
+    const dataRecord = block.data as Record<string, unknown>;
+    const datasetRecord = getObjectRecord(dataRecord.dataset);
+    const sourceRecord = getObjectRecord(dataRecord.source);
+
+    for (const record of [dataRecord, datasetRecord, sourceRecord]) {
+      if (!record) {
+        continue;
+      }
+
+      const value = getStringValue(getPreferredRecordValue(record, candidateKeys));
+
+      if (value && !value.toLowerCase().includes("performance report")) {
+        return value;
+      }
+    }
+  }
+
+  if (fallbackSourceName && !fallbackSourceName.toLowerCase().includes("performance report")) {
+    return fallbackSourceName;
+  }
+
+  return fallbackBrandName || "Meta Ads account";
+}
+
+function createFallbackMetaAdsBlock(index: number): ReportVersionBlock {
+  return {
+    id: `meta-ads-visual-slide-${index + 1}`,
+    type: "meta_ads_visual",
+    data: {
+      semantic_name: META_ADS_SLIDE_SEMANTIC_NAMES[index] || "meta_ads_visual",
+      slide_number: index + 1,
+    },
+    rawDataJson: "",
+  };
+}
+
+function findMetaAdsVisualBlock(
+  blocks: ReportVersionBlock[],
+  index: number
+): ReportVersionBlock {
+  const normalizedBlocks = sortBlocksByOrder(blocks);
+
+  if (index === 0) {
+    return (
+      normalizedBlocks.find((block) => {
+        const semanticName = getNormalizedBlockSemanticName(block);
+        return semanticName === "cover" || semanticName === "title" || getBlockSlideType(block) === "cover";
+      }) ||
+      normalizedBlocks[0] ||
+      createFallbackMetaAdsBlock(index)
+    );
+  }
+
+  if (index === 4) {
+    return (
+      normalizedBlocks.find((block) => {
+        const semanticName = getNormalizedBlockSemanticName(block);
+        return semanticName === "executive_summary" || semanticName === "closing_summary" || semanticName === "closing";
+      }) ||
+      normalizedBlocks[4] ||
+      createFallbackMetaAdsBlock(index)
+    );
+  }
+
+  const kindByIndex: Record<number, MetaAdsSlideKind> = {
+    1: "delivery",
+    2: "traffic",
+    3: "results",
+  };
+  const chartBlock = getMetaAdsChartBlock(normalizedBlocks, kindByIndex[index]);
+
+  return chartBlock || normalizedBlocks[index] || createFallbackMetaAdsBlock(index);
+}
+
+function getMetaAdsRenderBlocks(blocks: ReportVersionBlock[]) {
+  return [0, 1, 2, 3, 4].map((index) => findMetaAdsVisualBlock(blocks, index));
+}
+
+function MetaAdsPaidMetricSlide({
+  block,
+  blocks,
+  index,
+  totalSlides,
+  renderMode,
+  templateId,
+  title,
+  primaryMetric,
+  primaryLabel,
+  stats,
+  chartKind,
+  chartMetricLabel,
+  chartPlaceholderText,
+  insightFallback,
+  watermarkText,
+  watermarkLogoLightUrl,
+  watermarkLogoDarkUrl,
+  watermarkWorkspaceId,
+}: {
+  block: ReportVersionBlock;
+  blocks: ReportVersionBlock[];
+  index: number;
+  totalSlides: number;
+  renderMode: ReportRenderMode;
+  templateId: ReportTemplateId;
+  title: string;
+  primaryMetric: MetaAdsMetricValue;
+  primaryLabel?: string;
+  stats: Array<MetaAdsMetricValue & { showWhenMissing?: boolean }>;
+  chartKind: MetaAdsSlideKind;
+  chartMetricLabel: string;
+  chartPlaceholderText: string;
+  insightFallback: string;
+  watermarkText?: string;
+  watermarkLogoLightUrl?: string | null;
+  watermarkLogoDarkUrl?: string | null;
+  watermarkWorkspaceId?: string | null;
+}) {
+  const tone = getTemplateTone(templateId);
+  const slideId = String(index + 1).padStart(2, "0");
+  const chartPoints = getMetaAdsChartPoints(blocks, chartKind);
+  const hasChart = chartPoints.length > 0;
+  const timeframeLabel = getMetaAdsTimeframeLabel(blocks);
+  const visibleStats = stats
+    .filter((stat) => stat.showWhenMissing || stat.available)
+    .slice(0, 4);
+  const insightText = getMetaAdsInsightText(block, insightFallback);
+
+  return (
+    <SlideCanvas
+      index={slideId}
+      totalSlides={totalSlides}
+      eyebrow=""
+      title=""
+      renderMode={renderMode}
+      templateId={templateId}
+      watermarkText={watermarkText}
+      watermarkLogoLightUrl={watermarkLogoLightUrl}
+      watermarkLogoDarkUrl={watermarkLogoDarkUrl}
+      watermarkWorkspaceId={watermarkWorkspaceId}
+    >
+      <div className="grid h-full min-h-0 grid-cols-[0.82fr_1.18fr] gap-6">
+        <section className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-4">
+          <div className={`rounded-[30px] border p-6 ${tone.cardStrong}`}>
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.cardStrongAccent}`}>
+              {title}
+            </p>
+            <p className={`mt-4 text-[3rem] font-semibold leading-none tracking-[-0.06em] ${tone.cardStrongTitle}`}>
+              {primaryMetric.value}
+            </p>
+            <p className={`mt-3 text-sm ${tone.cardStrongSubtitle}`}>
+              {primaryLabel || primaryMetric.label}
+            </p>
+            <p className={`mt-4 text-xs font-medium ${tone.cardStrongSubtitle}`}>
+              Paid media total for the selected period
+            </p>
+            {timeframeLabel ? (
+              <p className={`mt-4 text-xs font-medium ${tone.cardStrongSubtitle}`}>
+                {timeframeLabel}
+              </p>
+            ) : null}
+          </div>
+
+          {visibleStats.length > 0 ? (
+            <KPIGrid columns={visibleStats.length >= 4 ? 4 : visibleStats.length >= 3 ? 3 : 2}>
+              {visibleStats.map((stat) => (
+                <KPICard
+                  key={stat.key}
+                  label={stat.label}
+                  value={stat.value}
+                  meta="Paid media metric"
+                  templateId={templateId}
+                  className="h-[122px]"
+                />
+              ))}
+            </KPIGrid>
+          ) : (
+            <div />
+          )}
+
+          <InsightBox text={insightText} label="Paid Media Insight" templateId={templateId} className="max-h-[260px]" />
+        </section>
+
+        <section className="min-h-0">
+          {hasChart ? (
+            <MetricDailyChart
+              points={chartPoints}
+              isAvailable={hasChart}
+              metricLabel={chartMetricLabel}
+              dark={tone.dark}
+            />
+          ) : (
+            <div className="grid h-full min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-4">
+              {renderEmptyChartState(tone)}
+              <p className={`text-center text-sm ${tone.subtle}`}>
+                {chartPlaceholderText}
+              </p>
+            </div>
+          )}
+        </section>
+      </div>
+    </SlideCanvas>
+  );
+}
+
+function MetaAdsExecutiveSummarySlide({
+  block,
+  blocks,
+  index,
+  totalSlides,
+  renderMode,
+  templateId,
+  watermarkText,
+  watermarkLogoLightUrl,
+  watermarkLogoDarkUrl,
+  watermarkWorkspaceId,
+}: {
+  block: ReportVersionBlock;
+  blocks: ReportVersionBlock[];
+  index: number;
+  totalSlides: number;
+  renderMode: ReportRenderMode;
+  templateId: ReportTemplateId;
+  watermarkText?: string;
+  watermarkLogoLightUrl?: string | null;
+  watermarkLogoDarkUrl?: string | null;
+  watermarkWorkspaceId?: string | null;
+}) {
+  const tone = getTemplateTone(templateId);
+  const slideId = String(index + 1).padStart(2, "0");
+  const metrics = buildMetaAdsMetrics(blocks);
+  const summaryCards = [
+    { ...metrics.spend, label: "Spend" },
+    metrics.impressions,
+    metrics.reach,
+    metrics.clicks,
+    metrics.results,
+    metrics.ctr,
+    metrics.cpc,
+    metrics.cpm,
+  ];
+  const insightText = getMetaAdsInsightText(
+    block,
+    "Paid media performance should be read across spend, delivery, traffic, and results so budget efficiency is evaluated with outcome context."
+  );
+
+  return (
+    <SlideCanvas
+      index={slideId}
+      totalSlides={totalSlides}
+      eyebrow=""
+      title="Executive Summary"
+      renderMode={renderMode}
+      templateId={templateId}
+      watermarkText={watermarkText}
+      watermarkLogoLightUrl={watermarkLogoLightUrl}
+      watermarkLogoDarkUrl={watermarkLogoDarkUrl}
+      watermarkWorkspaceId={watermarkWorkspaceId}
+    >
+      <div className="flex h-full min-h-0 flex-col gap-5">
+        <div className="flex items-center justify-between gap-4">
+          <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${tone.accent}`}>
+            Paid Media Summary
+          </p>
+          <p className={`text-sm ${tone.subtle}`}>
+            Spend, delivery, traffic, and results
+          </p>
+        </div>
+
+        <div className="grid min-h-0 flex-1 grid-cols-4 gap-3">
+          {summaryCards.map((card) => (
+            <article
+              key={card.key}
+              className={`min-h-0 rounded-[24px] border p-4 ${tone.card}`}
+            >
+              <p className={`line-clamp-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${tone.accent}`}>
+                {card.label}
+              </p>
+              <p className={`mt-3 line-clamp-1 text-2xl font-semibold tracking-[-0.05em] ${tone.title}`}>
+                {card.value}
+              </p>
+              <p className={`mt-3 line-clamp-4 text-[0.72rem] leading-5 ${tone.subtitle}`}>
+                Paid media metric for the selected period.
+              </p>
+            </article>
+          ))}
+        </div>
+
+        <div className={`rounded-[28px] border p-5 ${templateId === "modern" ? tone.cardStrong : tone.insight}`}>
+          <p className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${templateId === "modern" ? tone.cardStrongAccent : tone.accentSoft}`}>
+            Executive Readout
+          </p>
+          <p className={`mt-3 line-clamp-5 text-[0.92rem] leading-6 ${templateId === "modern" ? tone.cardStrongSubtitle : tone.subtitle}`}>
+            {insightText}
+          </p>
+        </div>
+      </div>
+    </SlideCanvas>
+  );
+}
+
+function renderMetaAdsMetricSlide(input: {
+  block: ReportVersionBlock;
+  blocks: ReportVersionBlock[];
+  index: number;
+  totalSlides: number;
+  renderMode: ReportRenderMode;
+  templateId: ReportTemplateId;
+  watermarkText?: string;
+  watermarkLogoLightUrl?: string | null;
+  watermarkLogoDarkUrl?: string | null;
+  watermarkWorkspaceId?: string | null;
+}) {
+  const { block, blocks, index, totalSlides, renderMode, templateId } = input;
+  const metrics = buildMetaAdsMetrics(blocks);
+
+  if (index === 1) {
+    return (
+      <MetaAdsPaidMetricSlide
+        block={block}
+        blocks={blocks}
+        index={index}
+        totalSlides={totalSlides}
+        renderMode={renderMode}
+        templateId={templateId}
+        title="Spend & Delivery"
+        primaryMetric={metrics.spend}
+        primaryLabel="Amount Spent"
+        stats={[
+          { ...metrics.impressions, showWhenMissing: true },
+          { ...metrics.reach, showWhenMissing: true },
+          { ...metrics.cpm, showWhenMissing: true },
+        ]}
+        chartKind="delivery"
+        chartMetricLabel="Delivery"
+        chartPlaceholderText="No daily delivery trend available for this period."
+        insightFallback="Spend and delivery show how efficiently the Meta Ads budget reached people during the selected period."
+        watermarkText={input.watermarkText}
+        watermarkLogoLightUrl={input.watermarkLogoLightUrl}
+        watermarkLogoDarkUrl={input.watermarkLogoDarkUrl}
+        watermarkWorkspaceId={input.watermarkWorkspaceId}
+      />
+    );
+  }
+
+  if (index === 2) {
+    return (
+      <MetaAdsPaidMetricSlide
+        block={block}
+        blocks={blocks}
+        index={index}
+        totalSlides={totalSlides}
+        renderMode={renderMode}
+        templateId={templateId}
+        title="Traffic Performance"
+        primaryMetric={metrics.clicks}
+        stats={[
+          { ...metrics.ctr, showWhenMissing: true },
+          { ...metrics.cpc, showWhenMissing: true },
+          { ...metrics.link_clicks, showWhenMissing: false },
+          { ...metrics.outbound_clicks, showWhenMissing: false },
+        ]}
+        chartKind="traffic"
+        chartMetricLabel="Clicks"
+        chartPlaceholderText="No daily traffic trend available for this period."
+        insightFallback="Traffic performance highlights paid attention quality and the efficiency of turning delivery into clicks."
+        watermarkText={input.watermarkText}
+        watermarkLogoLightUrl={input.watermarkLogoLightUrl}
+        watermarkLogoDarkUrl={input.watermarkLogoDarkUrl}
+        watermarkWorkspaceId={input.watermarkWorkspaceId}
+      />
+    );
+  }
+
+  if (index === 3) {
+    return (
+      <MetaAdsPaidMetricSlide
+        block={block}
+        blocks={blocks}
+        index={index}
+        totalSlides={totalSlides}
+        renderMode={renderMode}
+        templateId={templateId}
+        title="Results / Cost Efficiency"
+        primaryMetric={metrics.results}
+        stats={[
+          { ...metrics.cost_per_result, showWhenMissing: true },
+          { ...metrics.cpc, showWhenMissing: true },
+          { ...metrics.cpm, showWhenMissing: true },
+          { ...metrics.ctr, showWhenMissing: true },
+        ]}
+        chartKind="results"
+        chartMetricLabel="Results"
+        chartPlaceholderText="No daily results trend available for this period."
+        insightFallback="Results and cost efficiency show whether paid spend translated into measurable outcomes."
+        watermarkText={input.watermarkText}
+        watermarkLogoLightUrl={input.watermarkLogoLightUrl}
+        watermarkLogoDarkUrl={input.watermarkLogoDarkUrl}
+        watermarkWorkspaceId={input.watermarkWorkspaceId}
+      />
+    );
+  }
+
+  if (index === 4) {
+    return (
+      <MetaAdsExecutiveSummarySlide
+        block={block}
+        blocks={blocks}
+        index={index}
+        totalSlides={totalSlides}
+        renderMode={renderMode}
+        templateId={templateId}
+        watermarkText={input.watermarkText}
+        watermarkLogoLightUrl={input.watermarkLogoLightUrl}
+        watermarkLogoDarkUrl={input.watermarkLogoDarkUrl}
+        watermarkWorkspaceId={input.watermarkWorkspaceId}
+      />
+    );
+  }
+
+  return null;
 }
 
 function StandardizedTopPerformingContentSlide({
@@ -5166,6 +6507,7 @@ function ReportBlockSlide({
   templateId,
   locale,
   hideOverviewInsights = false,
+  reportVisualVariant,
   watermarkText,
   watermarkLogoLightUrl,
   watermarkLogoDarkUrl,
@@ -5179,11 +6521,12 @@ function ReportBlockSlide({
   renderMode: ReportRenderMode;
   logoUrl: string | null;
   brandName: string;
-  coverSourceName: string;
+  coverSourceName?: string;
   workspaceId?: string | null;
   templateId: ReportTemplateId;
   locale?: string;
   hideOverviewInsights?: boolean;
+  reportVisualVariant?: "meta_ads" | null;
   watermarkText?: string;
   watermarkLogoLightUrl?: string | null;
   watermarkLogoDarkUrl?: string | null;
@@ -5212,6 +6555,7 @@ function ReportBlockSlide({
   const isMultiSourceTenSlide = isMultiSourceTenSlideReport(blocks);
   const isStandardizedTenSlide = isStandardizedTenSlideSemanticReport(blocks);
   const isEngagementOverview = isEngagementOverviewBlock(block);
+  const isMetaAdsReport = reportVisualVariant === "meta_ads";
   const renderModeName = hasChart ? "rich-data-slide" : "fallback";
   const chartMetricLabel =
     (isEngagementOverview
@@ -5270,6 +6614,50 @@ function ReportBlockSlide({
     allSemanticNames: blocks.map((item) => getBlockSemanticName(item)),
     overviewCandidate: isOverviewCandidate(blocks),
   });
+  if (isMetaAdsReport) {
+    if (index === 0) {
+      const meta = getMetaAdsTimeframeLabel(blocks, locale);
+      const accountName = getMetaAdsAccountName(blocks, coverSourceName || "", brandName);
+
+      return (
+        <CoverSlide
+          slideId={slideId}
+          eyebrow=""
+          title=""
+          renderMode={renderMode}
+          templateId={templateId}
+          model={{
+            reportHeading: "Meta Ads Report",
+            reportTitle: "Meta Ads Performance Report",
+            subtitle: accountName,
+            meta,
+            branding: {
+              logoUrl,
+              brandName,
+              workspaceId,
+            },
+          }}
+        />
+      );
+    }
+
+    const metaAdsSlide = renderMetaAdsMetricSlide({
+      block,
+      blocks,
+      index,
+      totalSlides,
+      renderMode,
+      templateId,
+      watermarkText,
+      watermarkLogoLightUrl,
+      watermarkLogoDarkUrl,
+      watermarkWorkspaceId,
+    });
+
+    if (metaAdsSlide) {
+      return metaAdsSlide;
+    }
+  }
   if (
     index === 1 &&
     (normalizedSemanticName === "executive_summary" ||
@@ -5878,34 +7266,42 @@ export function buildReportBlockSlideElements(input: {
   renderMode: ReportRenderMode;
   logoUrl: string | null;
   brandName: string;
-  coverSourceName: string;
+  coverSourceName?: string;
   workspaceId?: string | null;
   templateId: ReportTemplateId;
   locale?: string;
   hideOverviewInsights?: boolean;
+  reportVisualVariant?: "meta_ads" | null;
   watermarkText?: string;
   watermarkLogoLightUrl?: string | null;
   watermarkLogoDarkUrl?: string | null;
   watermarkWorkspaceId?: string | null;
 }) {
   const sortedBlocks = sortBlocksByOrder(input.blocks);
+  const renderBlocks =
+    input.reportVisualVariant === "meta_ads"
+      ? getMetaAdsRenderBlocks(sortedBlocks)
+      : sortedBlocks;
+  const totalSlides =
+    input.reportVisualVariant === "meta_ads" ? META_ADS_SLIDE_SEMANTIC_NAMES.length : renderBlocks.length;
 
-  return sortedBlocks.map((block, index) => (
+  return renderBlocks.map((block, index) => (
     <ReportBlockSlide
-      key={block.id || `report-block-slide-${index}`}
+      key={`${block.id || "report-block-slide"}-${index}`}
       block={block}
       blocks={sortedBlocks}
       model={input.model}
       index={index}
-      totalSlides={sortedBlocks.length}
+      totalSlides={totalSlides}
       renderMode={input.renderMode}
       logoUrl={input.logoUrl}
       brandName={input.brandName}
-      coverSourceName={input.coverSourceName}
+      coverSourceName={input.coverSourceName || ""}
       workspaceId={input.workspaceId}
       templateId={input.templateId}
       locale={input.locale}
       hideOverviewInsights={input.hideOverviewInsights}
+      reportVisualVariant={input.reportVisualVariant}
       watermarkText={input.watermarkText}
       watermarkLogoLightUrl={input.watermarkLogoLightUrl}
       watermarkLogoDarkUrl={input.watermarkLogoDarkUrl}
@@ -5998,8 +7394,13 @@ export function SlideRenderer({
     renderMode === "export"
       ? `report-pdf-root ${REPORT_SLIDE_THEME.spacing.exportGap}`
       : REPORT_SLIDE_THEME.spacing.previewGap;
+  const reportVisualVariant = resolveReportVisualVariant({
+    report,
+    blocks,
+  });
+  const isMetaAdsReport = reportVisualVariant === "meta_ads";
   const shouldUseBlockSlides =
-    renderMode !== "export" && shouldRenderBlocksAsSlides(blocks);
+    renderMode !== "export" && (shouldRenderBlocksAsSlides(blocks) || isMetaAdsReport);
   const sortedBlocks = blocks ? sortBlocksByOrder(blocks) : [];
   const isFacebookPagesMvpBlockDeck =
     shouldUseBlockSlides &&
@@ -6092,6 +7493,7 @@ export function SlideRenderer({
           templateId: effectiveTemplate as ReportTemplateId,
           locale,
           hideOverviewInsights,
+          reportVisualVariant,
           watermarkText: internalWatermarkText,
           watermarkLogoLightUrl: resolvedWatermark.logoLightUrl,
           watermarkLogoDarkUrl: resolvedWatermark.logoDarkUrl,
@@ -6119,7 +7521,7 @@ export function SlideRenderer({
                 report?.logoUrl ||
                 report?.logoUrl ||
                 report?.branding?.logoUrl ||
-                report?.branding?.logo_url ||
+                getStringValue(reportBranding?.logo_url) ||
                 reportBranding?.logo_url ||
                 reportBranding?.logoUrl ||
                 reportVersionBranding?.logoUrl ||

@@ -38,6 +38,7 @@ import {
   buildDefaultTemplateContext,
   resolveReportCoverSourceName,
 } from "@/lib/reports/templates/default-view-models";
+import { resolveReportVisualVariant } from "@/lib/reports/visual-variant";
 import { useActiveWorkspace } from "@/lib/workspace/use-active-workspace";
 import type { ReportDescription, ReportDetail, ReportVersionBlock } from "@/types/report";
 
@@ -515,6 +516,14 @@ export default function ReportView({
       ),
     [reportDetail]
   );
+  const reportVisualVariant = useMemo(
+    () =>
+      resolveReportVisualVariant({
+        report: reportDetail,
+        blocks,
+      }),
+    [blocks, reportDetail]
+  );
   const thumbnailContext = useMemo(
     () =>
       buildDefaultTemplateContext(
@@ -530,7 +539,10 @@ export default function ReportView({
   );
   const slideNavigationItems = useMemo(
     () => {
-      if (shouldRenderBlocksAsSlides(blocks)) {
+      const shouldUseBlockSlides =
+        shouldRenderBlocksAsSlides(blocks) || reportVisualVariant === "meta_ads";
+
+      if (shouldUseBlockSlides) {
         return buildReportBlockSlideElements({
           blocks,
           model: viewModel,
@@ -540,6 +552,7 @@ export default function ReportView({
           templateId: selectedTemplateId,
           locale: language,
           hideOverviewInsights,
+          reportVisualVariant,
         }).map((element, index) => {
           const id = String(index + 1).padStart(2, "0");
 
@@ -578,6 +591,7 @@ export default function ReportView({
       language,
       resolvedBranding.brandName,
       resolvedBranding.logoUrl,
+      reportVisualVariant,
       selectedTemplateId,
       template.slides,
       thumbnailContext,
@@ -585,17 +599,20 @@ export default function ReportView({
     ]
   );
   useEffect(() => {
+    const shouldUseBlockSlides =
+      shouldRenderBlocksAsSlides(blocks) || reportVisualVariant === "meta_ads";
+
     console.info("[AUDIT_RENDER_PATH][ReportView]", {
-      source: shouldRenderBlocksAsSlides(blocks) ? "blocks" : "template",
-      usesBlocks: shouldRenderBlocksAsSlides(blocks),
-      usesTemplate: !shouldRenderBlocksAsSlides(blocks),
+      source: shouldUseBlockSlides ? "blocks" : "template",
+      usesBlocks: shouldUseBlockSlides,
+      usesTemplate: !shouldUseBlockSlides,
       blocksLength: blocks.length,
       templateSlidesLength: template.slides.length,
       renderMode: "preview",
       currentSlide: activeSlideId,
       slideNavigationItemsLength: slideNavigationItems.length,
     });
-  }, [activeSlideId, blocks, slideNavigationItems.length, template.slides.length]);
+  }, [activeSlideId, blocks, reportVisualVariant, slideNavigationItems.length, template.slides.length]);
 
   async function handleShare() {
     if (shareLocked) {
