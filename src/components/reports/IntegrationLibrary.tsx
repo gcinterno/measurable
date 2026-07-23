@@ -7,8 +7,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { useI18n } from "@/components/providers/LanguageProvider";
 import {
+  connectInstagramBusinessLogin,
   connectMetaBusinessSuiteIntegration,
   disconnectMetaBusinessSuiteIntegration,
+  fetchInstagramBusinessLoginStatus,
   fetchMetaBusinessSuiteStatus,
   isMetaAssetDiscoveryComplete,
   normalizeMetaProviderStatus,
@@ -76,6 +78,10 @@ type MetaProviderConnectionState = {
 
 const META_PROVIDER_POPUP_STATUS_POLL_MS = 30000;
 const DISCONNECT_STATUS_PROTECTION_MS = 10000;
+const META_SUITE_REPORT_SOURCE_KEYS = [
+  "facebook_pages",
+  "meta_ads",
+] as const satisfies readonly MetaFrontendIntegrationKey[];
 
 function createMetaProviderConnectionState(
   loading = false
@@ -125,6 +131,7 @@ function createEmptyMetaBusinessSuiteStatus(): MetaBusinessSuiteConnectionStatus
         connected: false,
         integrationId: "",
         assetCount: 0,
+        entities: [],
         discoveryStatus: "",
         tokenScopes: [],
         missingScopes: [],
@@ -137,6 +144,7 @@ function createEmptyMetaBusinessSuiteStatus(): MetaBusinessSuiteConnectionStatus
         connected: false,
         integrationId: "",
         assetCount: 0,
+        entities: [],
         discoveryStatus: "",
         tokenScopes: [],
         missingScopes: [],
@@ -149,6 +157,7 @@ function createEmptyMetaBusinessSuiteStatus(): MetaBusinessSuiteConnectionStatus
         connected: false,
         integrationId: "",
         assetCount: 0,
+        entities: [],
         discoveryStatus: "",
         tokenScopes: [],
         missingScopes: [],
@@ -179,7 +188,7 @@ function isSuiteChildAssetDiscoverySettled(
 }
 
 function isSuiteAssetDiscoverySettled(status: MetaBusinessSuiteConnectionStatus) {
-  return META_REPORT_SOURCE_KEYS.every((provider) =>
+  return META_SUITE_REPORT_SOURCE_KEYS.every((provider) =>
     isSuiteChildAssetDiscoverySettled(status, provider)
   );
 }
@@ -281,7 +290,10 @@ function resolveOAuthMessageProvider(message: {
     message.integration_type,
   ].map((value) => (value || "").trim().toLowerCase());
 
-  if (candidates.includes("instagram_business")) {
+  if (
+    candidates.includes("instagram_business") ||
+    candidates.includes("instagram_business_login")
+  ) {
     return "instagram_business" as const;
   }
 
@@ -399,7 +411,9 @@ function buildNextSelectedContext(input: {
         ? ""
         : firstSource === "meta_ads"
           ? "meta_ads"
-          : "meta",
+          : firstSource === "instagram_business"
+            ? "instagram_business_login"
+            : "meta",
     workspaceId: workspaceId || currentContext?.workspaceId || "",
     integrationId:
       firstSourceAccount?.integrationId ||
@@ -607,7 +621,7 @@ export function IntegrationLibrary({
       );
       const nextCounts = {
         facebook_pages: displaySuiteStatus.children.facebook_pages.assetCount,
-        instagram_business: displaySuiteStatus.children.instagram_business.assetCount,
+        instagram_business: providerConnectionsRef.current.instagram_business.assetCount,
         meta_ads: displaySuiteStatus.children.meta_ads.assetCount,
       };
       const nextUiStatuses = {} as Record<
@@ -619,6 +633,19 @@ export function IntegrationLibrary({
       };
 
       META_REPORT_SOURCE_KEYS.forEach((provider) => {
+        if (provider === "instagram_business") {
+          const current = nextProviderConnections.instagram_business;
+
+          nextUiStatuses.instagram_business = normalizeMetaProviderStatus({
+            provider,
+            status: current.status,
+            connected: current.connected,
+            assetCount: current.assetCount,
+            lastSyncedAt: current.lastSyncedAt,
+          });
+          return;
+        }
+
         const childStatus = displaySuiteStatus.children[provider];
         const uiStatus = normalizeSuiteChildStatus({
           provider,
@@ -673,7 +700,6 @@ export function IntegrationLibrary({
       setMetaCounts(nextCounts);
       setMetaIntegrationId(
         displaySuiteStatus.children.facebook_pages.integrationId ||
-          displaySuiteStatus.children.instagram_business.integrationId ||
           displaySuiteStatus.integrationId
       );
       setMetaAdsIntegrationId(
@@ -688,7 +714,7 @@ export function IntegrationLibrary({
   const refreshMetaSuiteProviderStates = useCallback(
     async (
       cacheBust?: number,
-      loadingProviders: readonly MetaFrontendIntegrationKey[] = META_REPORT_SOURCE_KEYS,
+      loadingProviders: readonly MetaFrontendIntegrationKey[] = META_SUITE_REPORT_SOURCE_KEYS,
       refresh = false,
       assetDiscoveryProviders: readonly MetaFrontendIntegrationKey[] = []
     ) => {
@@ -732,7 +758,7 @@ export function IntegrationLibrary({
         setProviderConnections((current) => {
           const nextState = { ...current };
 
-          META_REPORT_SOURCE_KEYS.forEach((provider) => {
+          META_SUITE_REPORT_SOURCE_KEYS.forEach((provider) => {
             nextState[provider] = {
               ...nextState[provider],
               loading: false,
@@ -752,13 +778,100 @@ export function IntegrationLibrary({
     [activeWorkspaceId, applyMetaSuiteStatus, embedded]
   );
 
+  const refreshInstagramBusinessLoginProviderState = useCallback(
+    async (cacheBust?: number, showLoading = true) => {
+      const requestStartedAt = Date.now();
+
+      if (!embedded) {
+        return normalizeMetaProviderStatus({
+          provider: "instagram_business",
+          status: "",
+          connected: false,
+        });
+      }
+
+      if (showLoading) {
+        setProviderConnection("instagram_business", {
+          loading: true,
+        });
+      }
+
+      try {
+        const status = await fetchInstagramBusinessLoginStatus({
+          workspaceId: activeWorkspaceId,
+          cacheBust,
+        });
+        const uiStatus = normalizeMetaProviderStatus({
+          provider: "instagram_business",
+          status: status.status,
+          connected: status.connected,
+          assetCount: status.accountCount,
+          lastSyncedAt: status.lastSyncedAt,
+        });
+
+        if (shouldIgnoreProviderStatus("instagram_business", requestStartedAt, uiStatus)) {
+          const current = providerConnectionsRef.current.instagram_business;
+
+          return normalizeMetaProviderStatus({
+            provider: "instagram_business",
+            status: current.status,
+            connected: current.connected,
+            assetCount: current.assetCount,
+            lastSyncedAt: current.lastSyncedAt,
+          });
+        }
+
+        setProviderConnection("instagram_business", {
+          status: uiStatus.status,
+          connected: uiStatus.connected,
+          integrationId: status.integrationId,
+          assetCount: status.accountCount,
+          discoveryStatus: "complete",
+          loading: false,
+          isActionInFlight: false,
+          assetDiscoveryInFlight: false,
+          lastUpdatedAt: Date.now(),
+          error: uiStatus.connected ? "" : providerConnectionsRef.current.instagram_business.error,
+          lastSyncedAt: status.lastSyncedAt,
+          missingScopes: status.missingScopes,
+        });
+        setMetaCounts((current) => ({
+          ...current,
+          instagram_business: status.accountCount,
+        }));
+
+        return uiStatus;
+      } catch (error) {
+        setProviderConnection("instagram_business", {
+          loading: false,
+          isActionInFlight: false,
+          connected: false,
+          status: "",
+          assetCount: 0,
+          assetDiscoveryInFlight: false,
+        });
+        throw error;
+      }
+    },
+    [
+      activeWorkspaceId,
+      embedded,
+      setProviderConnection,
+      shouldIgnoreProviderStatus,
+    ]
+  );
+
   const refreshProviderState = useCallback(
     async (provider: MetaFrontendIntegrationKey, cacheBust?: number) => {
+      if (provider === "instagram_business") {
+        return refreshInstagramBusinessLoginProviderState(cacheBust);
+      }
+
       const uiStatuses = await refreshMetaSuiteProviderStates(cacheBust, [provider]);
 
       return uiStatuses[provider];
     },
-    [refreshMetaSuiteProviderStates]
+    [refreshInstagramBusinessLoginProviderState, refreshMetaSuiteProviderStates]
   );
 
   const clearAssetDiscoveryInFlight = useCallback(() => {
@@ -787,7 +900,7 @@ export function IntegrationLibrary({
           Date.now() + attempt,
           [],
           true,
-          META_REPORT_SOURCE_KEYS
+          META_SUITE_REPORT_SOURCE_KEYS
         );
 
         if (isSuiteAssetDiscoverySettled(metaSuiteStatusRef.current)) {
@@ -851,7 +964,10 @@ export function IntegrationLibrary({
       }
 
       try {
-        await refreshMetaSuiteProviderStates();
+        await Promise.all([
+          refreshMetaSuiteProviderStates(),
+          refreshInstagramBusinessLoginProviderState(undefined, true),
+        ]);
       } catch (error) {
         if (!active) {
           return;
@@ -866,7 +982,11 @@ export function IntegrationLibrary({
     return () => {
       active = false;
     };
-  }, [embedded, refreshMetaSuiteProviderStates]);
+  }, [
+    embedded,
+    refreshInstagramBusinessLoginProviderState,
+    refreshMetaSuiteProviderStates,
+  ]);
 
   const handleOAuthCompleteMessage = useCallback(
     async (message: {
@@ -896,17 +1016,54 @@ export function IntegrationLibrary({
       if (message.integrationId) {
         if (provider === "meta_ads") {
           setMetaAdsIntegrationId(message.integrationId);
-        } else {
+        } else if (provider === "facebook_pages") {
           setMetaIntegrationId(message.integrationId);
         }
       }
 
       try {
+        if (provider === "instagram_business") {
+          const uiStatus = await refreshInstagramBusinessLoginProviderState(
+            Date.now(),
+            false
+          );
+
+          if (uiStatus.connected) {
+            void trackMetaEvent("MetaConnected", {
+              source: provider,
+              provider: "instagram_business_login",
+              surface: "report_flow",
+            });
+            setConnectError("");
+            completeProviderAction(provider, { status: uiStatus.status });
+            return;
+          }
+
+          if (uiStatus.status === "needs_permission") {
+            setConnectError(uiStatus.helperText);
+            completeProviderAction(provider, {
+              status: uiStatus.status,
+              error: uiStatus.helperText,
+            });
+            return;
+          }
+
+          if (message.status === "error" || message.error) {
+            setConnectError(
+              message.error ||
+                message.message ||
+                "We couldn’t complete the Instagram Business connection."
+            );
+          }
+          completeProviderAction(provider);
+          return;
+        }
+
         const uiStatuses = await refreshMetaSuiteProviderStates(
           Date.now(),
           [],
           true,
-          META_REPORT_SOURCE_KEYS
+          META_SUITE_REPORT_SOURCE_KEYS
         );
         const uiStatus = uiStatuses[provider];
 
@@ -950,6 +1107,7 @@ export function IntegrationLibrary({
       completeProviderAction,
       connectingIntegrationKey,
       pollMetaSuiteAssetsAfterOAuth,
+      refreshInstagramBusinessLoginProviderState,
       refreshMetaSuiteProviderStates,
       stopPopupPolling,
     ]
@@ -1036,6 +1194,7 @@ export function IntegrationLibrary({
       return;
     }
     const provider = integration.integrationKey;
+    const isInstagramBusinessLogin = provider === "instagram_business";
 
     if (connectInFlightRef.current) {
       console.warn("META_CONNECT_DUPLICATE_IGNORED", {
@@ -1047,6 +1206,7 @@ export function IntegrationLibrary({
 
     let popupStarted = false;
     let popup: Window | null = null;
+    let contextWorkspaceId = "";
 
     try {
       connectInFlightRef.current = true;
@@ -1055,8 +1215,7 @@ export function IntegrationLibrary({
       setConnectError("");
       clearMetaOAuthDebugUrl();
       const currentContext = getIntegrationReportContext();
-      const contextWorkspaceId =
-        activeWorkspaceId || currentContext?.workspaceId || "";
+      contextWorkspaceId = activeWorkspaceId || currentContext?.workspaceId || "";
       const { tokenReady } = hasMetaConnectPrerequisites();
 
       if (!tokenReady) {
@@ -1072,13 +1231,17 @@ export function IntegrationLibrary({
       }
 
       if (embedded) {
-        if (isMetaOrganicFrontendIntegrationKey(integration.integrationKey)) {
+        if (integration.integrationKey === "facebook_pages") {
           setPendingMetaSource(integration.integrationKey);
         }
         setIntegrationReportContext({
           source: integration.integrationKey,
           integration:
-            integration.integrationKey === "meta_ads" ? "meta_ads" : "meta",
+            integration.integrationKey === "meta_ads"
+              ? "meta_ads"
+              : isInstagramBusinessLogin
+                ? "instagram_business_login"
+                : "meta",
           workspaceId: contextWorkspaceId,
           integrationId: undefined,
           pageId: undefined,
@@ -1114,47 +1277,58 @@ export function IntegrationLibrary({
       console.info("META_CONNECT_START", {
         workspace_id: contextWorkspaceId,
         source: integration.integrationKey,
+        provider: isInstagramBusinessLogin
+          ? "instagram_business_login"
+          : "meta_business_suite",
         route: "IntegrationLibrary",
       });
 
-      if (integration.integrationKey === "instagram_business") {
+      if (isInstagramBusinessLogin) {
         console.info("INSTAGRAM_BUSINESS_CONNECT_REQUESTED", {
           route: "IntegrationLibrary",
-          integration_type: "instagram_business",
+          provider: "instagram_business_login",
+          integration_type: "instagram_business_login",
           workspace_id: contextWorkspaceId,
         });
         console.info("INSTAGRAM_BUSINESS_CONNECT_CLICKED", {
           route: "IntegrationLibrary",
-          integration_type: "instagram_business",
+          provider: "instagram_business_login",
+          integration_type: "instagram_business_login",
           workspace_id: contextWorkspaceId,
         });
       }
 
-      const response = await connectMetaBusinessSuiteIntegration({
-        workspaceId: contextWorkspaceId,
-        reconnect: true,
-      });
+      const response = isInstagramBusinessLogin
+        ? await connectInstagramBusinessLogin(contextWorkspaceId)
+        : await connectMetaBusinessSuiteIntegration({
+            workspaceId: contextWorkspaceId,
+            reconnect: true,
+          });
       const authUrl = response.authUrlFromBackend || response.redirectUrl;
 
       console.info("META_CONNECT_AUTH_URL", {
         workspace_id: contextWorkspaceId,
         source: integration.integrationKey,
-        integration_type: "meta_business_suite",
+        integration_type: isInstagramBusinessLogin
+          ? "instagram_business_login"
+          : "meta_business_suite",
         auth_url: authUrl || null,
         integration_id: response.integrationId || null,
       });
 
-      if (integration.integrationKey === "instagram_business") {
+      if (isInstagramBusinessLogin) {
         console.info("INSTAGRAM_BUSINESS_AUTH_URL_RECEIVED", {
           route: "IntegrationLibrary",
-          integration_type: "instagram_business",
+          provider: "instagram_business_login",
+          integration_type: "instagram_business_login",
           workspace_id: contextWorkspaceId,
           auth_url: authUrl || null,
           integration_id: response.integrationId || null,
         });
         console.info("INSTAGRAM_BUSINESS_AUTH_URL_CREATED", {
           route: "IntegrationLibrary",
-          integration_type: "instagram_business",
+          provider: "instagram_business_login",
+          integration_type: "instagram_business_login",
           workspace_id: contextWorkspaceId,
           auth_url: authUrl || null,
           integration_id: response.integrationId || null,
@@ -1164,13 +1338,17 @@ export function IntegrationLibrary({
       console.info("META_CONNECT_AUTH_URL_FINAL", {
         workspace_id: contextWorkspaceId,
         source: integration.integrationKey,
-        integration_type: "meta_business_suite",
+        integration_type: isInstagramBusinessLogin
+          ? "instagram_business_login"
+          : "meta_business_suite",
         auth_url: authUrl || null,
       });
 
       if (!authUrl) {
         throw new Error(
-          "The backend did not return a valid Meta Business Suite OAuth URL."
+          isInstagramBusinessLogin
+            ? "The backend did not return a valid Instagram Business Login OAuth URL."
+            : "The backend did not return a valid Meta Business Suite OAuth URL."
         );
       }
 
@@ -1193,7 +1371,9 @@ export function IntegrationLibrary({
       stopPopupPolling();
       popupTimeoutRef.current = window.setTimeout(() => {
         setConnectError(
-          "This is taking longer than expected. Finish the Meta flow in the popup and we’ll update the connection automatically."
+          isInstagramBusinessLogin
+            ? "This is taking longer than expected. Finish the Instagram flow in the popup and we’ll update the connection automatically."
+            : "This is taking longer than expected. Finish the Meta flow in the popup and we’ll update the connection automatically."
         );
       }, 90000);
       popupPollRef.current = window.setInterval(() => {
@@ -1217,11 +1397,16 @@ export function IntegrationLibrary({
             if (uiStatus.connected) {
               void trackMetaEvent("MetaConnected", {
                 source: provider,
+                provider: isInstagramBusinessLogin
+                  ? "instagram_business_login"
+                  : undefined,
                 surface: "report_flow",
               });
               setConnectError("");
               completeProviderAction(provider, { status: uiStatus.status });
-              void pollMetaSuiteAssetsAfterOAuth();
+              if (!isInstagramBusinessLogin) {
+                void pollMetaSuiteAssetsAfterOAuth();
+              }
               return;
             }
 
@@ -1255,10 +1440,11 @@ export function IntegrationLibrary({
           // Ignore popup close failures.
         }
       }
-      if (integration.integrationKey === "instagram_business") {
+      if (isInstagramBusinessLogin) {
         console.info("INSTAGRAM_BUSINESS_CONNECT_FAILED", {
           route: "IntegrationLibrary",
-          integration_type: "instagram_business",
+          provider: "instagram_business_login",
+          integration_type: "instagram_business_login",
           workspace_id: contextWorkspaceId,
           reason: error instanceof Error ? error.message : "unknown_error",
         });
@@ -1266,7 +1452,9 @@ export function IntegrationLibrary({
       setConnectError(
         error instanceof Error && error.message
           ? error.message
-          : "We could not start Meta Business Suite authorization. Try again."
+          : isInstagramBusinessLogin
+            ? "We could not start Instagram Business Login authorization. Try again."
+            : "We could not start Meta Business Suite authorization. Try again."
       );
     } finally {
       if (!popupStarted) {
@@ -1280,7 +1468,11 @@ export function IntegrationLibrary({
   const getIntegrationIdForProvider = useCallback(
     (provider: MetaFrontendIntegrationKey) =>
       providerConnections[provider].integrationId ||
-      (provider === "meta_ads" ? metaAdsIntegrationId : metaIntegrationId),
+      (provider === "instagram_business"
+        ? ""
+        : provider === "meta_ads"
+          ? metaAdsIntegrationId
+          : metaIntegrationId),
     [metaAdsIntegrationId, metaIntegrationId, providerConnections]
   );
 
@@ -1539,7 +1731,11 @@ export function IntegrationLibrary({
           >
             {isConnecting
               ? messages.integrationsPage.connecting
-              : providerUiStatus?.actionLabel || messages.common.connect}
+              : integration.integrationKey === "instagram_business"
+                ? providerUiStatus?.actionLabel === "Reconnect"
+                  ? "Reconnect Instagram Business"
+                  : "Connect Instagram Business"
+                : providerUiStatus?.actionLabel || messages.common.connect}
           </button>
         );
       }
@@ -1653,7 +1849,11 @@ export function IntegrationLibrary({
         >
           {isConnecting
             ? messages.integrationsPage.connecting
-            : providerUiStatus?.actionLabel || messages.common.connect}
+            : integration.integrationKey === "instagram_business"
+              ? providerUiStatus?.actionLabel === "Reconnect"
+                ? "Reconnect Instagram Business"
+                : "Connect Instagram Business"
+              : providerUiStatus?.actionLabel || messages.common.connect}
         </button>
       );
     }
@@ -1757,7 +1957,9 @@ export function IntegrationLibrary({
           const isMetaAds = integration.integrationKey === "meta_ads";
           const metaConnected = Boolean(providerUiStatus?.connected);
           const canSelectMeta = Boolean(
-            metaConnected && (providerConnection?.assetCount || 0) > 0
+            metaConnected &&
+              (integration.integrationKey === "instagram_business" ||
+                (providerConnection?.assetCount || 0) > 0)
           );
           const isAssetPreparing = Boolean(
             metaConnected &&

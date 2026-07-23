@@ -1,6 +1,6 @@
 import type { Report, ReportDetail, ReportVersionBlock } from "@/types/report";
 
-export type ReportVisualVariant = "meta_ads";
+export type ReportVisualVariant = "meta_ads" | "instagram_business";
 
 type ReportVisualInput =
   | Pick<
@@ -174,6 +174,20 @@ const META_ADS_BLOCK_TOKENS = [
   "paid media",
 ];
 
+const INSTAGRAM_BUSINESS_DIRECT_TOKENS = [
+  "instagram_business_login",
+  "instagram_business",
+  "instagram business",
+  "instagram",
+];
+
+const FACEBOOK_DIRECT_TOKENS = [
+  "facebook_pages",
+  "facebook page",
+  "facebook pages",
+  "facebook",
+];
+
 function hasMetaAdsSignal(values: string[]) {
   return values.some((value) =>
     META_ADS_DIRECT_TOKENS.some((token) => value.includes(token))
@@ -183,6 +197,18 @@ function hasMetaAdsSignal(values: string[]) {
 function hasMetaAdsBlockSignal(values: string[]) {
   return values.some((value) =>
     META_ADS_BLOCK_TOKENS.some((token) => value.includes(token))
+  );
+}
+
+function hasInstagramBusinessSignal(values: string[]) {
+  return values.some((value) =>
+    INSTAGRAM_BUSINESS_DIRECT_TOKENS.some((token) => value.includes(token))
+  );
+}
+
+function hasFacebookSignal(values: string[]) {
+  return values.some((value) =>
+    FACEBOOK_DIRECT_TOKENS.some((token) => value.includes(token))
   );
 }
 
@@ -199,6 +225,13 @@ export function resolveReportVisualVariant(input: {
 
   if (hasMetaAdsBlockSignal(blockValues)) {
     return "meta_ads" as const;
+  }
+
+  if (
+    (hasInstagramBusinessSignal(reportValues) && !hasFacebookSignal(reportValues)) ||
+    (hasInstagramBusinessSignal(blockValues) && !hasFacebookSignal(reportValues))
+  ) {
+    return "instagram_business" as const;
   }
 
   return null;

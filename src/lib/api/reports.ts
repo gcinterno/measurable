@@ -918,6 +918,16 @@ function getCurrentLocale() {
   return usePreferencesStore.getState().language || "en";
 }
 
+function normalizePayloadId(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) ? parsed : String(value);
+}
+
 export async function createReport(input: {
   name: string;
   datasetId: string;
@@ -1035,6 +1045,7 @@ export async function createInstagramBusinessReport(input: {
   integrationId: string;
   workspaceId?: string;
   accountId: string;
+  datasetId: string;
   timeframe: string;
   startDate?: string;
   endDate?: string;
@@ -1043,9 +1054,14 @@ export async function createInstagramBusinessReport(input: {
 }) {
   const locale = getCurrentLocale();
   const payload = {
-    integration_id: input.integrationId,
-    workspace_id: input.workspaceId,
+    source: "instagram_business",
+    provider: "instagram_business_login",
+    integration_type: "instagram_business_login",
+    integration_id: normalizePayloadId(input.integrationId),
+    workspace_id: normalizePayloadId(input.workspaceId),
     account_id: input.accountId,
+    instagram_account_id: input.accountId,
+    dataset_id: normalizePayloadId(input.datasetId),
     timeframe: input.timeframe,
     start_date: input.startDate,
     end_date: input.endDate,
@@ -1061,6 +1077,7 @@ export async function createInstagramBusinessReport(input: {
     integrationId: input.integrationId,
     workspaceId: input.workspaceId,
     accountId: input.accountId,
+    datasetId: input.datasetId,
     timeframe: input.timeframe,
     startDate: input.startDate,
     endDate: input.endDate,
@@ -1136,6 +1153,7 @@ export async function createMultiSourceReport(input: {
   sources: Array<{
     provider: string;
     sourceType: string;
+    integrationType?: string;
     integrationId: string;
     integrationAccountId: string;
     datasetId: string;
@@ -1154,6 +1172,9 @@ export async function createMultiSourceReport(input: {
     sources: input.sources.map((source) => ({
       provider: source.provider,
       source_type: source.sourceType,
+      ...(source.integrationType
+        ? { integration_type: source.integrationType }
+        : {}),
       integration_id: Number(source.integrationId),
       integration_account_id: Number(source.integrationAccountId),
       dataset_id: Number(source.datasetId),

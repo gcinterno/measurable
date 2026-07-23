@@ -7,12 +7,17 @@ import { AppShell } from "@/components/layout/AppShell";
 import { UserSuggestionModal } from "@/components/suggestions/UserSuggestionModal";
 import { ApiError } from "@/lib/api";
 import {
+  connectInstagramBusinessLogin,
   connectMetaBusinessSuiteIntegration,
   disconnectMetaBusinessSuiteIntegration,
+  fetchInstagramBusinessLoginAccounts,
+  fetchInstagramBusinessLoginStatus,
   fetchMetaBusinessSuiteStatus,
   isMetaAssetDiscoveryComplete,
   isMetaProviderConnectedStatus,
   normalizeMetaBusinessSuiteStatus,
+  testInstagramBusinessLoginInsights,
+  type InstagramBusinessLoginStatus,
   type MetaBusinessSuiteConnectionStatus,
   type MetaProviderKey,
 } from "@/lib/api/integrations";
@@ -51,8 +56,31 @@ type AssetRefreshState = {
   lastCompletedAt: number;
 };
 
+type InstagramBusinessRuntimeState = {
+  isActionInFlight: boolean;
+  isSyncInFlight: boolean;
+  error: string;
+};
+
 const POPUP_STATUS_POLL_MS = 30000;
 const DISCONNECT_STATUS_PROTECTION_MS = 10000;
+
+function createEmptyInstagramBusinessLoginStatus(): InstagramBusinessLoginStatus {
+  return {
+    provider: "instagram_business_login",
+    integrationType: "instagram_business_login",
+    status: "",
+    connected: false,
+    integrationId: "",
+    accountCount: 0,
+    accounts: [],
+    tokenScopes: [],
+    missingScopes: [],
+    lastSyncedAt: "",
+    message: "",
+    raw: null,
+  };
+}
 
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -70,6 +98,25 @@ function getBadgeClasses(status: "Available" | "Connected" | "Needs permission" 
     default:
       return "bg-sky-50 text-sky-700 ring-1 ring-sky-100";
   }
+}
+
+function getInstagramBusinessBadge(input: {
+  status: InstagramBusinessLoginStatus;
+  loading: boolean;
+}) {
+  if (input.loading && !input.status.status) {
+    return "Checking" as const;
+  }
+
+  if (input.status.connected) {
+    return "Connected" as const;
+  }
+
+  if (input.status.status === "needs_permission") {
+    return "Needs permission" as const;
+  }
+
+  return "Available" as const;
 }
 
 function getChildSummary(input: {
@@ -113,7 +160,8 @@ function getChildDiscoveryStatus(
 }
 
 function isSuiteAssetDiscoverySettled(status: MetaBusinessSuiteConnectionStatus) {
-  return Object.values(status.children).every((childStatus) => {
+  return (["facebook_pages", "meta_ads"] as const).every((provider) => {
+    const childStatus = status.children[provider];
     const discoveryStatus =
       childStatus.discoveryStatus || status.discoveryStatus;
 
@@ -155,10 +203,9 @@ function mergeSuiteStatusForDisplay(
     }
   });
 
-  mergedStatus.assetCount = Object.values(mergedStatus.children).reduce(
-    (total, childStatus) => total + childStatus.assetCount,
-    0
-  );
+  mergedStatus.assetCount =
+    mergedStatus.children.facebook_pages.assetCount +
+    mergedStatus.children.meta_ads.assetCount;
 
   return mergedStatus;
 }
@@ -182,6 +229,7 @@ function createEmptySuiteStatus(): MetaBusinessSuiteConnectionStatus {
         connected: false,
         integrationId: "",
         assetCount: 0,
+        entities: [],
         discoveryStatus: "",
         tokenScopes: [],
         missingScopes: [],
@@ -194,6 +242,7 @@ function createEmptySuiteStatus(): MetaBusinessSuiteConnectionStatus {
         connected: false,
         integrationId: "",
         assetCount: 0,
+        entities: [],
         discoveryStatus: "",
         tokenScopes: [],
         missingScopes: [],
@@ -206,6 +255,7 @@ function createEmptySuiteStatus(): MetaBusinessSuiteConnectionStatus {
         connected: false,
         integrationId: "",
         assetCount: 0,
+        entities: [],
         discoveryStatus: "",
         tokenScopes: [],
         missingScopes: [],
@@ -222,8 +272,12 @@ function IntegrationsPageContent() {
   const [suiteStatus, setSuiteStatus] = useState<MetaBusinessSuiteConnectionStatus>(
     createEmptySuiteStatus
   );
+  const [instagramStatus, setInstagramStatus] =
+    useState<InstagramBusinessLoginStatus>(createEmptyInstagramBusinessLoginStatus);
   const [suiteLoading, setSuiteLoading] = useState(true);
+  const [instagramLoading, setInstagramLoading] = useState(true);
   const [suiteMessage, setSuiteMessage] = useState("");
+  const [instagramMessage, setInstagramMessage] = useState("");
   const [suggestionOpen, setSuggestionOpen] = useState(false);
   const [runtimeState, setRuntimeState] = useState<SuiteRuntimeState>({
     isActionInFlight: false,
@@ -236,8 +290,16 @@ function IntegrationsPageContent() {
     lastStartedAt: 0,
     lastCompletedAt: 0,
   });
+  const [instagramRuntimeState, setInstagramRuntimeState] =
+    useState<InstagramBusinessRuntimeState>({
+      isActionInFlight: false,
+      isSyncInFlight: false,
+      error: "",
+    });
   const runtimeStateRef = useRef(runtimeState);
   const suiteStatusRef = useRef(suiteStatus);
+  const instagramStatusRef = useRef(instagramStatus);
+  const instagramConnectInFlightRef = useRef(false);
   const lastSuiteStatusAppliedAtRef = useRef(0);
   const popupWindowRef = useRef<Window | null>(null);
   const popupCallbackReceivedRef = useRef(false);
@@ -254,6 +316,21 @@ function IntegrationsPageContent() {
     runtimeStateRef.current = nextState;
     setRuntimeState(nextState);
   }, []);
+
+  const refreshInstagramStatus = useCallback(
+    async (input?: { cacheBust?: number }) => {
+      const status = await fetchInstagramBusinessLoginStatus({
+        workspaceId: activeWorkspaceId,
+        cacheBust: input?.cacheBust,
+      });
+
+      instagramStatusRef.current = status;
+      setInstagramStatus(status);
+
+      return status;
+    },
+    [activeWorkspaceId]
+  );
 
   const beginAction = useCallback(
     (action: Exclude<SuiteUserAction, null>) => {
@@ -490,6 +567,42 @@ function IntegrationsPageContent() {
   }, [activeWorkspaceId, applySuiteStatus]);
 
   useEffect(() => {
+    let active = true;
+
+    async function loadInstagramStatus() {
+      try {
+        setInstagramLoading(true);
+        const status = await fetchInstagramBusinessLoginStatus({
+          workspaceId: activeWorkspaceId,
+        });
+
+        if (!active) {
+          return;
+        }
+
+        instagramStatusRef.current = status;
+        setInstagramStatus(status);
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        console.error("instagram business login status load error:", error);
+      } finally {
+        if (active) {
+          setInstagramLoading(false);
+        }
+      }
+    }
+
+    void loadInstagramStatus();
+
+    return () => {
+      active = false;
+    };
+  }, [activeWorkspaceId]);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -500,6 +613,65 @@ function IntegrationsPageContent() {
       }
 
       if (!isIntegrationOAuthCompleteMessage(event.data) && !isMetaOAuthWindowMessage(event.data)) {
+        return;
+      }
+
+      const oauthMessage = event.data as {
+        provider?: string;
+        source?: string;
+        integration_type?: string;
+        status?: string;
+        error?: string;
+        message?: string;
+      };
+      const oauthCandidates = [
+        oauthMessage.provider,
+        oauthMessage.source,
+        oauthMessage.integration_type,
+      ].map((value) => (value || "").trim().toLowerCase());
+      const isInstagramBusinessLoginMessage =
+        oauthCandidates.includes("instagram_business_login") ||
+        (instagramConnectInFlightRef.current &&
+          oauthCandidates.includes("instagram_business"));
+
+      if (isInstagramBusinessLoginMessage) {
+        popupCallbackReceivedRef.current = true;
+        stopPopupPolling();
+        closePopup();
+        clearPendingMetaOAuth();
+        instagramConnectInFlightRef.current = false;
+
+        try {
+          const status = await refreshInstagramStatus({ cacheBust: Date.now() });
+
+          if (status.connected) {
+            setInstagramMessage("Instagram Business connected successfully.");
+            setInstagramRuntimeState((current) => ({
+              ...current,
+              isActionInFlight: false,
+              error: "",
+            }));
+            return;
+          }
+
+          setInstagramMessage("Authorization is still being processed. Refresh this page in a few seconds.");
+          setInstagramRuntimeState((current) => ({
+            ...current,
+            isActionInFlight: false,
+            error:
+              status.status === "needs_permission"
+                ? "Reconnect and approve instagram_business_manage_insights."
+                : oauthMessage.error || oauthMessage.message || "",
+          }));
+        } catch (error) {
+          console.error("instagram business callback refresh error:", error);
+          setInstagramRuntimeState((current) => ({
+            ...current,
+            isActionInFlight: false,
+            error:
+              "The connection finished, but we couldn’t refresh the Instagram Business status.",
+          }));
+        }
         return;
       }
 
@@ -552,6 +724,7 @@ function IntegrationsPageContent() {
     closePopup,
     completeAction,
     refreshSuiteAssetsAfterOAuth,
+    refreshInstagramStatus,
     refreshSuiteStatus,
     stopPopupPolling,
   ]);
@@ -684,6 +857,235 @@ function IntegrationsPageContent() {
     }
   }
 
+  const pollInstagramStatusAfterPopup = useCallback(async () => {
+    const deadline = Date.now() + POPUP_STATUS_POLL_MS;
+    let attempt = 0;
+    let lastStatus = instagramStatusRef.current;
+
+    while (Date.now() < deadline && !popupCallbackReceivedRef.current) {
+      lastStatus = await refreshInstagramStatus({
+        cacheBust: Date.now() + attempt,
+      });
+
+      if (lastStatus.connected || lastStatus.status === "needs_permission") {
+        return lastStatus;
+      }
+
+      attempt += 1;
+      await delay(1000);
+    }
+
+    return lastStatus;
+  }, [refreshInstagramStatus]);
+
+  async function handleInstagramConnect() {
+    if (instagramRuntimeState.isActionInFlight || runtimeStateRef.current.isActionInFlight) {
+      return;
+    }
+
+    let popupStarted = false;
+    let popup: Window | null = null;
+
+    try {
+      const workspaceId = activeWorkspaceId || getIntegrationReportContext()?.workspaceId || "";
+      const { tokenReady } = hasMetaConnectPrerequisites();
+
+      if (!tokenReady) {
+        setInstagramRuntimeState((current) => ({
+          ...current,
+          error: "Your session is not ready yet. Refresh and try again.",
+        }));
+        return;
+      }
+
+      if (!workspaceId || workspaceLoading) {
+        setInstagramRuntimeState((current) => ({
+          ...current,
+          error: "No active workspace selected. Please choose a workspace and try again.",
+        }));
+        return;
+      }
+
+      if (typeof window === "undefined") {
+        throw new Error("We could not open the Instagram authorization window. Please try again.");
+      }
+
+      instagramConnectInFlightRef.current = true;
+      popupCallbackReceivedRef.current = false;
+      setInstagramMessage("Connecting Instagram Business...");
+      setInstagramRuntimeState({
+        isActionInFlight: true,
+        isSyncInFlight: false,
+        error: "",
+      });
+      popup = window.open(
+        "about:blank",
+        "measurable_instagram_business_login_oauth",
+        META_OAUTH_POPUP_FEATURES
+      );
+
+      if (!popup) {
+        throw new Error("Please allow popups to connect Instagram Business.");
+      }
+
+      const response = await connectInstagramBusinessLogin(workspaceId);
+      const authUrl = response.authUrlFromBackend || response.redirectUrl;
+
+      if (!authUrl) {
+        throw new Error("The backend did not return a valid Instagram Business Login OAuth URL.");
+      }
+
+      createPendingMetaOAuth({
+        authUrl,
+        source: "instagram_business",
+        route: "/integrations",
+        transport: "popup",
+      });
+      storeMetaOAuthDebugUrl(authUrl);
+      await showMetaOAuthReadyBanner();
+      markMetaRedirectStarted();
+
+      if (popup.closed) {
+        throw new Error("The connection window was closed before authorization was completed.");
+      }
+
+      popupWindowRef.current = popup;
+      popup.location.href = authUrl;
+      popupStarted = true;
+      stopPopupPolling();
+      popupTimeoutRef.current = window.setTimeout(() => {
+        setInstagramMessage(
+          "This is taking longer than expected. Finish the Instagram flow in the popup and we’ll update the connection automatically."
+        );
+      }, META_OAUTH_POPUP_TIMEOUT_MS);
+      popupPollRef.current = window.setInterval(() => {
+        if (!popup || !popup.closed) {
+          return;
+        }
+
+        stopPopupPolling();
+        popupCloseGraceRef.current = window.setTimeout(async () => {
+          if (popupCallbackReceivedRef.current) {
+            return;
+          }
+
+          clearPendingMetaOAuth();
+          instagramConnectInFlightRef.current = false;
+
+          try {
+            const status = await pollInstagramStatusAfterPopup();
+
+            if (status.connected) {
+              setInstagramMessage("Instagram Business connected successfully.");
+              setInstagramRuntimeState((current) => ({
+                ...current,
+                isActionInFlight: false,
+                error: "",
+              }));
+              return;
+            }
+
+            if (status.status === "needs_permission") {
+              setInstagramRuntimeState((current) => ({
+                ...current,
+                isActionInFlight: false,
+                error: "Reconnect and approve instagram_business_manage_insights.",
+              }));
+              return;
+            }
+          } catch (error) {
+            console.error("instagram business popup closed refresh error:", error);
+          }
+
+          setInstagramMessage("Authorization is still being processed. Refresh this page in a few seconds.");
+          setInstagramRuntimeState((current) => ({
+            ...current,
+            isActionInFlight: false,
+          }));
+        }, META_OAUTH_POPUP_CLOSE_GRACE_MS);
+      }, 500);
+    } catch (error) {
+      console.error("instagram business login connect error:", error);
+
+      try {
+        popup?.close();
+      } catch {
+        // Ignore popup close failures.
+      }
+
+      popupWindowRef.current = null;
+      instagramConnectInFlightRef.current = false;
+      setInstagramMessage("");
+      setInstagramRuntimeState((current) => ({
+        ...current,
+        isActionInFlight: false,
+        error:
+          error instanceof ApiError || error instanceof Error
+            ? error.message
+            : "We couldn’t start Instagram Business authorization. Please try again.",
+      }));
+    } finally {
+      if (!popupStarted) {
+        instagramConnectInFlightRef.current = false;
+        setInstagramRuntimeState((current) => ({
+          ...current,
+          isActionInFlight: false,
+        }));
+      }
+    }
+  }
+
+  async function handleInstagramInsightsSync() {
+    if (instagramRuntimeState.isSyncInFlight || !instagramStatus.connected) {
+      return;
+    }
+
+    try {
+      const workspaceId = activeWorkspaceId || getIntegrationReportContext()?.workspaceId || "";
+      setInstagramRuntimeState((current) => ({
+        ...current,
+        isSyncInFlight: true,
+        error: "",
+      }));
+      setInstagramMessage("");
+      const accounts = instagramStatus.accounts.length > 0
+        ? instagramStatus.accounts
+        : await fetchInstagramBusinessLoginAccounts({
+            workspaceId,
+            cacheBust: Date.now(),
+          });
+      const account = accounts[0];
+
+      if (!account) {
+        throw new Error("No Instagram Business account is available to sync.");
+      }
+
+      await testInstagramBusinessLoginInsights({
+        workspaceId,
+        integrationId: account.integrationId || instagramStatus.integrationId,
+        instagramAccountId: account.instagramUserId || account.id,
+        timeframe: "last_30d",
+        forceLive: true,
+      });
+      await refreshInstagramStatus({ cacheBust: Date.now() });
+      setInstagramMessage("Instagram Insights refresh completed.");
+    } catch (error) {
+      console.error("instagram business test insights error:", error);
+      setInstagramRuntimeState((current) => ({
+        ...current,
+        error:
+          error instanceof ApiError || error instanceof Error
+            ? error.message
+            : "We couldn’t refresh Instagram Insights right now.",
+      }));
+    } finally {
+      setInstagramRuntimeState((current) => ({
+        ...current,
+        isSyncInFlight: false,
+      }));
+    }
+  }
+
   async function handleDisconnect() {
     if (runtimeStateRef.current.isActionInFlight) {
       return;
@@ -744,18 +1146,6 @@ function IntegrationsPageContent() {
       refreshInFlight: assetRefreshState.inFlight,
     }),
     getChildSummary({
-      label: "Instagram Business",
-      emptyLabel: "No Instagram accounts found",
-      count: suiteUiStatus.connected
-        ? suiteStatus.children.instagram_business.assetCount
-        : 0,
-      singular: "Instagram account",
-      plural: "Instagram accounts",
-      connected: suiteUiStatus.connected,
-      discoveryStatus: getChildDiscoveryStatus(suiteStatus, "instagram_business"),
-      refreshInFlight: assetRefreshState.inFlight,
-    }),
-    getChildSummary({
       label: "Meta Ads",
       emptyLabel: "No ad accounts found",
       count: suiteUiStatus.connected ? suiteStatus.children.meta_ads.assetCount : 0,
@@ -774,6 +1164,28 @@ function IntegrationsPageContent() {
     suiteUiStatus.actionLabel === "Disconnect"
       ? handleDisconnect
       : () => handleConnect(suiteUiStatus.actionLabel === "Reconnect");
+  const instagramBadge = getInstagramBusinessBadge({
+    status: instagramStatus,
+    loading: instagramLoading,
+  });
+  const instagramConnectLabel =
+    instagramStatus.status === "needs_permission"
+      ? "Reconnect Instagram Business"
+      : "Connect Instagram Business";
+  const instagramAccountText =
+    instagramStatus.accountCount > 0
+      ? `${instagramStatus.accountCount} Instagram account${
+          instagramStatus.accountCount === 1 ? "" : "s"
+        } connected`
+      : instagramStatus.connected
+        ? "Connected"
+        : instagramStatus.status === "needs_permission"
+          ? "Reconnect and approve instagram_business_manage_insights."
+          : "Use Instagram Login to connect a Business or Creator account.";
+  const instagramBusy =
+    instagramRuntimeState.isActionInFlight ||
+    instagramRuntimeState.isSyncInFlight ||
+    instagramLoading;
 
   return (
     <AppShell>
@@ -789,6 +1201,12 @@ function IntegrationsPageContent() {
       {suiteMessage ? (
         <section className="mb-5 rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700 sm:mb-6">
           {suiteMessage}
+        </section>
+      ) : null}
+
+      {instagramMessage ? (
+        <section className="mb-5 rounded-[24px] border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700 sm:mb-6">
+          {instagramMessage}
         </section>
       ) : null}
 
@@ -817,7 +1235,7 @@ function IntegrationsPageContent() {
             Meta Business Suite
           </h2>
           <p className="mt-2 text-sm leading-5 text-slate-500 sm:leading-6">
-            Connect Facebook Pages, Instagram Business, and Meta Ads through one secure Meta authorization.
+            Connect Facebook Pages and Meta Ads through one secure Meta authorization.
           </p>
           <div className="mt-4 grid gap-2 rounded-2xl border border-slate-100 bg-slate-50 p-3">
             {childSummaries.map((summary) => (
@@ -845,6 +1263,78 @@ function IntegrationsPageContent() {
           ) : null}
           {runtimeState.error ? (
             <p className="mt-3 text-sm text-red-600">{runtimeState.error}</p>
+          ) : null}
+        </section>
+
+        <section className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white ring-1 ring-slate-200 sm:h-12 sm:w-12">
+              <Image
+                src="https://cdn.simpleicons.org/instagram"
+                alt="Instagram logo"
+                width={24}
+                height={24}
+                className="h-5 w-5 sm:h-6 sm:w-6"
+                unoptimized
+              />
+            </div>
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${getBadgeClasses(
+                instagramBadge
+              )}`}
+            >
+              {instagramBadge}
+            </span>
+          </div>
+          <h2 className="mt-4 text-base font-semibold text-slate-950 sm:text-lg">
+            Instagram Business
+          </h2>
+          <p className="mt-2 text-sm leading-5 text-slate-500 sm:leading-6">
+            Connect Instagram Business with Instagram Login to authorize insights access.
+          </p>
+          <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 p-3 text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-medium text-slate-700">Status</span>
+              <span className="text-right text-slate-500">{instagramAccountText}</span>
+            </div>
+            {instagramStatus.integrationId ? (
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span className="font-medium text-slate-700">Integration ID</span>
+                <span className="text-right text-slate-500">
+                  {instagramStatus.integrationId}
+                </span>
+              </div>
+            ) : null}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-3">
+            {!instagramStatus.connected ? (
+              <button
+                type="button"
+                onClick={() => void handleInstagramConnect()}
+                disabled={instagramBusy}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border !border-[#081327] !bg-[#081327] px-3 py-2.5 text-sm font-semibold !text-white transition hover:!bg-[#0d1d39] disabled:cursor-not-allowed disabled:!border-slate-200 disabled:!bg-slate-100 disabled:!text-slate-400 sm:w-auto sm:px-4"
+              >
+                {instagramRuntimeState.isActionInFlight ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+                ) : null}
+                {instagramConnectLabel}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handleInstagramInsightsSync()}
+                disabled={instagramBusy}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-4"
+              >
+                {instagramRuntimeState.isSyncInFlight ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+                ) : null}
+                Refresh / Sync Insights
+              </button>
+            )}
+          </div>
+          {instagramRuntimeState.error ? (
+            <p className="mt-3 text-sm text-red-600">{instagramRuntimeState.error}</p>
           ) : null}
         </section>
       </div>

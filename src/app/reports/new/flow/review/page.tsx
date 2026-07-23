@@ -430,6 +430,11 @@ function NewReportFlowReviewPageContent() {
           storedIntegrationContext.adAccountId ||
           storedIntegrationContext.pageId ||
           "";
+        const selectedDatasetId =
+          (selectedSourceKey &&
+            selectedAccountsBySource?.[selectedSourceKey]?.datasetId) ||
+          storedIntegrationContext.datasetId ||
+          "";
         const isInstagramBusiness = selectedSource === "instagram_business";
         const isMetaAds = selectedSource === "meta_ads";
         const isMultiSource = selectedSources.length > 1;
@@ -469,9 +474,14 @@ function NewReportFlowReviewPageContent() {
             ai_mode: requestedAiMode,
           },
           instagramPayload: {
+            source: "instagram_business",
+            provider: "instagram_business_login",
+            integration_type: "instagram_business_login",
             integration_id: storedIntegrationContext.integrationId,
             workspace_id: storedIntegrationContext.workspaceId,
             account_id: selectedEntityId,
+            instagram_account_id: selectedEntityId,
+            dataset_id: Number(selectedDatasetId),
             timeframe: normalizedSelection.key,
             start_date: normalizedSelection.startDate,
             end_date: normalizedSelection.endDate,
@@ -510,6 +520,10 @@ function NewReportFlowReviewPageContent() {
           }
         }
 
+        if (isInstagramBusiness && !selectedDatasetId) {
+          throw new Error("Instagram Business report generation requires dataset_id from the latest sync.");
+        }
+
         let report;
 
         if (isMultiSource) {
@@ -526,8 +540,15 @@ function NewReportFlowReviewPageContent() {
             aiMode: requestedAiMode,
             locale: language,
             sources: selectedSources.map((sourceKey, position) => ({
-              provider: "meta",
+              provider:
+                sourceKey === "instagram_business"
+                  ? "instagram_business_login"
+                  : "meta",
               sourceType: sourceKey,
+              integrationType:
+                sourceKey === "instagram_business"
+                  ? "instagram_business_login"
+                  : undefined,
               integrationId:
                 selectedAccountsBySource[sourceKey].integrationId ||
                 storedIntegrationContext.integrationId ||
@@ -545,6 +566,7 @@ function NewReportFlowReviewPageContent() {
             integrationId: storedIntegrationContext.integrationId || "",
             workspaceId: storedIntegrationContext.workspaceId,
             accountId: selectedEntityId,
+            datasetId: selectedDatasetId,
             timeframe: normalizedSelection.key,
             startDate: normalizedSelection.startDate,
             endDate: normalizedSelection.endDate,

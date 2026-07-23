@@ -153,6 +153,39 @@ type MetaSyncAllResult = {
 
 export type MetaProviderKey = "facebook_pages" | "instagram_business" | "meta_ads";
 
+export type InstagramBusinessLoginAccount = MetaEntity & {
+  username: string;
+  accountType: string;
+  integrationId: string;
+  instagramUserId: string;
+  instagramAccountId: string;
+};
+
+export type InstagramBusinessLoginStatus = {
+  provider: "instagram_business_login";
+  integrationType: "instagram_business_login";
+  status: string;
+  connected: boolean;
+  integrationId: string;
+  accountCount: number;
+  accounts: InstagramBusinessLoginAccount[];
+  tokenScopes: string[];
+  missingScopes: string[];
+  lastSyncedAt: string;
+  message: string;
+  raw: unknown;
+};
+
+export type InstagramBusinessLoginSyncInput = {
+  workspaceId?: string | null;
+  integrationId?: string | number | null;
+  instagramAccountId?: string | null;
+  timeframe?: string;
+  startDate?: string;
+  endDate?: string;
+  forceLive?: boolean;
+};
+
 export type MetaProviderBadge = "Available" | "Connected" | "Needs permission" | "Checking";
 
 export type MetaProviderUiStatus = {
@@ -315,7 +348,7 @@ export function isMetaAssetDiscoveryActive(status?: string | null) {
 
 function getMetaProviderAvailableHelper(provider: MetaProviderKey) {
   if (provider === "instagram_business") {
-    return "Connect Instagram Business accounts linked to your Facebook Pages.";
+    return "Connect Instagram Business with Instagram Login to generate insights reports.";
   }
 
   if (provider === "meta_ads") {
@@ -2068,6 +2101,351 @@ export async function fetchInstagramBusinessStatus(
               ? data.lastSyncedAt
               : "",
     message: getRecordMessage(record) || getRecordMessage(data),
+  };
+}
+
+function getPayloadId(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) ? parsed : String(value);
+}
+
+function getInstagramBusinessLoginAccountArray(payload: unknown) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  const record = isRecord(payload) ? payload : {};
+  const data = isRecord(record.data) ? record.data : record.data;
+  const containers = [
+    record,
+    isRecord(data) ? data : null,
+  ].filter((value): value is Record<string, unknown> => Boolean(value));
+  const accountKeys = [
+    "accounts",
+    "instagram_accounts",
+    "instagramAccounts",
+    "instagram_business_accounts",
+    "instagramBusinessAccounts",
+    "items",
+    "results",
+  ];
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  for (const container of containers) {
+    for (const key of accountKeys) {
+      if (Array.isArray(container[key])) {
+        return container[key];
+      }
+    }
+  }
+
+  return [];
+}
+
+function normalizeInstagramBusinessLoginAccounts(
+  payload: unknown,
+  fallbackIntegrationId = ""
+) {
+  const accounts = getInstagramBusinessLoginAccountArray(payload);
+  const seenIds = new Set<string>();
+
+  return accounts.flatMap((account, index) => {
+    const record = isRecord(account) ? account : {};
+    const instagramUserId =
+      record.instagram_user_id ??
+      record.instagramUserId ??
+      record.ig_user_id ??
+      record.igUserId;
+    const instagramAccountId =
+      record.instagram_account_id ??
+      record.instagramAccountId ??
+      record.account_id ??
+      record.accountId;
+    const idValue = instagramUserId ?? instagramAccountId ?? record.id;
+
+    if (idValue === null || idValue === undefined || idValue === "") {
+      return [];
+    }
+
+    const id = String(idValue);
+
+    if (seenIds.has(id)) {
+      return [];
+    }
+
+    seenIds.add(id);
+
+    const username =
+      (typeof record.username === "string" && record.username) ||
+      (typeof record.instagram_username === "string" && record.instagram_username) ||
+      (typeof record.instagramUsername === "string" && record.instagramUsername) ||
+      "";
+    const name =
+      (typeof record.name === "string" && record.name) ||
+      (typeof record.display_name === "string" && record.display_name) ||
+      (typeof record.displayName === "string" && record.displayName) ||
+      (username ? `@${username.replace(/^@/, "")}` : `Instagram account ${index + 1}`);
+    const accountType =
+      (typeof record.account_type === "string" && record.account_type) ||
+      (typeof record.accountType === "string" && record.accountType) ||
+      "";
+    const integrationId =
+      getRecordIntegrationId(record) ||
+      fallbackIntegrationId;
+
+    return [
+      {
+        id,
+        name,
+        username,
+        accountType,
+        integrationId,
+        instagramUserId: instagramUserId ? String(instagramUserId) : id,
+        instagramAccountId: instagramAccountId ? String(instagramAccountId) : id,
+      },
+    ] satisfies InstagramBusinessLoginAccount[];
+  });
+}
+
+function extractInstagramBusinessLoginStatus(
+  payload: unknown
+): InstagramBusinessLoginStatus {
+  const record = isRecord(payload) ? payload : {};
+  const data = isRecord(record.data) ? record.data : {};
+  const statusValue =
+    normalizeMetaProviderStatusValue(getRecordStatus(record) || getRecordStatus(data)) ||
+    (getExplicitConnected(record) || getExplicitConnected(data) ? "connected" : "disconnected");
+  const integrationId = getRecordIntegrationId(record) || getRecordIntegrationId(data);
+  const accounts = normalizeInstagramBusinessLoginAccounts(payload, integrationId);
+  const accountCount =
+    getNumberFromRecord(record, [
+      "account_count",
+      "accountCount",
+      "accounts_count",
+      "accountsCount",
+      "instagram_accounts_count",
+      "instagramAccountsCount",
+      "authorized_accounts_count",
+      "authorizedAccountsCount",
+      "accounts",
+      "items",
+    ]) ||
+    getNumberFromRecord(data, [
+      "account_count",
+      "accountCount",
+      "accounts_count",
+      "accountsCount",
+      "instagram_accounts_count",
+      "instagramAccountsCount",
+      "authorized_accounts_count",
+      "authorizedAccountsCount",
+      "accounts",
+      "items",
+    ]) ||
+    accounts.length;
+  const tokenScopes = [
+    ...getScopesFromRecord(record),
+    ...getScopesFromRecord(data),
+  ];
+  const missingScopes = [
+    ...normalizeScopeList(record.missing_scopes),
+    ...normalizeScopeList(record.missingScopes),
+    ...normalizeScopeList(data.missing_scopes),
+    ...normalizeScopeList(data.missingScopes),
+  ];
+  const explicitlyDisconnectedStatus = new Set([
+    "disconnected",
+    "needs_permission",
+    "no_token",
+    "error",
+  ]);
+  const explicitConnected = getExplicitConnected(record) || getExplicitConnected(data);
+
+  return {
+    provider: "instagram_business_login",
+    integrationType: "instagram_business_login",
+    status: statusValue,
+    connected:
+      statusValue === "connected" ||
+      (!explicitlyDisconnectedStatus.has(statusValue) && explicitConnected),
+    integrationId,
+    accountCount,
+    accounts,
+    tokenScopes: tokenScopes.length > 0 ? Array.from(new Set(tokenScopes)) : [],
+    missingScopes: missingScopes.length > 0 ? Array.from(new Set(missingScopes)) : [],
+    lastSyncedAt: getRecordLastSyncedAt(record) || getRecordLastSyncedAt(data),
+    message: getRecordMessage(record) || getRecordMessage(data),
+    raw: payload,
+  };
+}
+
+export async function connectInstagramBusinessLogin(workspaceId?: string | null) {
+  const resolvedWorkspaceId = await getRequiredWorkspaceId(workspaceId);
+  void trackMetaEvent("MetaConnectStarted", {
+    workspace_id: resolvedWorkspaceId,
+    source: "instagram_business",
+    provider: "instagram_business_login",
+    integration_type: "instagram_business_login",
+  });
+  const searchParams = new URLSearchParams({
+    workspace_id: resolvedWorkspaceId,
+  });
+  const endpoint = `/integrations/instagram-business-login/connect?${searchParams.toString()}`;
+  const res = await fetch(apiUrl(endpoint), {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+    credentials: "include",
+  });
+  const text = await readApiResponseText(endpoint, res);
+
+  return getRedirectUrl(text);
+}
+
+export async function fetchInstagramBusinessLoginStatus(
+  input?: string | null | { workspaceId?: string | null; cacheBust?: number | string | null }
+) {
+  const workspaceId = typeof input === "object" && input !== null ? input.workspaceId : input;
+  const cacheBust = typeof input === "object" && input !== null ? input.cacheBust : undefined;
+  const resolvedWorkspaceId = await getRequiredWorkspaceId(workspaceId);
+  const searchParams = new URLSearchParams({
+    workspace_id: resolvedWorkspaceId,
+  });
+
+  if (cacheBust) {
+    searchParams.set("_", String(cacheBust));
+  }
+
+  const endpoint = `/integrations/instagram-business-login/status?${searchParams.toString()}`;
+  const res = await fetch(apiUrl(endpoint), {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+    credentials: "include",
+  });
+  const text = await readApiResponseText(endpoint, res);
+  const payload = text ? parseJsonText(text) : null;
+
+  return extractInstagramBusinessLoginStatus(payload);
+}
+
+export async function fetchInstagramBusinessLoginAccounts(
+  input?: string | null | { workspaceId?: string | null; cacheBust?: number | string | null }
+) {
+  const workspaceId = typeof input === "object" && input !== null ? input.workspaceId : input;
+  const cacheBust = typeof input === "object" && input !== null ? input.cacheBust : undefined;
+  const resolvedWorkspaceId = await getRequiredWorkspaceId(workspaceId);
+  const searchParams = new URLSearchParams({
+    workspace_id: resolvedWorkspaceId,
+  });
+
+  if (cacheBust) {
+    searchParams.set("_", String(cacheBust));
+  }
+
+  const endpoint = `/integrations/instagram-business-login/accounts?${searchParams.toString()}`;
+  const res = await fetch(apiUrl(endpoint), {
+    method: "GET",
+    headers: getAuthHeaders(),
+    cache: "no-store",
+    credentials: "include",
+  });
+  const text = await readApiResponseText(endpoint, res);
+  const payload = text ? parseJsonText(text) : null;
+  const record = isRecord(payload) ? payload : {};
+  const data = isRecord(record.data) ? record.data : {};
+  const integrationId = getRecordIntegrationId(record) || getRecordIntegrationId(data);
+
+  return normalizeInstagramBusinessLoginAccounts(payload, integrationId);
+}
+
+export async function syncInstagramBusinessLogin(input: InstagramBusinessLoginSyncInput) {
+  const resolvedWorkspaceId = await getRequiredWorkspaceId(input.workspaceId);
+  const endpoint = "/integrations/instagram-business-login/sync";
+  const payload = {
+    workspace_id: getPayloadId(resolvedWorkspaceId),
+    integration_id: getPayloadId(input.integrationId),
+    source: "instagram_business",
+    provider: "instagram_business_login",
+    integration_type: "instagram_business_login",
+    instagram_account_id: input.instagramAccountId || undefined,
+    timeframe: input.timeframe || "last_30d",
+    start_date: input.timeframe === "custom" ? input.startDate ?? null : null,
+    end_date: input.timeframe === "custom" ? input.endDate ?? null : null,
+    force_live: input.forceLive !== false,
+  };
+  const res = await fetch(apiUrl(endpoint), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(getAuthHeaders() || {}),
+    },
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  const text = await readApiResponseText(endpoint, res);
+  const parsedPayload = text ? (JSON.parse(text) as MetaSelectOrSyncResponse) : {};
+
+  return {
+    raw: parsedPayload,
+    message:
+      parsedPayload.message ||
+      parsedPayload.detail ||
+      parsedPayload.data?.message ||
+      parsedPayload.data?.detail ||
+      "Synchronization completed.",
+    detail: parsedPayload.detail || parsedPayload.data?.detail || "",
+    integrationId: extractIntegrationId(parsedPayload) || String(input.integrationId || ""),
+    datasetId: extractDatasetId(parsedPayload),
+  };
+}
+
+export async function testInstagramBusinessLoginInsights(input: InstagramBusinessLoginSyncInput) {
+  const resolvedWorkspaceId = await getRequiredWorkspaceId(input.workspaceId);
+  const endpoint = "/integrations/instagram-business-login/test-insights";
+  const payload = {
+    workspace_id: getPayloadId(resolvedWorkspaceId),
+    integration_id: getPayloadId(input.integrationId),
+    source: "instagram_business",
+    provider: "instagram_business_login",
+    integration_type: "instagram_business_login",
+    instagram_account_id: input.instagramAccountId || undefined,
+    timeframe: input.timeframe || "last_30d",
+    start_date: input.timeframe === "custom" ? input.startDate ?? null : null,
+    end_date: input.timeframe === "custom" ? input.endDate ?? null : null,
+    force_live: input.forceLive !== false,
+  };
+  const res = await fetch(apiUrl(endpoint), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(getAuthHeaders() || {}),
+    },
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  const text = await readApiResponseText(endpoint, res);
+  const parsedPayload = text ? (JSON.parse(text) as MetaSelectOrSyncResponse) : {};
+
+  return {
+    raw: parsedPayload,
+    message:
+      parsedPayload.message ||
+      parsedPayload.detail ||
+      parsedPayload.data?.message ||
+      parsedPayload.data?.detail ||
+      "Instagram Insights test completed.",
+    detail: parsedPayload.detail || parsedPayload.data?.detail || "",
+    integrationId: extractIntegrationId(parsedPayload) || String(input.integrationId || ""),
+    datasetId: extractDatasetId(parsedPayload),
   };
 }
 

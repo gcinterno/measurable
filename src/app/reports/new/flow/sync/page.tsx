@@ -12,16 +12,17 @@ import { FlowLoadingOverlay } from "@/components/reports/flow/FlowLoadingOverlay
 import { MobileFlowHeader } from "@/components/reports/flow/MobileFlowHeader";
 import { ApiError, isLimitError } from "@/lib/api";
 import {
+  fetchInstagramBusinessLoginAccounts,
+  fetchInstagramBusinessLoginStatus,
   fetchMetaAdsAccounts,
-  fetchMetaBusinessSuiteInstagramAccounts,
   fetchMetaBusinessSuiteStatus,
   fetchMetaPages,
   isMetaAssetDiscoveryComplete,
   refreshMetaPages,
   selectMetaAdsAccount,
   selectMetaPage,
+  syncInstagramBusinessLogin,
   syncMetaAdsAccount,
-  syncMetaInstagramAccount,
   syncMetaPages,
 } from "@/lib/api/integrations";
 import {
@@ -48,6 +49,11 @@ import {
 type MetaOption = {
   id: string;
   name: string;
+  username?: string;
+  accountType?: string;
+  integrationId?: string;
+  instagramUserId?: string;
+  instagramAccountId?: string;
 };
 
 type SourceSelectorState = {
@@ -144,7 +150,7 @@ function getSourceConfig(sourceKey: SourceKey) {
           "Choose the Instagram Business account whose insights you want to sync.",
         selectedLabel: "Selected account",
         emptyMessage:
-          "No Instagram Business accounts found. Make sure your Instagram account is Business/Creator and linked to a Facebook Page.",
+          "No Instagram Business accounts found. Make sure the Instagram account is Business or Creator and authorized with Instagram Login.",
         displayName: "Instagram Business",
         assetPlural: "Instagram Business accounts",
         loadingSlowMessage:
@@ -156,8 +162,8 @@ function getSourceConfig(sourceKey: SourceKey) {
         multipleHint:
           "You have multiple connected Instagram Business accounts. Use search to find the right one.",
         emptySavedMessage:
-          "We couldn’t find any saved Instagram Business accounts. Load your accounts from Meta to continue.",
-        loadFromMetaLabel: "Refresh Instagram accounts",
+          "We couldn’t find any saved Instagram Business accounts. Load your Instagram accounts to continue.",
+        loadFromMetaLabel: "Load Instagram accounts",
         loadError:
           "We could not load the Instagram Business accounts. Try again.",
         refreshError:
@@ -290,14 +296,33 @@ async function getPendingDiscoverySources(
   sourceKeys: SourceKey[],
   workspaceId?: string
 ) {
+  const pendingSources = new Set<SourceKey>();
+  const suiteSourceKeys = sourceKeys.filter(
+    (sourceKey) => sourceKey !== "instagram_business"
+  );
+
+  if (sourceKeys.includes("instagram_business")) {
+    const instagramStatus = await fetchInstagramBusinessLoginStatus({
+      workspaceId: workspaceId || undefined,
+      cacheBust: Date.now(),
+    });
+
+    if (instagramStatus.connected && instagramStatus.accountCount > 0) {
+      pendingSources.add("instagram_business");
+    }
+  }
+
+  if (suiteSourceKeys.length === 0) {
+    return pendingSources;
+  }
+
   const suiteStatus = await fetchMetaBusinessSuiteStatus({
     workspaceId: workspaceId || undefined,
     refresh: false,
     cacheBust: Date.now(),
   });
-  const pendingSources = new Set<SourceKey>();
 
-  sourceKeys.forEach((sourceKey) => {
+  suiteSourceKeys.forEach((sourceKey) => {
     const childStatus = suiteStatus.children[sourceKey];
     const discoveryStatus =
       childStatus.discoveryStatus || suiteStatus.discoveryStatus;
@@ -424,7 +449,12 @@ function NewReportFlowSyncPageContent() {
 
     return {
       source: firstSource,
-      integration: firstSource === "meta_ads" ? "meta_ads" : "meta",
+      integration:
+        firstSource === "meta_ads"
+          ? "meta_ads"
+          : firstSource === "instagram_business"
+            ? "instagram_business_login"
+            : "meta",
       workspaceId,
       integrationId:
         firstSourceAccount?.integrationId ||
@@ -475,78 +505,15 @@ function NewReportFlowSyncPageContent() {
     [workspaceId]
   );
 
-  const loadInstagramBusinessAccountsFromSuite = useCallback(async () => {
-    const maxAttempts = 4;
-
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const suiteStatus = await fetchMetaBusinessSuiteStatus({
-        workspaceId: workspaceId || undefined,
-        refresh: false,
-        cacheBust: Date.now() + attempt,
-      });
-      const instagramStatus = suiteStatus.children.instagram_business;
-      const discoveryStatus =
-        instagramStatus.discoveryStatus || suiteStatus.discoveryStatus;
-      const statusAccounts = instagramStatus.entities;
-
-      if (statusAccounts.length > 0) {
-        return {
-          accounts: statusAccounts,
-          discoveryPending: false,
-        } satisfies SourceAccountLoadResult;
-      }
-
-      let endpointAccounts: MetaOption[] = [];
-
-      try {
-        endpointAccounts = await fetchMetaBusinessSuiteInstagramAccounts({
-          workspaceId: workspaceId || undefined,
-          refresh: false,
-          cacheBust: Date.now() + attempt,
-        });
-      } catch (accountError) {
-        if (process.env.NODE_ENV !== "production" && attempt === 0) {
-          console.debug("[MetaSuite][instagram_accounts.request_failed]", {
-            message:
-              accountError instanceof Error
-                ? accountError.message
-                : String(accountError),
-          });
-        }
-      }
-
-      if (endpointAccounts.length > 0) {
-        return {
-          accounts: endpointAccounts,
-          discoveryPending: false,
-        } satisfies SourceAccountLoadResult;
-      }
-
-      const hasKnownAssetsWithoutList =
-        instagramStatus.assetCount > 0;
-      const discoveryPending =
-        instagramStatus.connected &&
-        (!isMetaAssetDiscoveryComplete(discoveryStatus) ||
-          hasKnownAssetsWithoutList);
-
-      if (!discoveryPending) {
-        return {
-          accounts: [],
-          discoveryPending: false,
-        } satisfies SourceAccountLoadResult;
-      }
-
-      if (attempt < maxAttempts - 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 1200));
-      }
-    }
+  const loadInstagramBusinessLoginAccounts = useCallback(async () => {
+    const accounts = await fetchInstagramBusinessLoginAccounts({
+      workspaceId: workspaceId || undefined,
+      cacheBust: Date.now(),
+    });
 
     return {
-      accounts: [] as MetaOption[],
+      accounts,
       discoveryPending: false,
-      manualRefreshRequired: true,
-      manualRefreshMessage:
-        "Instagram accounts were discovered, but the selectable list is still being prepared.",
     } satisfies SourceAccountLoadResult;
   }, [workspaceId]);
 
@@ -600,38 +567,45 @@ function NewReportFlowSyncPageContent() {
         const requiresFacebookPages = selectedSources.includes("facebook_pages");
         const requiresInstagramBusiness =
           selectedSources.includes("instagram_business");
-        const suiteStatus = await fetchMetaBusinessSuiteStatus({
-          workspaceId: workspaceId || undefined,
-          refresh: false,
-        });
+        const requiresSuiteStatus = requiresMetaAds || requiresFacebookPages;
+        const [suiteStatus, instagramBusinessStatus] = await Promise.all([
+          requiresSuiteStatus
+            ? fetchMetaBusinessSuiteStatus({
+                workspaceId: workspaceId || undefined,
+                refresh: false,
+              })
+            : Promise.resolve(null),
+          requiresInstagramBusiness
+            ? fetchInstagramBusinessLoginStatus({
+                workspaceId: workspaceId || undefined,
+              })
+            : Promise.resolve(null),
+        ]);
 
         if (!active) {
           return;
         }
 
-        const facebookPagesProvider = suiteStatus.children.facebook_pages;
-        const instagramBusinessProvider =
-          suiteStatus.children.instagram_business;
-        const metaAdsProvider = suiteStatus.children.meta_ads;
+        const facebookPagesProvider = suiteStatus?.children.facebook_pages;
+        const metaAdsProvider = suiteStatus?.children.meta_ads;
         const facebookPagesIntegrationId =
-          facebookPagesProvider.integrationId || suiteStatus.integrationId || "";
+          facebookPagesProvider?.integrationId || suiteStatus?.integrationId || "";
         const instagramBusinessIntegrationId =
-          instagramBusinessProvider.integrationId || suiteStatus.integrationId || "";
+          instagramBusinessStatus?.integrationId || "";
         const metaAdsIntegrationId =
-          metaAdsProvider.integrationId || suiteStatus.integrationId || "";
+          metaAdsProvider?.integrationId || suiteStatus?.integrationId || "";
         const facebookPagesMissing =
           requiresFacebookPages &&
-          (!suiteStatus.connected ||
-            !facebookPagesProvider.connected ||
+          (!suiteStatus?.connected ||
+            !facebookPagesProvider?.connected ||
             !facebookPagesIntegrationId);
         const instagramBusinessMissing =
           requiresInstagramBusiness &&
-          (!suiteStatus.connected ||
-            !instagramBusinessProvider.connected ||
+          (!instagramBusinessStatus?.connected ||
             !instagramBusinessIntegrationId);
         const metaAdsMissing =
           requiresMetaAds &&
-          (!suiteStatus.connected || !metaAdsProvider.connected || !metaAdsIntegrationId);
+          (!suiteStatus?.connected || !metaAdsProvider?.connected || !metaAdsIntegrationId);
 
         if (facebookPagesMissing || instagramBusinessMissing || metaAdsMissing) {
           clearMetaIntegrationSessionState();
@@ -840,7 +814,7 @@ function NewReportFlowSyncPageContent() {
                   }),
                 }
               : selectedSource === "instagram_business"
-              ? await loadInstagramBusinessAccountsFromSuite()
+              ? await loadInstagramBusinessLoginAccounts()
               : {
                   accounts: await fetchMetaPages(sourceIntegrationId),
                 };
@@ -975,7 +949,7 @@ function NewReportFlowSyncPageContent() {
   }, [
     buildSourceRequestKey,
     hasSelectedSources,
-    loadInstagramBusinessAccountsFromSuite,
+    loadInstagramBusinessLoginAccounts,
     metaDisconnected,
     messages.reports.missingIntegration,
     resolvedIntegrationId,
@@ -1021,14 +995,22 @@ function NewReportFlowSyncPageContent() {
   function handleSelectAccount(sourceKey: SourceKey, accountId: string) {
     const selectedAccount = sourceState[sourceKey].accounts.find((account) => account.id === accountId);
     const config = getSourceConfig(sourceKey);
+    const sourceIntegrationId =
+      selectedAccount?.integrationId ||
+      selectedAccountsBySource[sourceKey].integrationId ||
+      resolvedIntegrationId;
     const nextAccountsBySource = {
       ...selectedAccountsBySource,
       [sourceKey]: {
         ...selectedAccountsBySource[sourceKey],
         accountId,
         accountName: selectedAccount?.name || "",
-        integrationId: resolvedIntegrationId,
-        integrationAccountId: accountId || undefined,
+        integrationId: sourceIntegrationId,
+        integrationAccountId:
+          selectedAccount?.instagramUserId ||
+          selectedAccount?.instagramAccountId ||
+          accountId ||
+          undefined,
         datasetId: undefined,
         syncStatus: accountId ? "idle" : "error",
         error: accountId ? undefined : config.selectBeforeSyncMessage,
@@ -1061,9 +1043,8 @@ function NewReportFlowSyncPageContent() {
           workspaceId: workspaceId || undefined,
         });
       } else if (sourceKey === "instagram_business") {
-        await fetchMetaBusinessSuiteStatus({
+        await fetchInstagramBusinessLoginAccounts({
           workspaceId: workspaceId || undefined,
-          refresh: true,
           cacheBust: Date.now(),
         });
       }
@@ -1086,14 +1067,18 @@ function NewReportFlowSyncPageContent() {
   }
 
   async function handleSync(sourceKey: SourceKey) {
-    if (!resolvedIntegrationId) {
+    const selectedAccount = selectedAccountsBySource[sourceKey];
+    const sourceIntegrationId =
+      selectedAccount.integrationId || resolvedIntegrationId;
+
+    if (!sourceIntegrationId) {
       setError(
-        "We could not find the Meta integration_id in the current session. Reconnect the integration and try again."
+        sourceKey === "instagram_business"
+          ? "We could not find the Instagram Business integration_id in the current session. Reconnect Instagram Business and try again."
+          : "We could not find the Meta integration_id in the current session. Reconnect the integration and try again."
       );
       return;
     }
-
-    const selectedAccount = selectedAccountsBySource[sourceKey];
 
     if (!selectedAccount.accountId) {
       const config = getSourceConfig(sourceKey);
@@ -1129,7 +1114,7 @@ function NewReportFlowSyncPageContent() {
       setError("");
       const normalizedSelection = normalizeCurrentTimeframe();
       const syncInput = {
-        integrationId: resolvedIntegrationId,
+        integrationId: sourceIntegrationId,
         timeframe: normalizedSelection.key,
         startDate: normalizedSelection.startDate,
         endDate: normalizedSelection.endDate,
@@ -1138,13 +1123,13 @@ function NewReportFlowSyncPageContent() {
         sourceKey === "meta_ads"
           ? await (async () => {
               await selectMetaAdsAccount({
-                integrationId: resolvedIntegrationId,
+                integrationId: sourceIntegrationId,
                 accountId: selectedAccount.accountId,
                 workspaceId: workspaceId || undefined,
               });
 
               return syncMetaAdsAccount({
-                integrationId: resolvedIntegrationId,
+                integrationId: sourceIntegrationId,
                 accountId: selectedAccount.accountId,
                 timeframe: normalizedSelection.key,
                 startDate: normalizedSelection.startDate,
@@ -1153,13 +1138,20 @@ function NewReportFlowSyncPageContent() {
               });
             })()
           : sourceKey === "instagram_business"
-          ? await syncMetaInstagramAccount({
-              ...syncInput,
-              accountId: selectedAccount.accountId,
+          ? await syncInstagramBusinessLogin({
+              workspaceId: workspaceId || undefined,
+              integrationId: sourceIntegrationId,
+              instagramAccountId:
+                selectedAccount.integrationAccountId ||
+                selectedAccount.accountId,
+              timeframe: normalizedSelection.key,
+              startDate: normalizedSelection.startDate,
+              endDate: normalizedSelection.endDate,
+              forceLive: true,
             })
           : await (async () => {
               await selectMetaPage({
-                integrationId: resolvedIntegrationId,
+                integrationId: sourceIntegrationId,
                 pageId: selectedAccount.accountId,
               });
 
@@ -1178,8 +1170,9 @@ function NewReportFlowSyncPageContent() {
         ...selectedAccountsBySource,
         [sourceKey]: {
           ...selectedAccount,
-          integrationId: response.integrationId || resolvedIntegrationId,
-          integrationAccountId: selectedAccount.accountId,
+          integrationId: response.integrationId || sourceIntegrationId,
+          integrationAccountId:
+            selectedAccount.integrationAccountId || selectedAccount.accountId,
           datasetId: nextDatasetId,
           syncStatus: "synced" as const,
           error: undefined,
@@ -1264,7 +1257,11 @@ function NewReportFlowSyncPageContent() {
       {syncingSource ? (
         <FlowLoadingOverlay
           title={messages.reports.syncing}
-          description="We are syncing your Meta data. This can take a moment."
+          description={
+            syncingSource === "instagram_business"
+              ? "We are syncing Instagram Insights. This can take a moment."
+              : "We are syncing your integration data. This can take a moment."
+          }
         />
       ) : null}
       <div className="-mx-4 -mt-4 space-y-5 bg-white px-4 pt-4 pb-6 sm:-mx-6 sm:-mt-6 sm:px-6 sm:pt-6 sm:pb-8">
@@ -1326,22 +1323,33 @@ function NewReportFlowSyncPageContent() {
                 {metaDisconnected ? (
                   <section className="rounded-[28px] border border-slate-200 bg-slate-50 p-6 shadow-sm">
                     <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">
-                      Meta disconnected
+                      Integration disconnected
                     </p>
                     <h3 className="mt-3 text-2xl font-semibold text-slate-950">
-                      {`Connect Meta to load your ${
-                        primarySourceConfig?.assetPlural || "assets"
-                      } and create reports.`}
+                      {selectedSources.includes("instagram_business") &&
+                      selectedSources.every((sourceKey) => sourceKey === "instagram_business")
+                        ? `Connect Instagram Business to load your ${
+                            primarySourceConfig?.assetPlural || "assets"
+                          } and create reports.`
+                        : `Connect Meta to load your ${
+                            primarySourceConfig?.assetPlural || "assets"
+                          } and create reports.`}
                     </h3>
                     <p className="mt-2 text-sm leading-6 text-slate-500">
-                      Meta Business Suite must be reconnected before continuing.
+                      {selectedSources.includes("instagram_business") &&
+                      selectedSources.every((sourceKey) => sourceKey === "instagram_business")
+                        ? "Instagram Business must be connected before continuing."
+                        : "Meta Business Suite must be reconnected before continuing."}
                     </p>
                     <div className="mt-5 flex flex-wrap items-center gap-3">
                       <Link
                         href="/reports/new/flow"
                         className="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
                       >
-                        Connect Meta
+                        {selectedSources.includes("instagram_business") &&
+                        selectedSources.every((sourceKey) => sourceKey === "instagram_business")
+                          ? "Connect Instagram Business"
+                          : "Connect Meta"}
                       </Link>
                     </div>
                   </section>
@@ -1590,8 +1598,12 @@ function NewReportFlowSyncPageContent() {
                                         {isSourceSyncing
                                           ? messages.reports.syncing
                                           : selectedAccount.syncStatus === "synced"
-                                            ? "Sync again"
-                                            : `${messages.reports.syncData} ${config.displayName}`}
+                                            ? sourceKey === "instagram_business"
+                                              ? "Sync Instagram Insights again"
+                                              : "Sync again"
+                                            : sourceKey === "instagram_business"
+                                              ? "Sync Instagram Insights"
+                                              : `${messages.reports.syncData} ${config.displayName}`}
                                       </button>
                                       <button
                                         type="button"

@@ -26,7 +26,10 @@ import {
   resolveReportCoverIntegrationLabel,
   resolveReportCoverSourceName,
 } from "@/lib/reports/templates/default-view-models";
-import { resolveReportVisualVariant } from "@/lib/reports/visual-variant";
+import {
+  resolveReportVisualVariant,
+  type ReportVisualVariant,
+} from "@/lib/reports/visual-variant";
 import {
   REPORT_SLIDE_THEME,
   type ReportRenderMode,
@@ -3170,6 +3173,29 @@ function isOrganicPageSummaryCard(card: InsightSummaryCard) {
   ].some((token) => haystack.includes(token));
 }
 
+function sanitizeInstagramBusinessSummaryText(value: string) {
+  return value
+    .replace(/Facebook Pages Report/gi, "Instagram Business Report")
+    .replace(/Facebook Page Views/gi, "Profile Activity")
+    .replace(/Page Views/gi, "Profile Activity")
+    .replace(/page views/gi, "profile activity")
+    .replace(/Page Likes/gi, "Followers")
+    .replace(/page likes/gi, "followers")
+    .replace(/\bFans\b/g, "Followers")
+    .replace(/\bfans\b/g, "followers")
+    .replace(/Organic Visibility/gi, "Reach / Visibility")
+    .replace(/Facebook Page/gi, "Instagram profile")
+    .replace(/facebook page/gi, "Instagram profile");
+}
+
+function sanitizeInstagramBusinessSummaryCard(card: InsightSummaryCard) {
+  return {
+    ...card,
+    title: sanitizeInstagramBusinessSummaryText(card.title),
+    insight: sanitizeInstagramBusinessSummaryText(card.insight),
+  };
+}
+
 const EXECUTIVE_SUMMARY_METRIC_DEFINITIONS: ExecutiveSummaryMetricDefinition[] = [
   {
     key: "organic_impressions",
@@ -3222,6 +3248,57 @@ const EXECUTIVE_SUMMARY_METRIC_DEFINITIONS: ExecutiveSummaryMetricDefinition[] =
     key: "fans",
     title: "Fans",
     aliases: ["fans", "fans_total", "fansTotal", "page_fans", "pageFans"],
+  },
+];
+
+const EXECUTIVE_SUMMARY_INSTAGRAM_METRIC_DEFINITIONS: ExecutiveSummaryMetricDefinition[] = [
+  {
+    key: "reach_visibility",
+    title: "Reach / Visibility",
+    aliases: [
+      "reach",
+      "reach_total",
+      "reachTotal",
+      "total_reach",
+      "totalReach",
+      "impressions",
+      "impressions_total",
+      "impressionsTotal",
+    ],
+  },
+  {
+    key: "engagement_interactions",
+    title: "Engagement / Interactions",
+    aliases: [
+      "engagement",
+      "engagement_total",
+      "engagementTotal",
+      "interactions_total",
+      "interactionsTotal",
+      "total_interactions",
+      "totalInteractions",
+    ],
+  },
+  {
+    key: "profile_activity",
+    title: "Profile Activity",
+    aliases: [
+      "profile_activity",
+      "profileActivity",
+      "profile_views",
+      "profileViews",
+      "profile_visits",
+      "profileVisits",
+      "page_views",
+      "pageViews",
+      "page_visits",
+      "pageVisits",
+    ],
+  },
+  {
+    key: "followers",
+    title: "Followers",
+    aliases: ["followers", "followers_total", "followersTotal", "audience"],
   },
 ];
 
@@ -3333,10 +3410,16 @@ const EXECUTIVE_SUMMARY_META_ADS_METRIC_DEFINITIONS: ExecutiveSummaryMetricDefin
 
 function getExecutiveSummaryMetricCards(
   block: ReportVersionBlock,
-  options?: { includeMissing?: boolean; metaAdsReport?: boolean }
+  options?: {
+    includeMissing?: boolean;
+    metaAdsReport?: boolean;
+    instagramBusinessReport?: boolean;
+  }
 ) {
   const definitions = options?.metaAdsReport
     ? EXECUTIVE_SUMMARY_META_ADS_METRIC_DEFINITIONS
+    : options?.instagramBusinessReport
+      ? EXECUTIVE_SUMMARY_INSTAGRAM_METRIC_DEFINITIONS
     : EXECUTIVE_SUMMARY_METRIC_DEFINITIONS;
 
   return definitions
@@ -3471,7 +3554,7 @@ function ExecutiveSummarySlide({
   totalSlides: number;
   renderMode: ReportRenderMode;
   templateId: ReportTemplateId;
-  reportVisualVariant?: "meta_ads" | null;
+  reportVisualVariant?: ReportVisualVariant | null;
   watermarkText?: string;
   watermarkLogoLightUrl?: string | null;
   watermarkLogoDarkUrl?: string | null;
@@ -3480,6 +3563,7 @@ function ExecutiveSummarySlide({
   const tone = getTemplateTone(templateId);
   const slideId = String(index + 1).padStart(2, "0");
   const isMetaAdsReport = reportVisualVariant === "meta_ads";
+  const isInstagramBusinessReport = reportVisualVariant === "instagram_business";
   const isOfficialExecutiveSummary =
     getNormalizedBlockSemanticName(block) === "executive_summary";
   const title =
@@ -3493,12 +3577,18 @@ function ExecutiveSummarySlide({
   const payloadCards = getExecutiveSummaryPayloadCards(block);
   const visiblePayloadCards = isMetaAdsReport
     ? payloadCards.filter((card) => !isOrganicPageSummaryCard(card))
+    : isInstagramBusinessReport
+      ? payloadCards.map(sanitizeInstagramBusinessSummaryCard)
     : payloadCards;
   const metricCards = isMetaAdsReport
     ? getExecutiveSummaryMetricCards(block, {
         includeMissing: true,
         metaAdsReport: true,
       })
+    : isInstagramBusinessReport
+      ? getExecutiveSummaryMetricCards(block, {
+          instagramBusinessReport: true,
+        })
     : isOfficialExecutiveSummary
       ? getExecutiveSummaryMetricCards(block)
     : [];
@@ -6526,7 +6616,7 @@ function ReportBlockSlide({
   templateId: ReportTemplateId;
   locale?: string;
   hideOverviewInsights?: boolean;
-  reportVisualVariant?: "meta_ads" | null;
+  reportVisualVariant?: ReportVisualVariant | null;
   watermarkText?: string;
   watermarkLogoLightUrl?: string | null;
   watermarkLogoDarkUrl?: string | null;
@@ -6556,6 +6646,7 @@ function ReportBlockSlide({
   const isStandardizedTenSlide = isStandardizedTenSlideSemanticReport(blocks);
   const isEngagementOverview = isEngagementOverviewBlock(block);
   const isMetaAdsReport = reportVisualVariant === "meta_ads";
+  const isInstagramBusinessReport = reportVisualVariant === "instagram_business";
   const renderModeName = hasChart ? "rich-data-slide" : "fallback";
   const chartMetricLabel =
     (isEngagementOverview
@@ -6678,6 +6769,14 @@ function ReportBlockSlide({
 
   if (normalizedSemanticName === "cover" || (index === 0 && block.type === "title")) {
     const meta = getBlockTimeframeLabel(block, locale);
+    const instagramCoverSource =
+      coverSourceName && !coverSourceName.toLowerCase().includes("facebook")
+        ? coverSourceName
+        : "";
+    const instagramSubtitle =
+      text && !text.toLowerCase().includes("facebook")
+        ? text
+        : instagramCoverSource;
 
     return (
       <CoverSlide
@@ -6687,9 +6786,13 @@ function ReportBlockSlide({
         renderMode={renderMode}
         templateId={templateId}
         model={{
-          reportHeading: "Marketing Report",
-          reportTitle: coverSourceName || title || "Marketing Report",
-          subtitle: text,
+          reportHeading: isInstagramBusinessReport
+            ? "Instagram Business Report"
+            : "Marketing Report",
+          reportTitle: isInstagramBusinessReport
+            ? "Instagram Business Report"
+            : coverSourceName || title || "Marketing Report",
+          subtitle: isInstagramBusinessReport ? instagramSubtitle : text,
           meta,
           branding: {
             logoUrl,
@@ -6709,9 +6812,11 @@ function ReportBlockSlide({
         totalSlides={totalSlides}
         renderMode={renderMode}
         templateId={templateId}
-        title="Organic Visibility"
-        mainMetricLabel="Organic Impressions"
+        title={isInstagramBusinessReport ? "Reach / Visibility" : "Organic Visibility"}
+        mainMetricLabel={isInstagramBusinessReport ? "Reach" : "Organic Impressions"}
         mainMetricAliases={[
+          "reach",
+          "total_reach",
           "organic_impressions_total",
           "organicImpressionsTotal",
           "impressions_total",
@@ -6723,11 +6828,27 @@ function ReportBlockSlide({
           "total",
           "value",
         ]}
-        chartMetricLabel="Organic Impressions"
-        chartPlaceholderText="Meta did not return organic impressions for the selected period."
-        insightFallback="Based on organic Facebook Page post impressions"
-        unavailableFallback="Meta did not return organic impressions for the selected period."
-        growthAliases={["organic_impressions", "impressions"]}
+        chartMetricLabel={isInstagramBusinessReport ? "Reach" : "Organic Impressions"}
+        chartPlaceholderText={
+          isInstagramBusinessReport
+            ? "Instagram did not return reach for the selected period."
+            : "Meta did not return organic impressions for the selected period."
+        }
+        insightFallback={
+          isInstagramBusinessReport
+            ? "Reach shows how many Instagram accounts saw the content during the selected period."
+            : "Based on organic Facebook Page post impressions"
+        }
+        unavailableFallback={
+          isInstagramBusinessReport
+            ? "Instagram did not return reach for the selected period."
+            : "Meta did not return organic impressions for the selected period."
+        }
+        growthAliases={
+          isInstagramBusinessReport
+            ? ["reach", "total_reach", "organic_impressions", "impressions"]
+            : ["organic_impressions", "impressions"]
+        }
         watermarkText={watermarkText}
         watermarkLogoLightUrl={watermarkLogoLightUrl}
         watermarkLogoDarkUrl={watermarkLogoDarkUrl}
@@ -6744,8 +6865,10 @@ function ReportBlockSlide({
         totalSlides={totalSlides}
         renderMode={renderMode}
         templateId={templateId}
-        title="Engagement"
-        mainMetricLabel="Total Engagement"
+        title={isInstagramBusinessReport ? "Engagement / Interactions" : "Engagement"}
+        mainMetricLabel={
+          isInstagramBusinessReport ? "Total interactions" : "Total Engagement"
+        }
         mainMetricAliases={[
           "engagement_total",
           "engagementTotal",
@@ -6759,9 +6882,13 @@ function ReportBlockSlide({
           "total",
           "value",
         ]}
-        chartMetricLabel="Engagement"
+        chartMetricLabel={isInstagramBusinessReport ? "Interactions" : "Engagement"}
         chartPlaceholderText="No daily engagement trend available"
-        insightFallback="Engagement reflects how strongly the audience responded to the published content."
+        insightFallback={
+          isInstagramBusinessReport
+            ? "Interactions reflect how people responded to the Instagram account and content."
+            : "Engagement reflects how strongly the audience responded to the published content."
+        }
         growthAliases={["engagement", "engagement_total", "interactions_total"]}
         watermarkText={watermarkText}
         watermarkLogoLightUrl={watermarkLogoLightUrl}
@@ -6779,9 +6906,15 @@ function ReportBlockSlide({
         totalSlides={totalSlides}
         renderMode={renderMode}
         templateId={templateId}
-        title="Page Views"
-        mainMetricLabel="Total Page Views"
+        title={isInstagramBusinessReport ? "Profile Activity" : "Page Views"}
+        mainMetricLabel={isInstagramBusinessReport ? "Profile activity" : "Total Page Views"}
         mainMetricAliases={[
+          "profile_activity",
+          "profileActivity",
+          "profile_views",
+          "profileViews",
+          "profile_visits",
+          "profileVisits",
           "page_views_total",
           "pageViewsTotal",
           "page_views",
@@ -6795,10 +6928,22 @@ function ReportBlockSlide({
           "total",
           "value",
         ]}
-        chartMetricLabel="Page Views"
-        chartPlaceholderText="No daily page views trend available"
-        insightFallback="Page Views show how often people visited the Facebook Page during the selected period."
-        growthAliases={["page_views", "page_views_total", "page_visits"]}
+        chartMetricLabel={isInstagramBusinessReport ? "Profile Activity" : "Page Views"}
+        chartPlaceholderText={
+          isInstagramBusinessReport
+            ? "No daily profile activity trend available"
+            : "No daily page views trend available"
+        }
+        insightFallback={
+          isInstagramBusinessReport
+            ? "Profile Activity shows how people moved from discovery into actions on the Instagram profile."
+            : "Page Views show how often people visited the Facebook Page during the selected period."
+        }
+        growthAliases={
+          isInstagramBusinessReport
+            ? ["profile_activity", "profile_views", "profile_visits", "page_views", "page_visits"]
+            : ["page_views", "page_views_total", "page_visits"]
+        }
         watermarkText={watermarkText}
         watermarkLogoLightUrl={watermarkLogoLightUrl}
         watermarkLogoDarkUrl={watermarkLogoDarkUrl}
@@ -6854,15 +6999,21 @@ function ReportBlockSlide({
           totalSlides={totalSlides}
           renderMode={renderMode}
           templateId={templateId}
-          title="Engagement"
-          mainMetricLabel="Total engagement"
+          title={isInstagramBusinessReport ? "Engagement / Interactions" : "Engagement"}
+          mainMetricLabel={
+            isInstagramBusinessReport ? "Total interactions" : "Total engagement"
+          }
           mainMetricAliases={["engagement", "total_engagement", "interactions_total"]}
           secondaryStats={[
             { label: "Engagement rate", aliases: ["engagement_rate", "average_engagement_rate"] },
           ]}
-          chartMetricLabel="Engagement"
+          chartMetricLabel={isInstagramBusinessReport ? "Interactions" : "Engagement"}
           chartPlaceholderText="No daily trend available"
-          insightFallback="Engagement reflects how strongly the audience responded to the published content."
+          insightFallback={
+            isInstagramBusinessReport
+              ? "Interactions reflect how people responded to the Instagram account and content."
+              : "Engagement reflects how strongly the audience responded to the published content."
+          }
           growthAliases={["engagement", "interactions_total"]}
         />
       );
@@ -6876,10 +7027,12 @@ function ReportBlockSlide({
           totalSlides={totalSlides}
           renderMode={renderMode}
           templateId={templateId}
-          title="Page Visits"
-          mainMetricLabel="Page or profile visits"
+          title={isInstagramBusinessReport ? "Profile Activity" : "Page Visits"}
+          mainMetricLabel={
+            isInstagramBusinessReport ? "Profile activity" : "Page or profile visits"
+          }
           mainMetricAliases={["page_visits", "pageViews", "page_views", "profile_views"]}
-          chartMetricLabel="Page Visits"
+          chartMetricLabel={isInstagramBusinessReport ? "Profile Activity" : "Page Visits"}
           chartPlaceholderText="No daily trend available"
           insightFallback="Visits show how often users moved from discovery into the profile or page destination."
           growthAliases={["page_visits", "page_views", "profile_views"]}
@@ -6996,6 +7149,7 @@ function ReportBlockSlide({
         totalSlides={totalSlides}
         renderMode={renderMode}
         templateId={templateId}
+        reportVisualVariant={reportVisualVariant}
         watermarkText={watermarkText}
         watermarkLogoLightUrl={watermarkLogoLightUrl}
         watermarkLogoDarkUrl={watermarkLogoDarkUrl}
@@ -7271,7 +7425,7 @@ export function buildReportBlockSlideElements(input: {
   templateId: ReportTemplateId;
   locale?: string;
   hideOverviewInsights?: boolean;
-  reportVisualVariant?: "meta_ads" | null;
+  reportVisualVariant?: ReportVisualVariant | null;
   watermarkText?: string;
   watermarkLogoLightUrl?: string | null;
   watermarkLogoDarkUrl?: string | null;
@@ -7399,8 +7553,12 @@ export function SlideRenderer({
     blocks,
   });
   const isMetaAdsReport = reportVisualVariant === "meta_ads";
+  const isInstagramBusinessReport = reportVisualVariant === "instagram_business";
   const shouldUseBlockSlides =
-    renderMode !== "export" && (shouldRenderBlocksAsSlides(blocks) || isMetaAdsReport);
+    renderMode !== "export" &&
+    (shouldRenderBlocksAsSlides(blocks) ||
+      isMetaAdsReport ||
+      isInstagramBusinessReport);
   const sortedBlocks = blocks ? sortBlocksByOrder(blocks) : [];
   const isFacebookPagesMvpBlockDeck =
     shouldUseBlockSlides &&

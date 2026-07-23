@@ -206,8 +206,19 @@ export function resolveReportCoverSourceName(
     report && "sourceName" in report && typeof report.sourceName === "string"
       ? report.sourceName.trim()
       : "";
+  const flatIntegrationType =
+    report && "integrationType" in report && typeof report.integrationType === "string"
+      ? report.integrationType.trim().toLowerCase()
+      : "";
   const titleCandidate = report?.title || report?.reportTitle || "";
   const titleFallback = titleCandidate ? getCoverBrandName(titleCandidate) : "";
+  const isStandaloneInstagram =
+    flatIntegrationType.includes("instagram_business_login") ||
+    metadata?.integrationType?.toLowerCase().includes("instagram_business_login");
+  const safeTitleFallback =
+    isStandaloneInstagram && titleFallback.toLowerCase().includes("facebook")
+      ? "Instagram Business Report"
+      : titleFallback;
 
   return (
     getFirstNonEmpty([
@@ -217,7 +228,7 @@ export function resolveReportCoverSourceName(
       primarySourceLabel,
       report?.sourceSummary,
       storedPageName,
-      titleFallback,
+      safeTitleFallback,
       fallbackBrandName,
     ]) || "Marketing Report"
   );
@@ -376,12 +387,20 @@ export function resolveReportCoverIntegrationLabel(report?: CoverSourceReportInp
   );
   const hasInstagram = haystacks.some(
     (value) =>
+      value.includes("instagram_business_login") ||
       value.includes("instagram_business") ||
       value.includes("instagram business") ||
       value.includes("instagram")
   );
+  const hasStandaloneInstagram = haystacks.some((value) =>
+    value.includes("instagram_business_login")
+  );
   const hasCsv = haystacks.some((value) => value.includes("csv"));
   const hasUpload = haystacks.some((value) => value.includes("upload"));
+
+  if (hasStandaloneInstagram) {
+    return "Instagram Business";
+  }
 
   if (hasFacebook && hasInstagram) {
     return "Facebook Pages";
@@ -490,6 +509,10 @@ function buildSourceCaption(integrationLabel: string) {
 
 function isFacebookPagesContext(context: DefaultTemplateContext) {
   return context.coverIntegrationLabel.trim().toLowerCase() === "facebook pages";
+}
+
+function isInstagramBusinessContext(context: DefaultTemplateContext) {
+  return context.coverIntegrationLabel.trim().toLowerCase() === "instagram business";
 }
 
 function hasMetricValue(value: unknown) {
@@ -991,6 +1014,7 @@ export function buildPageViewsSlideModel(
   context: DefaultTemplateContext
 ): ReachSlideModel {
   const extremes = getReachExtremes(context.report.pageViewsDailyPoints);
+  const isInstagramBusiness = isInstagramBusinessContext(context);
 
   if (process.env.NODE_ENV === "development") {
     console.log("[5-slide metric render]", {
@@ -1010,12 +1034,12 @@ export function buildPageViewsSlideModel(
   }
 
   return {
-    metricKey: "page_views",
+    metricKey: isInstagramBusiness ? "profile_activity" : "page_views",
     branding: context.branding,
     metricEyebrow: "Metric",
-    metricTitle: "PAGE VIEWS",
+    metricTitle: isInstagramBusiness ? "PROFILE ACTIVITY" : "PAGE VIEWS",
     sourceCaption: buildSourceCaption(context.coverIntegrationLabel),
-    totalLabel: "Total page views",
+    totalLabel: isInstagramBusiness ? "Profile activity" : "Total page views",
     totalValue: context.report.pageViewsUnavailable
       ? "N/A"
       : formatMetricSummaryValue(context.report.pageViewsTotalValue),
@@ -1030,16 +1054,20 @@ export function buildPageViewsSlideModel(
       !context.report.pageViewsUnavailable &&
       (context.report.pageViewsDailyAvailable ||
         context.report.pageViewsDailyPoints.length > 0),
-    chartMetricLabel: context.report.pageViewsLabel || "Page views",
+    chartMetricLabel:
+      context.report.pageViewsLabel ||
+      (isInstagramBusiness ? "Profile activity" : "Page views"),
     highestDayCard: buildReachCard(
       "Highest day",
       context.report.pageViewsHighestDay || extremes.highest,
-      context.report.pageViewsLabel || "Page views"
+      context.report.pageViewsLabel ||
+        (isInstagramBusiness ? "Profile activity" : "Page views")
     ),
     lowestDayCard: buildReachCard(
       "Lowest day",
       context.report.pageViewsLowestDay || extremes.lowest,
-      context.report.pageViewsLabel || "Page views"
+      context.report.pageViewsLabel ||
+        (isInstagramBusiness ? "Profile activity" : "Page views")
     ),
   };
 }
@@ -1095,6 +1123,7 @@ export function buildSummarySlideModel(
   }
 
   const isFacebookPages = isFacebookPagesContext(context);
+  const isInstagramBusiness = isInstagramBusinessContext(context);
   const visibilityState = getVisibilityMetricState(context);
   const usesImpressionsFallback = visibilityState.usesImpressionsFallback;
   const reachValue = formatMetricSummaryValue(context.report.finalSummaryMetrics?.reach);
@@ -1163,13 +1192,13 @@ export function buildSummarySlideModel(
           "Total followers in period",
           "Meta did not return followers for the selected period."
         ),
-        ...[
+        ...([
           ["Reactions", summaryMetricsRecord.reactions_total ?? summaryMetricsRecord.reactions, "Reactions from analyzed posts"],
           ["Comments", summaryMetricsRecord.comments_total ?? summaryMetricsRecord.comments, "Comments from analyzed posts"],
           ["Shares", summaryMetricsRecord.shares_total ?? summaryMetricsRecord.shares, "Shares from analyzed posts"],
           ["Posts Analyzed", summaryMetricsRecord.posts_analyzed_count ?? summaryMetricsRecord.posts_analyzed, "Posts analyzed in the selected period"],
           ["Top Post", summaryMetricsRecord.top_post_by_engagement, "Top post by engagement"],
-        ]
+        ] as Array<[string, unknown, string]>)
           .map(([label, metric, meta]) =>
             buildSummaryMetricCard(label, metric, metric, meta)
           )
@@ -1242,7 +1271,7 @@ export function buildSummarySlideModel(
             ),
       },
       {
-        label: "Page Views",
+        label: isInstagramBusiness ? "Profile Activity" : "Page Views",
         value: summaryPageViewsUnavailable
           ? "N/A"
           : pageViewsValue !== "N/A"
@@ -1251,11 +1280,17 @@ export function buildSummarySlideModel(
         meta: summaryPageViewsUnavailable
           ? formatMetricSummaryDescription(
               summaryPageViewsMetric,
-              context.report.pageViewsUnavailableMessage || PAGE_VIEWS_UNAVAILABLE_MESSAGE
+              context.report.pageViewsUnavailableMessage ||
+                (isInstagramBusiness
+                  ? "Profile activity is not available for this period."
+                  : PAGE_VIEWS_UNAVAILABLE_MESSAGE)
             )
           : formatMetricSummaryDescription(
               summaryPageViewsMetric,
-              context.report.pageViewsLabel || "Total page views in period"
+              context.report.pageViewsLabel ||
+                (isInstagramBusiness
+                  ? "Profile activity in period"
+                  : "Total page views in period")
             ),
       },
     ],

@@ -540,7 +540,9 @@ export default function ReportView({
   const slideNavigationItems = useMemo(
     () => {
       const shouldUseBlockSlides =
-        shouldRenderBlocksAsSlides(blocks) || reportVisualVariant === "meta_ads";
+        shouldRenderBlocksAsSlides(blocks) ||
+        reportVisualVariant === "meta_ads" ||
+        reportVisualVariant === "instagram_business";
 
       if (shouldUseBlockSlides) {
         return buildReportBlockSlideElements({
@@ -600,7 +602,9 @@ export default function ReportView({
   );
   useEffect(() => {
     const shouldUseBlockSlides =
-      shouldRenderBlocksAsSlides(blocks) || reportVisualVariant === "meta_ads";
+      shouldRenderBlocksAsSlides(blocks) ||
+      reportVisualVariant === "meta_ads" ||
+      reportVisualVariant === "instagram_business";
 
     console.info("[AUDIT_RENDER_PATH][ReportView]", {
       source: shouldUseBlockSlides ? "blocks" : "template",

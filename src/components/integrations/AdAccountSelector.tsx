@@ -8,6 +8,9 @@ import { useI18n } from "@/components/providers/LanguageProvider";
 type MetaOption = {
   id: string;
   name: string;
+  username?: string;
+  accountType?: string;
+  integrationId?: string;
 };
 
 type AdAccountSelectorProps = {
@@ -25,6 +28,35 @@ type AdAccountSelectorProps = {
   logoAlt?: string;
   footer?: ReactNode;
 };
+
+function formatUsername(value?: string) {
+  const username = value?.trim();
+
+  return username ? `@${username.replace(/^@/, "")}` : "";
+}
+
+function getAccountPrimaryLabel(account: MetaOption | null) {
+  if (!account) {
+    return "";
+  }
+
+  return formatUsername(account.username) || account.name;
+}
+
+function getAccountSecondaryLabel(account: MetaOption | null) {
+  if (!account) {
+    return "";
+  }
+
+  return [
+    account.username ? account.name : "",
+    account.accountType,
+    account.integrationId ? `integration_id: ${account.integrationId}` : "",
+  ]
+    .map((item) => item?.trim())
+    .filter(Boolean)
+    .join(" - ");
+}
 
 export function AdAccountSelector({
   accounts,
@@ -58,7 +90,16 @@ export function AdAccountSelector({
     }
 
     return accounts.filter((account) =>
-      account.name.toLowerCase().includes(normalizedSearch)
+      [
+        account.name,
+        account.username,
+        account.accountType,
+        account.integrationId,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedSearch)
     );
   }, [accounts, search]);
 
@@ -238,6 +279,7 @@ export function AdAccountSelector({
               <div className="space-y-2">
                 {filteredAccounts.map((account) => {
                   const selected = account.id === value;
+                  const secondaryLabel = getAccountSecondaryLabel(account);
 
                   return (
                     <button
@@ -255,8 +297,15 @@ export function AdAccountSelector({
                           : "border-slate-200 bg-white text-slate-700"
                       } touch-manipulation`}
                     >
-                      <span className="truncate text-sm font-medium">
-                        {account.name}
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">
+                          {getAccountPrimaryLabel(account)}
+                        </span>
+                        {secondaryLabel ? (
+                          <span className="mt-1 block truncate text-xs text-slate-500">
+                            {secondaryLabel}
+                          </span>
+                        ) : null}
                       </span>
                       {selected ? (
                         <span className="ml-3 text-xs font-semibold uppercase tracking-[0.16em]">
@@ -329,8 +378,13 @@ export function AdAccountSelector({
                 {selectorLabel}
               </p>
               <p className="mt-1 truncate text-sm font-medium text-slate-950">
-                {selectedAccount?.name || selectorTitle}
+                {getAccountPrimaryLabel(selectedAccount) || selectorTitle}
               </p>
+              {getAccountSecondaryLabel(selectedAccount) ? (
+                <p className="mt-1 truncate text-xs text-slate-500">
+                  {getAccountSecondaryLabel(selectedAccount)}
+                </p>
+              ) : null}
             </div>
             <span className="ml-4 text-slate-400">{open ? "▲" : "▼"}</span>
           </button>
@@ -357,6 +411,7 @@ export function AdAccountSelector({
               <div className="max-h-[min(320px,50vh)] overflow-y-auto bg-slate-50/80 p-2">
                 {filteredAccounts.map((account) => {
                   const selected = account.id === value;
+                  const secondaryLabel = getAccountSecondaryLabel(account);
 
                   return (
                     <button
@@ -373,8 +428,15 @@ export function AdAccountSelector({
                           : "border-transparent bg-transparent text-slate-700 hover:border-slate-200 hover:bg-white"
                       }`}
                     >
-                      <span className="truncate text-sm font-medium">
-                        {account.name}
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">
+                          {getAccountPrimaryLabel(account)}
+                        </span>
+                        {secondaryLabel ? (
+                          <span className="mt-1 block truncate text-xs text-slate-500">
+                            {secondaryLabel}
+                          </span>
+                        ) : null}
                       </span>
                       {selected ? (
                         <span className="ml-3 text-xs font-semibold uppercase tracking-[0.16em]">

@@ -21,7 +21,8 @@ export type MetaOAuthSource =
 
 export type IntegrationOAuthCompleteProvider =
   | MetaOAuthSource
-  | "meta_business_suite";
+  | "meta_business_suite"
+  | "instagram_business_login";
 
 export type IntegrationOAuthCompleteMessage = {
   type: typeof INTEGRATION_OAUTH_COMPLETE_MESSAGE_TYPE;
@@ -90,7 +91,7 @@ type PendingMetaOAuth = {
 export type MetaOAuthWindowMessage =
   | {
       type: typeof META_OAUTH_CONNECT_SUCCESS;
-      provider?: "meta" | "meta_ads" | "instagram_business" | "meta_business_suite";
+      provider?: "meta" | "meta_ads" | "instagram_business" | "meta_business_suite" | "instagram_business_login";
       source?: string;
       integration_type?: string;
       integrationId?: string;
@@ -105,7 +106,7 @@ export type MetaOAuthWindowMessage =
     }
   | {
       type: typeof META_OAUTH_CONNECT_ERROR;
-      provider?: "meta" | "meta_ads" | "instagram_business" | "meta_business_suite";
+      provider?: "meta" | "meta_ads" | "instagram_business" | "meta_business_suite" | "instagram_business_login";
       source?: string;
       integration_type?: string;
       message: string;
@@ -560,6 +561,7 @@ export function isMetaOAuthWindowMessage(
     (provider === "meta" ||
       provider === "meta_ads" ||
       provider === "instagram_business" ||
+      provider === "instagram_business_login" ||
       provider === "meta_business_suite") &&
     (candidate.type === META_OAUTH_CONNECT_SUCCESS ||
       candidate.type === META_OAUTH_CONNECT_ERROR)
@@ -605,6 +607,7 @@ export function isIntegrationOAuthCompleteMessage(
     candidate.type === INTEGRATION_OAUTH_COMPLETE_MESSAGE_TYPE &&
     (provider === "facebook_pages" ||
       provider === "instagram_business" ||
+      provider === "instagram_business_login" ||
       provider === "meta_ads" ||
       provider === "meta_business_suite")
   );
